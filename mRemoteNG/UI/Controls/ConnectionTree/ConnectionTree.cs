@@ -45,6 +45,12 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
         private ConnectionTreeModel? _connectionTreeModel;
         private List<ConnectionInfo> _clipboardNodes = new();
 
+        // When the model has exactly one connection root ("Connections"), that root is hidden and its
+        // children are shown at the top level — the pane heading already says "Connections", so the
+        // node is redundant and costs every entry an extra indent level. Null when not promoting
+        // (e.g. multiple connection roots). The root stays in the model; only the view is re-rooted.
+        private RootNodeInfo? _promotedRoot;
+
         public ConnectionInfo SelectedNode => (ConnectionInfo)SelectedObject;
 
         public NodeSearcher? NodeSearcher { get; private set; }
@@ -80,11 +86,43 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
         {
             InitializeComponent();
             SetupConnectionTreeView();
+            ConfigureCompactAppearance();
             UseOverlays = false;
             UseWaitCursorWhenExpanding = false;
             _themeManager = ThemeManager.getInstance();
             _themeManager.ThemeChanged += ThemeManagerOnThemeChanged;
             ApplyTheme();
+        }
+
+        /// <summary>
+        /// Compact appearance for the connection tree to minimize horizontal space:
+        /// chevron (triangle) expanders instead of boxed +/- and tighter per-level indentation.
+        /// Sibling guide lines are kept. A custom renderer draws the chevron larger than the
+        /// (narrow) indent so it stays legible.
+        /// </summary>
+        private void ConfigureCompactAppearance()
+        {
+            TreeColumnRenderer = new CompactTreeRenderer { UseTriangles = true };
+
+            // PIXELS_PER_LEVEL is a static on the vendored TreeRenderer. ConnectionTree is the only
+            // TreeListView in the app, so narrowing it here affects just this tree.
+            BrightIdeasSoftware.TreeListView.TreeRenderer.PIXELS_PER_LEVEL = 12;
+        }
+
+        /// <summary>
+        /// Tree renderer that draws the expansion chevron a few pixels larger than the glyph box.
+        /// PIXELS_PER_LEVEL drives both indentation and glyph size, so a narrow 12px indent would
+        /// otherwise leave a tiny chevron; this enlarges only the drawn glyph, not the indent.
+        /// </summary>
+        private sealed class CompactTreeRenderer : BrightIdeasSoftware.TreeListView.TreeRenderer
+        {
+            private const int GlyphInflate = 3;
+
+            protected override void DrawExpansionGlyph(System.Drawing.Graphics g, System.Drawing.Rectangle r, bool isExpanded)
+            {
+                r.Inflate(GlyphInflate, GlyphInflate);
+                base.DrawExpansionGlyph(g, r, isExpanded);
+            }
         }
 
         private void ThemeManagerOnThemeChanged()
@@ -232,6 +270,7 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
             BeforeLabelEdit += OnBeforeLabelEdit;
             AfterLabelEdit += OnAfterLabelEdit;
             FormatCell += ConnectionTree_FormatCell;
+            SizeChanged += OnTreeSizeChanged;
         }
 
         private void OnExpanding(object? sender, TreeBranchExpandingEventArgs e)
@@ -260,8 +299,16 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
             }
         }
 
+        // Widest Name content measured by AutoResizeColumn, before the cap is applied. Cached so a
+        // pane resize can re-apply the cap without re-measuring every row. Zero means "not measured
+        // yet" — never push a zero width onto the column.
+        private int _desiredNameColumnWidth;
+
         /// <summary>
-        /// Resizes the given column to ensure that all content is shown
+        /// Sizes the Name column to its content, capped at the tree's own width so an over-long name
+        /// ellipsizes (with a full-name tooltip) instead of forcing a horizontal scrollbar. A name
+        /// that fits within the pane is shown in full; the Description column fills whatever the Name
+        /// column leaves.
         /// </summary>
         private void AutoResizeColumn(ColumnHeader column)
         {
@@ -271,19 +318,89 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
                 return;
             }
 
-            int longestIndentationAndTextWidth = int.MinValue;
-            int horizontalScrollOffset = LowLevelScrollPosition.X;
-            const int padding = 10;
+            // Nothing to measure (e.g. a transient empty state mid-rebuild): keep the current width
+            // rather than collapsing the column.
+            if (Items.Count == 0)
+                return;
 
+            int longestIndentationAndTextWidth = 0;
             for (int i = 0; i < Items.Count; i++)
             {
                 int rowIndentation = Items[i].Position.X;
                 int rowTextWidth = TextRenderer.MeasureText(Items[i].Text, Font).Width;
-
                 longestIndentationAndTextWidth = Math.Max(rowIndentation + rowTextWidth, longestIndentationAndTextWidth);
             }
 
-            column.Width = longestIndentationAndTextWidth + SmallImageSize.Width + horizontalScrollOffset + padding;
+            const int padding = 10;
+            _desiredNameColumnWidth = longestIndentationAndTextWidth + SmallImageSize.Width + padding;
+            column.Width = CapNameColumnWidth(_desiredNameColumnWidth);
+        }
+
+        /// <summary>
+        /// Clamps a desired Name-column width to the tree width so it never forces a horizontal
+        /// scrollbar. A name that fits keeps its full width.
+        /// </summary>
+        private int CapNameColumnWidth(int desiredWidth)
+        {
+            int clientWidth = ClientSize.Width;
+            if (clientWidth <= 0)
+                return desiredWidth;
+
+            return Math.Min(desiredWidth, clientWidth);
+        }
+
+        private void OnTreeSizeChanged(object? sender, EventArgs e)
+        {
+            // Re-apply the cap so the Name column can reclaim/yield width as the pane resizes,
+            // without re-measuring rows. Skip until a real width has been measured.
+            if (Columns.Count > 0 && _desiredNameColumnWidth > 0)
+                Columns[0].Width = CapNameColumnWidth(_desiredNameColumnWidth);
+        }
+
+        /// <summary>
+        /// Computes the objects shown at the top level of the tree. When there is exactly one
+        /// connection root, it is hidden and replaced (in place) by its children; any other roots
+        /// (PuTTY sessions, additional root folders) keep showing normally. Sets
+        /// <see cref="_promotedRoot"/> as a side effect.
+        /// </summary>
+        private IList<ConnectionInfo> ComputeViewRoots(ConnectionTreeModel model)
+        {
+            List<ContainerInfo> roots = model.RootNodes;
+            List<RootNodeInfo> connectionRoots = roots
+                .OfType<RootNodeInfo>()
+                .Where(r => r.Type == RootNodeType.Connection)
+                .ToList();
+
+            _promotedRoot = connectionRoots.Count == 1 ? connectionRoots[0] : null;
+
+            if (_promotedRoot == null)
+                return roots.Cast<ConnectionInfo>().ToList();
+
+            List<ConnectionInfo> viewRoots = new();
+            foreach (ContainerInfo root in roots)
+            {
+                if (ReferenceEquals(root, _promotedRoot))
+                    viewRoots.AddRange(_promotedRoot.Children);
+                else
+                    viewRoots.Add(root);
+            }
+
+            return viewRoots;
+        }
+
+        /// <summary>
+        /// Rebuilds the top-level objects (e.g. after the hidden root's children are reordered)
+        /// while preserving the current selection and expansion state.
+        /// </summary>
+        private void RefreshViewRootsPreservingState()
+        {
+            if (_connectionTreeModel == null)
+                return;
+
+            List<object> expanded = ExpandedObjects.Cast<object>().ToList();
+            System.Collections.IList selected = SelectedObjects;
+            SetObjects(ComputeViewRoots(_connectionTreeModel));
+            RebuildAll(selected, expanded, null);
         }
 
         private void PopulateTreeView(ConnectionTreeModel newModel)
@@ -291,7 +408,7 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
             BeginUpdate();
             try
             {
-                SetObjects(newModel.RootNodes);
+                SetObjects(ComputeViewRoots(newModel));
                 RegisterModelUpdateHandlers(newModel);
                 NodeSearcher = new NodeSearcher(newModel);
                 ExecutePostSetupActions();
@@ -871,7 +988,8 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
                             {
                                 foreach (ConnectionInfo item in args.NewItems.OfType<ConnectionInfo>())
                                 {
-                                    if (item.Parent != null)
+                                    // A child of the hidden root is a top-level object in the view.
+                                    if (item.Parent != null && !ReferenceEquals(item.Parent, _promotedRoot))
                                         RefreshObject(item.Parent);
                                     else
                                         AddObject(item);
@@ -881,11 +999,19 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
                         case NotifyCollectionChangedAction.Move:
                             if (args.NewItems != null)
                             {
+                                bool topLevelMoved = false;
                                 foreach (ConnectionInfo item in args.NewItems.OfType<ConnectionInfo>())
                                 {
-                                    if (item.Parent != null)
+                                    if (item.Parent != null && !ReferenceEquals(item.Parent, _promotedRoot))
                                         RefreshObject(item.Parent);
+                                    else
+                                        topLevelMoved = true;
                                 }
+
+                                // Reordering the hidden root's children reorders the view roots, which
+                                // RefreshObject can't express — rebuild the top level, keeping state.
+                                if (topLevelMoved)
+                                    RefreshViewRootsPreservingState();
                             }
                             break;
                         case NotifyCollectionChangedAction.Remove:
@@ -893,7 +1019,7 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
                             break;
                         case NotifyCollectionChangedAction.Reset:
                             if (_connectionTreeModel != null)
-                                SetObjects(_connectionTreeModel.RootNodes);
+                                SetObjects(ComputeViewRoots(_connectionTreeModel));
                             break;
                     }
                 }
@@ -1022,6 +1148,18 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
         {
             try
             {
+                // Name column: when the (now fill-width) name is ellipsized, surface the full text.
+                // This is independent of the description-tooltip preference below.
+                if (e.ColumnIndex == 0 && e.Item != null && e.Model is ConnectionInfo)
+                {
+                    string fullName = ((OLVColumn)Columns[0]).GetStringValue(e.Model);
+                    if (IsNameTruncated(e.Item, fullName))
+                    {
+                        e.Text = fullName;
+                        return;
+                    }
+                }
+
                 if (!Properties.OptionsAppearancePage.Default.ShowDescriptionTooltipsInTree)
                 {
                     // setting text to null prevents the tooltip from being shown
@@ -1049,6 +1187,25 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
                                                                 "tvConnections_MouseMove (UI.Window.ConnectionTreeWindow) failed",
                                                                 ex);
             }
+        }
+
+        /// <summary>
+        /// Estimates whether the Name cell's text is wider than the space available for it, so the
+        /// caller knows a full-text tooltip is warranted. Uses the item's content offset (indent +
+        /// glyph, mirroring the tree renderer) plus the node icon.
+        /// </summary>
+        private bool IsNameTruncated(OLVListItem item, string text)
+        {
+            if (string.IsNullOrEmpty(text) || Columns.Count == 0)
+                return false;
+
+            int indent = item.Position.X;
+            const int padding = 6;
+            int available = Columns[0].Width - indent - SmallImageSize.Width - padding;
+            if (available <= 0)
+                return false;
+
+            return TextRenderer.MeasureText(text, Font).Width > available;
         }
 
         private void OnBeforeLabelEdit(object sender, LabelEditEventArgs e)

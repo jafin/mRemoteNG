@@ -16,6 +16,9 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
         {
             Text = Language.Name;
             AspectName = "Name";
+            // Sized to content but capped (see ConnectionTree.AutoResizeColumn) so it never crowds
+            // out the Description column; long names ellipsize with a full-name tooltip. Description
+            // keeps FillsFreeSpace and takes whatever the Name column leaves.
             FillsFreeSpace = false;
             AspectGetter = item =>
             {

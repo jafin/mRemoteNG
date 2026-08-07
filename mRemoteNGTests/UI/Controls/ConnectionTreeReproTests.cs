@@ -1,6 +1,8 @@
 using System;
 using System.Threading;
 using System.Windows.Forms;
+using mRemoteNG.Connection;
+using mRemoteNG.Container;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
 using mRemoteNG.UI.Controls.ConnectionTree;
@@ -61,13 +63,17 @@ namespace mRemoteNGTests.UI.Controls
         {
             var model = new ConnectionTreeModel();
             var initialRoot = new RootNodeInfo(RootNodeType.Connection) { Name = "Initial Root" };
+            var child = new ConnectionInfo { Name = "Child" };
+            initialRoot.AddChild(child);
             model.AddRootNode(initialRoot);
 
             tree.ConnectionTreeModel = model;
             Application.DoEvents();
 
-            // Verify initial state
-            Assert.That(tree.Objects, Does.Contain(initialRoot));
+            // A single connection root is promoted to the pane heading: the root node itself is
+            // hidden and its children are shown at the top level.
+            Assert.That(tree.Roots, Does.Contain(child));
+            Assert.That(tree.Roots, Does.Not.Contain(initialRoot));
 
             // Add new root node
             var newRoot = new RootNodeInfo(RootNodeType.Connection) { Name = "New Root" };

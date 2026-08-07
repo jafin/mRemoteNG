@@ -381,8 +381,10 @@ namespace mRemoteNGTests.UI.Controls
 		});
 
 		[Test]
-		public void ExpandingAllItemsUpdatesColumnWidthAppropriately() => RunWithMessagePump(tree =>
+		public void ExpandingAllItemsGrowsColumnWidthButKeepsItCapped() => RunWithMessagePump(tree =>
 		{
+			// The Name column sizes to content as deeper nodes are revealed, but is capped so it
+			// never consumes the whole tree — the Description column always keeps room.
 			var connectionTreeModel = new ConnectionTreeModel();
 			var root = new RootNodeInfo(RootNodeType.Connection);
 			connectionTreeModel.AddRootNode(root);
@@ -403,6 +405,8 @@ namespace mRemoteNGTests.UI.Controls
 			var widthAfter = tree.Columns[0].Width;
 
 			Assert.That(widthAfter, Is.GreaterThan(widthBefore));
+			if (tree.ClientSize.Width > 0)
+				Assert.That(widthAfter, Is.LessThanOrEqualTo(tree.ClientSize.Width));
 		});
 
 		[Test]

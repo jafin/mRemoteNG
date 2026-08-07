@@ -12,6 +12,7 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
         {
             Text = Language.Description;
             AspectName = "Description";
+            // Fills whatever horizontal space the (content-sized, capped) Name column leaves.
             FillsFreeSpace = true;
             AspectGetter = item => ((ConnectionInfo)item).Description;
             AutoCompleteEditor = false;
