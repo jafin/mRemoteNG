@@ -104,17 +104,75 @@ namespace mRemoteNGTests.Tools
             source.Dispose();
         }
 
+        // ---- writes, for the download direction ------------------------------------
+
         [Test]
-        public void TheWrapperIsReadOnly()
+        public void WritesReportCumulativeProgress()
         {
-            using MemoryStream source = new(Payload);
-            using ProgressReportingStream stream = new(source, (_, _) => { });
+            // A download writes into this stream rather than reading from it, so both directions
+            // have to count.
+            List<long> reported = [];
+            using MemoryStream destination = new();
+            using ProgressReportingStream stream = new(destination, (transferred, _) => reported.Add(transferred));
+
+            stream.Write(Payload, 0, 4);
+            stream.Write(Payload, 4, 6);
+
+            Assert.That(reported, Is.EqualTo(new long[] { 4, 10 }));
+        }
+
+        [Test]
+        public async Task AsynchronousWritesReportProgressToo()
+        {
+            List<long> reported = [];
+            using MemoryStream destination = new();
+            using ProgressReportingStream stream = new(destination, (transferred, _) => reported.Add(transferred));
+
+            await stream.WriteAsync(Payload.AsMemory(0, 5));
+            await stream.WriteAsync(Payload.AsMemory(5, 5));
+
+            Assert.That(reported, Is.EqualTo(new long[] { 5, 10 }));
+        }
+
+        [Test]
+        public void WrittenBytesReachTheWrappedStream()
+        {
+            using MemoryStream destination = new();
+            using ProgressReportingStream stream = new(destination, (_, _) => { });
+
+            stream.Write(Payload, 0, Payload.Length);
+
+            Assert.That(destination.ToArray(), Is.EqualTo(Payload));
+        }
+
+        [Test]
+        public void ADeclaredTotalOverridesTheWrappedStreamsLength()
+        {
+            // A download writes into an empty file whose length says nothing about the size of the
+            // transfer, so the caller supplies the remote file's size.
+            long total = 0;
+            using MemoryStream destination = new();
+            using ProgressReportingStream stream = new(destination, (_, t) => total = t, totalBytes: 5000);
+
+            stream.Write(Payload, 0, 4);
 
             Assert.Multiple(() =>
             {
-                Assert.That(stream.CanWrite, Is.False);
-                Assert.Throws<NotSupportedException>(() => stream.Write(new byte[1], 0, 1));
-                Assert.Throws<NotSupportedException>(() => stream.SetLength(1));
+                Assert.That(total, Is.EqualTo(5000));
+                Assert.That(stream.Total, Is.EqualTo(5000));
+            });
+        }
+
+        [Test]
+        public void WritabilityFollowsTheWrappedStream()
+        {
+            using MemoryStream writable = new();
+            using MemoryStream readOnly = new(Payload, writable: false);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(new ProgressReportingStream(writable, (_, _) => { }).CanWrite, Is.True);
+                Assert.That(new ProgressReportingStream(readOnly, (_, _) => { }).CanWrite, Is.False);
             });
         }
 

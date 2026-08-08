@@ -7,12 +7,14 @@
 
 ## 2. SFTP session
 
-- [ ] 2.1 Add `mRemoteNG/Connection/Sftp/` with a session type wrapping `SftpClient`, connected from a `ResolvedSshCredential`.
-- [ ] 2.2 Authenticate via `SshCredentialResolver` + `SshNetAuthAdapter`; replay resolution diagnostics on the connection's message channel.
-- [ ] 2.3 Async operations with `CancellationToken`: list, download, upload, rename, delete, create directory, create file.
-- [ ] 2.4 Report disconnection, and make a listing after disconnection fail rather than return stale contents.
-- [ ] 2.5 Give `ProgressReportingStream` a write-counting counterpart for downloads (`DownloadFileAsync` has no progress callback), and use it for both directions.
-- [ ] 2.6 Tests against a fake SFTP surface — no test may require a server: listing maps entries; hidden entries filtered; failures surface as failures; cancellation stops an operation; progress counts bytes.
+- [x] 2.1 Add `mRemoteNG/Connection/Sftp/` with a session type wrapping `SftpClient`, connected from a `ResolvedSshCredential`.
+- [x] 2.2 Authenticate via `SshCredentialResolver` + `SshNetAuthAdapter`; replay resolution diagnostics on the connection's message channel.
+- [x] 2.3 Async operations with `CancellationToken`: list, download, upload, rename, delete, create directory, create file. `CreateFileAsync` uploads an empty stream — `SftpClient.Create` is synchronous only. `DeleteAsync` routes directories to `DeleteDirectoryAsync`, which fails on a non-empty directory; that is the intended outcome rather than quietly recursing through a tree the user did not see.
+- [x] 2.4 Report disconnection, and make a listing after disconnection fail rather than return stale contents.
+- [x] 2.5 Give `ProgressReportingStream` a write-counting counterpart for downloads (`DownloadFileAsync` has no progress callback), and use it for both directions. Done as one class counting both directions rather than a second type. It also gained an optional declared total: a download writes into an empty file whose length says nothing about the size of the transfer, so the caller passes the remote file's size from the listing.
+- [x] 2.6 Tests against a fake SFTP surface — no test may require a server: listing maps entries; hidden entries filtered; failures surface as failures; cancellation stops an operation; progress counts bytes.
+
+**Section 2 results 2026-08-09:** full build green (71.0s); full suite **7024/7024**, 137s, 0 crashes. 43 new tests, none requiring a server — `ISftpFile` is an interface, so the listing-to-model mapping is asserted against a substitute. `SftpPath` exists because `System.IO.Path` applies the local platform's rules: on Windows it would join with a backslash and treat a drive letter as a root, while SFTP paths are POSIX whatever the client runs on.
 
 ## 3. The panel
 
