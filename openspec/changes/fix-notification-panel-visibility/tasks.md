@@ -46,4 +46,4 @@ else, and running a search made the text appear.
 - [x] 5.2 Full test suite; zero failures, no `[Ignore]`.
 - [x] 5.3 Zero new analyzer warnings.
 - [x] 5.4 `openspec validate fix-notification-panel-visibility --strict`.
-- [ ] 5.5 Manual check: start the app and confirm startup messages appear with timestamps, including any settings-load failure. **Outstanding** — needs the GUI; cannot be claimed from a green suite.
+- [x] 5.5 Manual check: start the app and confirm startup messages appear with timestamps, including any settings-load failure. **Verified by the maintainer 2026-08-08**, after the 4b fix. The first run found the rendering defect recorded in 4b, which is the reason this task was not claimed from a green suite.
