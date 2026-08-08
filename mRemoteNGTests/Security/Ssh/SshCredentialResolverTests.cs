@@ -386,6 +386,27 @@ namespace mRemoteNGTests.Security.Ssh
         }
 
         [Test]
+        public void DiscoveryStillRunsWithAPasswordWhenTheBackendCannotUseOne()
+        {
+            // ssh.exe has no way to accept a password non-interactively, so a stored password is
+            // not an alternative to a key. Gating discovery on the mere presence of a secret would
+            // strip the key an OpenSSH connection authenticates with today.
+            using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519")
+                .Resolve(Connection(password: "secret123"), SshCredentialResolutionOptions.ForOpenSsh);
+
+            Assert.That(credential.PrivateKeyPath, Is.EqualTo(@"C:\keys\id_ed25519"));
+        }
+
+        [Test]
+        public void DiscoveryIsStillSkippedWithAPasswordWhenTheBackendCanUseOne()
+        {
+            using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519.ppk")
+                .Resolve(Connection(password: "secret123"), SshCredentialResolutionOptions.ForPutty);
+
+            Assert.That(credential.PrivateKeyPath, Is.Null);
+        }
+
+        [Test]
         public void DiscoveryModeNoneFindsNothing()
         {
             using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519.ppk")

@@ -163,8 +163,12 @@ namespace mRemoteNG.Security.Ssh
             bool hasUsableKeyMaterial = keyMaterialIsUsable && !string.IsNullOrEmpty(privateKey);
 
             // Discovery runs only when nothing else can authenticate: no materialised key
-            // material, no configured key path, and no password.
-            if (!hasUsableKeyMaterial && keyPath is null && string.IsNullOrEmpty(password))
+            // material, no configured key path, and no secret the backend could actually use.
+            // The last clause matters for OpenSSH, which cannot take a password non-interactively:
+            // gating on the mere presence of a secret would strip the key it authenticates with.
+            bool secretCanAuthenticate = options.BackendAcceptsSecret && !string.IsNullOrEmpty(password);
+
+            if (!hasUsableKeyMaterial && keyPath is null && !secretCanAuthenticate)
                 keyPath = _keyLocator.Locate(options.DefaultKeyDiscovery);
 
             // ---- 5. SSH agent identities ------------------------------------------

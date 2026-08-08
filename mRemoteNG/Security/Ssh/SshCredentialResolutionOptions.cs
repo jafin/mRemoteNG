@@ -32,9 +32,21 @@ namespace mRemoteNG.Security.Ssh
     /// talks to Pageant natively and <c>ssh.exe</c> talks to the Windows agent natively, so for
     /// those backends the agent is consulted only to decide whether to emit a key argument.
     /// </param>
+    /// <param name="BackendAcceptsSecret">
+    /// Whether the calling backend can actually authenticate with a resolved secret.
+    /// <see langword="false"/> for OpenSSH: <c>ssh.exe</c> has no equivalent of <c>-pw</c> and
+    /// cannot take a password non-interactively.
+    /// <para>
+    /// This gates default-key discovery. A backend that can use the password does not need a key,
+    /// so discovery is skipped when a secret is present. A backend that cannot use it still needs
+    /// one, so discovery must run regardless — otherwise an OpenSSH connection with a stored
+    /// password would lose the key it authenticates with today.
+    /// </para>
+    /// </param>
     public readonly record struct SshCredentialResolutionOptions(
         DefaultKeyDiscoveryMode DefaultKeyDiscovery,
-        bool ConsultAgent)
+        bool ConsultAgent,
+        bool BackendAcceptsSecret = true)
     {
         /// <summary>Discovery and agent both disabled — the conservative default.</summary>
         public static SshCredentialResolutionOptions None { get; } =
@@ -46,7 +58,7 @@ namespace mRemoteNG.Security.Ssh
 
         /// <summary>Defaults matching the OpenSSH backend's current behaviour.</summary>
         public static SshCredentialResolutionOptions ForOpenSsh { get; } =
-            new(DefaultKeyDiscoveryMode.OpenSsh, ConsultAgent: false);
+            new(DefaultKeyDiscoveryMode.OpenSsh, ConsultAgent: false, BackendAcceptsSecret: false);
 
         /// <summary>
         /// Defaults for SSH.NET-backed callers, honouring the global agent setting.

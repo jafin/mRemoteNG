@@ -57,11 +57,12 @@
 
 ## 8. OpenSSH adapter
 
-- [ ] 8.1 Add `mRemoteNG/Security/Ssh/Adapters/OpenSshArgsAdapter.cs`.
-- [ ] 8.2 Switch `ProtocolOpenSSH.BuildSshArguments()` to the resolver; keep OpenSSH-format default-key discovery.
-- [ ] 8.3 Report a resolved secret as unsupported; emit a warning naming the provider and stating that `ssh.exe` cannot accept a password non-interactively. Connection still proceeds.
-- [ ] 8.4 Tests for the unsupported-password warning and for the no-warning case.
-- [ ] 8.5 Note the release-notes line: OpenSSH connections with vault credentials will now warn where they were previously silent.
+- [x] 8.1 Add `mRemoteNG/Security/Ssh/Adapters/OpenSshArgsAdapter.cs`. **Done 2026-08-08** — returns `OpenSshCredentialArguments(IdentityArgument, Destination, Unsupported)`. Also reports provider-supplied *key material* as unsupported, not just passwords: `ssh.exe` takes a key only as a file path, so vault-returned key bodies cannot be used either.
+- [x] 8.2 Switch `ProtocolOpenSSH.BuildSshArguments()` to the resolver; keep OpenSSH-format default-key discovery. **Done 2026-08-08.** `ProtocolOpenSSH.FindDefaultSshKey` deleted — discovery now runs through `DefaultSshKeyLocator` in OpenSSH mode, preserving the `id_ed25519 / id_ecdsa / id_rsa / id_dsa` list. Added `protected virtual ResolveCredentials()` as a test seam.
+- [x] 8.3 Report a resolved secret as unsupported. **Done 2026-08-08** — warning names the provider and states that `ssh.exe` has no option to accept a password non-interactively, and suggests a key or agent instead. The connection still proceeds; behaviour is unchanged, the diagnostic is what is new.
+- [x] 8.4 Tests for the unsupported-password warning and the no-warning case. **Done 2026-08-08** — 14 tests in `OpenSshArgsAdapterTests`, including that the message never leaks the secret or key body, plus 2 resolver tests pinning the discovery gate below.
+- [x] 8.5 Release-notes lines. **Two behaviour changes to announce**, both intended: (a) OpenSSH connections carrying vault credentials now emit a warning where they were previously silent — this exposes an already-broken configuration rather than creating one; (b) OpenSSH connections now apply the same empty-username fallback and domain qualification as PuTTY connections, so a connection with no username that previously let `ssh.exe` default to the local user may now send an explicit username. Required by the "applied once" requirement in `specs/ssh-credential-resolution/spec.md`.
+- [x] 8.6 **Regression guard (found during 8.2, not originally planned).** PuTTY skips default-key discovery when a password is present; OpenSSH must not, because `ssh.exe` cannot use a password at all, so a stored password is not an alternative to a key. Reusing the PuTTY gate would have stripped the key an OpenSSH connection authenticates with today. Added `SshCredentialResolutionOptions.BackendAcceptsSecret` (true for PuTTY/SSH.NET, false for OpenSSH) to drive the gate, pinned by `DiscoveryStillRunsWithAPasswordWhenTheBackendCannotUseOne` and `DiscoveryIsStillSkippedWithAPasswordWhenTheBackendCanUseOne`.
 
 ## 9. SSH.NET adapter and dependency cleanup
 
