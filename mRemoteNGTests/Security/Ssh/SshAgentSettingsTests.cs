@@ -40,14 +40,16 @@ namespace mRemoteNGTests.Security.Ssh
         }
 
         [Test]
-        public void TheShippedDefaultIsDisabled()
+        public void TheShippedDefaultIsEnabled()
         {
-            // Stays off until the sk-key spike (task 10.1) resolves; 11.1 flips it and updates
-            // the spec. Reads the declared default rather than the current user value.
+            // Shipped off until the sk-key spike (task 10.1) established that SSH.NET cannot fault
+            // on a hardware-backed identity's null Key. An agent is the standard way to authenticate
+            // without storing a secret, and both external clients mRemoteNG wraps already consult
+            // one unconditionally. Reads the declared default rather than the current user value.
             var property = mRemoteNG.Properties.OptionsCredentialsPage.Default
                 .Properties["UseSshAgent"];
 
-            Assert.That(property!.DefaultValue, Is.EqualTo("False"));
+            Assert.That(property!.DefaultValue, Is.EqualTo("True"));
         }
 
         // ---- the setting reaches resolution ------------------------------------------

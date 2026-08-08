@@ -99,28 +99,61 @@ deferred to its own change — `add-ssh-agent-key-injection`. See design.md D5.
 - **WHEN** no provider-supplied key material is present
 - **THEN** no temporary private key file is created
 
-### Requirement: Supported agent key types are declared and unsupported ones are filtered
+### Requirement: Supported agent key types are declared, including hardware-backed ones
 
-The provider SHALL accept Ed25519, ECDSA P-256/P-384/P-521, and RSA 2048-8192 identities. Until
-FIDO/`sk-*` identities are verified against SSH.NET, the provider SHALL exclude them and record that
-it did so.
+The provider SHALL accept Ed25519, ECDSA P-256/P-384/P-521, and RSA 2048-8192 identities, and SHALL
+also accept FIDO/`sk-*` identities. Exclusion of hardware-backed identities SHALL remain available
+as a per-request option but SHALL NOT be the default.
+
+`sk-*` identities were excluded while it was unverified whether SSH.NET faults on the null `Key` the
+agent library sets for them. It cannot: `Key` is not a member of `IPrivateKeySource`, the only
+surface SSH.NET consumes, and the pinned agent library carries the public-key blob and the agent's
+signature straight through for these keys. Excluding them by default would offer nothing at all to a
+user whose only credential is a security key.
 
 #### Scenario: Supported key type is offered
 
 - **WHEN** the agent holds an Ed25519, ECDSA P-256/P-384/P-521, or RSA 2048-8192 identity
 - **THEN** that identity is included in the returned set
 
-#### Scenario: FIDO identity is filtered
+#### Scenario: FIDO identity is offered
 
 - **WHEN** the agent holds an `sk-*` identity
+- **THEN** that identity is included in the returned set
+
+#### Scenario: FIDO identities are excluded on request
+
+- **WHEN** a request explicitly excludes hardware-backed identities
+- **AND** the agent holds an `sk-*` identity
 - **THEN** that identity is excluded from the returned set
-- **AND** an informational message records that a FIDO identity was skipped and why
+- **AND** an informational message records that it was skipped
 
-#### Scenario: Agent holds only filtered identities
+#### Scenario: Agent holds only hardware-backed identities
 
-- **WHEN** every identity the agent holds is filtered
-- **THEN** the provider returns an empty identity set
-- **AND** resolution falls through to the next credential source
+- **WHEN** every identity the agent holds is `sk-*`
+- **THEN** the provider returns all of them
+
+### Requirement: A large identity set is reported before it can exhaust the server
+
+The provider SHALL warn when the number of identities it returns reaches the authentication-attempt
+limit servers commonly enforce. It SHALL NOT silently discard identities to stay under that limit.
+
+Every identity costs one publickey attempt and OpenSSH's `MaxAuthTries` defaults to 6, past which
+the server disconnects — which presents as a rejected credential rather than as a client that ran
+out of turns. Capping instead of warning could discard the one key that would have worked, and a
+server's own "too many authentication failures" is easier to act on than a connection that fails
+with nothing reported.
+
+#### Scenario: Agent holds more identities than a server typically allows attempts
+
+- **WHEN** the agent returns six or more identities
+- **THEN** a warning names the count and the likely consequence
+- **AND** every identity is still returned
+
+#### Scenario: A small identity set is not warned about
+
+- **WHEN** the agent returns fewer identities than the common limit
+- **THEN** no warning is raised
 
 ### Requirement: Agent authentication is configurable by a single global setting
 
@@ -145,10 +178,15 @@ design.md D10.
 - **THEN** no agent is contacted
 - **AND** the resolved credential carries no agent identities
 
-#### Scenario: Default is disabled
+#### Scenario: Default is enabled
 
 - **WHEN** the setting has never been changed
-- **THEN** agent authentication is disabled
+- **THEN** agent authentication is enabled
+
+The default is on because an SSH agent is the standard way to authenticate without storing a secret,
+and both external clients mRemoteNG wraps already consult one unconditionally. Leaving it off would
+make agent support reachable only by finding a checkbox. The failure mode that argued for off — a
+large identity set exhausting the server's attempt budget — is now reported rather than silent.
 
 #### Scenario: Backends with a native agent are unaffected
 

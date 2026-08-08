@@ -19,6 +19,7 @@ namespace mRemoteNGTests.Security.Ssh
     public class SshNetAuthAdapterTests
     {
         private static readonly string[] SecondFactorPrompt = ["Duo two-factor verification code: "];
+        private static readonly string[] PrivateKeySourceMembers = ["HostKeyAlgorithms", "get_HostKeyAlgorithms"];
         private static readonly string[] PublicKeyThenPasswordThenKeyboardInteractive =
             ["publickey", "password", "keyboard-interactive"];
 
@@ -270,6 +271,32 @@ namespace mRemoteNGTests.Security.Ssh
             using SshNetAuthentication authentication = SshNetAuthAdapter.Translate(credential);
 
             Assert.That(authentication.UnansweredPrompts, Is.Empty);
+        }
+
+        // ---- the sk-key spike (task 10.1) -------------------------------------------
+
+        [Test]
+        public void SshNetCannotObserveAnAgentIdentitysUnderlyingKeyObject()
+        {
+            // SshNet.Agent sets SshAgentPrivateKey.Key to null for sk-* identities, and the open
+            // question was whether SSH.NET faults on that. It cannot: Key is not a member of the
+            // interface SSH.NET consumes, so no code path in the authentication exchange can reach
+            // it. This fails if a future SSH.NET widens the interface and reopens the question.
+            Assert.That(typeof(IPrivateKeySource).GetMembers().Select(m => m.Name),
+                        Is.EquivalentTo(PrivateKeySourceMembers),
+                        "IPrivateKeySource gained a member; re-check whether a null Key can now be reached.");
+        }
+
+        [Test]
+        public void TheAgentLibraryRepresentsHardwareBackedIdentitiesFirstClass()
+        {
+            // The other half of the spike: the pinned SshNet.Agent carries the public-key blob and
+            // the agent's signature straight through for sk-* keys rather than needing a
+            // Renci.SshNet.Security.Key, which is why a null Key is not a defect.
+            System.Reflection.Assembly agentAssembly = System.Reflection.Assembly.Load("SshNet.Agent");
+
+            Assert.That(agentAssembly.GetType("SshNet.Agent.Keys.SkAgentHostAlgorithm"), Is.Not.Null,
+                        "SshNet.Agent no longer handles sk-* identities; the hardware-key filter must go back on.");
         }
 
         // ---- helpers ---------------------------------------------------------------

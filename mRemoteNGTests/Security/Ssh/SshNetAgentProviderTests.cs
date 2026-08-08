@@ -118,30 +118,34 @@ namespace mRemoteNGTests.Security.Ssh
         // ---- FIDO filtering ----------------------------------------------------------
 
         [Test]
-        public void FidoIdentitiesAreFilteredByDefault()
+        public void FidoIdentitiesAreOfferedByDefault()
         {
+            // Filtered by default until the sk-key spike (task 10.1) established that SSH.NET cannot
+            // observe the null Key the agent library sets for these. See SshNetAuthAdapterTests.
             StubAgentProvider provider = new(openSsh: [Ed25519, Fido]);
 
-            Assert.That(provider.GetIdentities(SshAgentQuery.Default), Is.EqualTo(new[] { Ed25519 }));
+            Assert.That(provider.GetIdentities(SshAgentQuery.Default), Is.EqualTo(new[] { Ed25519, Fido }));
         }
 
         [Test]
-        public void FidoIdentitiesCanBeIncludedExplicitly()
+        public void FidoIdentitiesCanBeExcludedExplicitly()
         {
             StubAgentProvider provider = new(openSsh: [Ed25519, Fido]);
 
             IReadOnlyList<SshAgentIdentity> identities = provider.GetIdentities(
-                new SshAgentQuery([SshAgentKind.OpenSsh], IncludeHardwareBacked: true));
+                new SshAgentQuery([SshAgentKind.OpenSsh], IncludeHardwareBacked: false));
 
-            Assert.That(identities, Is.EqualTo(new[] { Ed25519, Fido }));
+            Assert.That(identities, Is.EqualTo(new[] { Ed25519 }));
         }
 
         [Test]
-        public void AnAgentHoldingOnlyFidoIdentitiesYieldsAnEmptySet()
+        public void AnAgentHoldingOnlyFidoIdentitiesStillYieldsThem()
         {
+            // The case that makes exclusion the wrong default: a user whose only credential is a
+            // security key would otherwise be offered nothing at all.
             StubAgentProvider provider = new(openSsh: [Fido]);
 
-            Assert.That(provider.GetIdentities(SshAgentQuery.Default), Is.Empty);
+            Assert.That(provider.GetIdentities(SshAgentQuery.Default), Has.Count.EqualTo(1));
         }
 
         [TestCase("sk-ssh-ed25519@openssh.com")]
@@ -150,7 +154,9 @@ namespace mRemoteNGTests.Security.Ssh
         {
             StubAgentProvider provider = new(openSsh: [new SshAgentIdentity("k", algorithm)]);
 
-            Assert.That(provider.GetIdentities(SshAgentQuery.Default), Is.Empty);
+            Assert.That(
+                provider.GetIdentities(new SshAgentQuery([SshAgentKind.OpenSsh], IncludeHardwareBacked: false)),
+                Is.Empty);
         }
 
         [TestCase("ssh-ed25519")]
@@ -165,6 +171,21 @@ namespace mRemoteNGTests.Security.Ssh
             StubAgentProvider provider = new(openSsh: [new SshAgentIdentity("k", algorithm)]);
 
             Assert.That(provider.GetIdentities(SshAgentQuery.Default), Has.Count.EqualTo(1));
+        }
+
+        // ---- large identity sets ---------------------------------------------------------
+
+        [Test]
+        public void ALargeIdentitySetIsReturnedInFullRatherThanCapped()
+        {
+            // Capping would risk discarding the one key that works. The provider warns instead —
+            // see WarnIfLikelyToExhaustServerAuthAttempts.
+            SshAgentIdentity[] many = Enumerable.Range(0, 9)
+                                                .Select(i => new SshAgentIdentity($"key{i}", "ssh-ed25519"))
+                                                .ToArray();
+            StubAgentProvider provider = new(openSsh: many);
+
+            Assert.That(provider.GetIdentities(SshAgentQuery.Default), Has.Count.EqualTo(9));
         }
 
         // ---- the real provider, without requiring an agent ------------------------------

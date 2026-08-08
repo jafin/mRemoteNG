@@ -350,8 +350,39 @@ Steps 1-3 are a pure refactor; reverting restores the inline cascade.
 
 ## Open Questions
 
-- Does Win32-OpenSSH support `SSH_ASKPASS` / `SSH_ASKPASS_REQUIRE=force`? If yes, D2's "unsupported"
-  outcome for passwords over `ssh.exe` could become a supported path via a small askpass helper.
+- ~~Does Win32-OpenSSH support `SSH_ASKPASS` / `SSH_ASKPASS_REQUIRE=force`?~~ **Resolved: yes.**
+  Verified 2026-08-08 against `OpenSSH_for_Windows_9.5p1, LibreSSL 3.8.2`. The binary contains
+  `SSH_ASKPASS`, `SSH_ASKPASS_REQUIRE` and all three of its values (`prefer`, `force`, `never`,
+  added upstream in OpenSSH 8.4). Exercised end to end through `read_passphrase()` — the routine
+  `ssh.exe`'s password prompt also goes through — by decrypting a passphrase-protected key with
+  `ssh-keygen -y` under `SSH_ASKPASS_REQUIRE=force` with no tty and no `DISPLAY`. It succeeded with a
+  plain `.bat` helper; a `.cmd` worked identically. The control run, without the helper, blocked on
+  the console prompt, which confirms the console read is what a helper displaces.
+
+  So D2's "unsupported" outcome for passwords over `ssh.exe` **is** fixable, and the shape is known.
+  Deliberately not implemented here, for reasons that are design constraints rather than effort:
+
+  - mRemoteNG would have to ship an askpass executable and point `SSH_ASKPASS` at it per connection.
+  - The secret has to reach that child process. A command-line argument is disqualified outright —
+    it is visible in process listings. An environment variable is weaker than it looks, since a
+    child's environment is readable by any process running as the same user. The defensible route is
+    a pipe, which mRemoteNG already builds for PuTTY in `CreatePasswordPipeArgument`.
+  - It only helps `ssh.exe`, the backend D3 designates the escape hatch. SSH.NET, which owns the
+    future SFTP panel and terminal, already takes passwords directly.
+
+  Recorded here so the finding is not re-litigated: the blocker was never OpenSSH's capability.
+- ~~Do FIDO/`sk-*` identities fault SSH.NET when `SshAgentPrivateKey.Key` is null?~~ **Resolved: no.**
+  Verified 2026-08-08. `Key` is not a member of `IPrivateKeySource`, which is the entire surface
+  SSH.NET consumes from a key source, so no code path in the authentication exchange can reach it.
+  The pinned `SshNet.Agent 2024.2.0.5` also carries the public-key blob and the agent's signature
+  straight through for `sk-*` keys via `SkAgentHostAlgorithm` rather than needing a
+  `Renci.SshNet.Security.Key` at all. Both facts are pinned by tests in `SshNetAuthAdapterTests`, so
+  the hardware-key filter goes back on automatically if either stops holding. Consequence: the
+  default filter is lifted and the agent setting ships enabled.
+
+  Not verified against physical FIDO hardware — no security key was available. The residual risk is
+  bounded: a `sk-*` identity that fails to sign costs one publickey attempt and falls through to the
+  next method.
 - ~~Does Win32-OpenSSH support `ControlMaster` / `ControlPath` multiplexing?~~ **Resolved: no.**
   Verified 2026-08-08 against `OpenSSH_for_Windows_9.5p1`. The options parse and are echoed by
   `ssh -G`, but `ssh -O check` returns `getsockname failed: Not a socket`; Win32-OpenSSH lacks the
@@ -360,8 +391,7 @@ Steps 1-3 are a pure refactor; reverting restores the inline cascade.
   single-auth for server-issued interactive MFA is unreachable without a shared subsystem channel on
   an mRemoteNG-owned transport — i.e. it depends on the native-terminal change *and* an upstream
   SSH.NET change to expose `SendSubsystemRequest` on a public type. Neither is in scope here.
-- Should the agent setting be global, per-connection, or both? Per-connection matches how
-  `ExternalCredentialProvider` already works; global is simpler and matches user expectation of an
-  agent. Leaning both, defaulting per-connection to "inherit global".
+- ~~Should the agent setting be global, per-connection, or both?~~ **Resolved: global only**, at the
+  maintainer's direction. See D10.
 - ~~Does any provider need re-invocation rather than caching?~~ **Resolved: re-invocable, never
   cached.** See D7.

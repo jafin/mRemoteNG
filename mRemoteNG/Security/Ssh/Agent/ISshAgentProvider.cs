@@ -46,15 +46,25 @@ namespace mRemoteNG.Security.Ssh.Agent
     /// </summary>
     /// <param name="Kinds">Transports to try, in order. Results are concatenated, first-seen wins.</param>
     /// <param name="IncludeHardwareBacked">
-    /// Whether to include FIDO/<c>sk-*</c> identities. Defaults to <see langword="false"/>: the
-    /// agent library sets <c>SshAgentPrivateKey.Key</c> to <see langword="null"/> for these, and
-    /// whether SSH.NET tolerates that is unverified.
+    /// Whether to include FIDO/<c>sk-*</c> identities. Defaults to <see langword="true"/>.
+    /// <para>
+    /// This defaulted to <see langword="false"/> while it was unverified whether SSH.NET faults on
+    /// <c>SshAgentPrivateKey.Key</c> being <see langword="null"/>, which the agent library sets for
+    /// these keys. It cannot: <c>Key</c> is not a member of <c>IPrivateKeySource</c>, the only
+    /// surface SSH.NET consumes, and the pinned agent library carries the public-key blob and the
+    /// agent's signature straight through for <c>sk-*</c> keys instead. Both facts are pinned by
+    /// tests in <c>SshNetAuthAdapterTests</c>, so this flips back if either stops holding.
+    /// </para>
+    /// <para>
+    /// Excluding them is still available, but it is the wrong default: a user whose only credential
+    /// is a security key would be offered nothing at all.
+    /// </para>
     /// </param>
     public readonly record struct SshAgentQuery(
         IReadOnlyList<SshAgentKind> Kinds,
-        bool IncludeHardwareBacked = false)
+        bool IncludeHardwareBacked = true)
     {
-        /// <summary>Consult both transports, excluding hardware-backed identities.</summary>
+        /// <summary>Consult both transports, including hardware-backed identities.</summary>
         public static SshAgentQuery Default { get; } =
             new([SshAgentKind.OpenSsh, SshAgentKind.Pageant]);
     }
