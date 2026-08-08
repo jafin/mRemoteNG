@@ -45,6 +45,11 @@ namespace mRemoteNG.UI.Window
             FillImageList();
             ApplyLanguage();
             lvErrorCollector.Enter += LvErrorCollector_Enter;
+
+            // The window's own Resize is not enough: the list is laid out by LayoutVertical and
+            // LayoutHorizontal too, and the panel can become visible without the window ever
+            // resizing, which would leave the columns at their designer widths.
+            lvErrorCollector.SizeChanged += (_, _) => ResizeColumns();
         }
 
         #region Form Stuff
@@ -157,6 +162,25 @@ namespace mRemoteNG.UI.Window
             }
         }
 
+        /// <summary>
+        /// Splits the list between the timestamp and the message.
+        /// </summary>
+        /// <remarks>
+        /// The message keeps the remaining width, and the timestamp gives way when there is not
+        /// enough room for both — a panel narrow enough to squeeze one of them should not be
+        /// squeezing out the text the timestamp annotates.
+        /// </remarks>
+        private void ResizeColumns()
+        {
+            int available = lvErrorCollector.ClientSize.Width;
+            if (available <= 0)
+                return;
+
+            int dateWidth = Math.Min(_display.ScaleWidth(90), available / 3);
+            clmDate.Width = dateWidth;
+            clmMessage.Width = available - dateWidth;
+        }
+
         private void ErrorsAndInfos_Resize(object sender, EventArgs e)
         {
             try
@@ -172,9 +196,7 @@ namespace mRemoteNG.UI.Window
                         LayoutVertical();
                 }
 
-                int dateWidth = _display.ScaleWidth(90);
-                clmDate.Width = dateWidth;
-                clmMessage.Width = Math.Max(0, lvErrorCollector.Width - dateWidth - 20);
+                ResizeColumns();
             }
             catch (Exception ex)
             {
@@ -445,6 +467,7 @@ namespace mRemoteNG.UI.Window
             if (MatchesFilter(item, tstbSearch.Text))
             {
                 lvErrorCollector.Items.Insert(0, item);
+                (item as NotificationMessageListViewItem)?.RealizeMessageText();
             }
 
             if (lvErrorCollector.Items.Count > 0)
@@ -488,6 +511,7 @@ namespace mRemoteNG.UI.Window
                 if (MatchesFilter(item, filterText))
                 {
                     lvErrorCollector.Items.Add(item);
+                    (item as NotificationMessageListViewItem)?.RealizeMessageText();
                 }
             }
 
