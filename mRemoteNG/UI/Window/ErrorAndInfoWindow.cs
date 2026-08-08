@@ -56,6 +56,7 @@ namespace mRemoteNG.UI.Window
         private void ApplyLanguage()
         {
             clmMessage.Text = Language.Message;
+            clmDate.Text = Language.Date;
             cMenMCCopy.Text = Language.CopyAll;
             cMenMCDelete.Text = Language.DeleteAll;
             UpdateTabTitle();
@@ -171,7 +172,9 @@ namespace mRemoteNG.UI.Window
                         LayoutVertical();
                 }
 
-                lvErrorCollector.Columns[0].Width = lvErrorCollector.Width - 20;
+                int dateWidth = _display.ScaleWidth(90);
+                clmDate.Width = dateWidth;
+                clmMessage.Width = Math.Max(0, lvErrorCollector.Width - dateWidth - 20);
             }
             catch (Exception ex)
             {
@@ -439,9 +442,7 @@ namespace mRemoteNG.UI.Window
         {
             _allItems.Insert(0, item);
 
-            string filterText = tstbSearch.Text;
-            if (string.IsNullOrEmpty(filterText) ||
-                item.Text.Contains(filterText, StringComparison.OrdinalIgnoreCase))
+            if (MatchesFilter(item, tstbSearch.Text))
             {
                 lvErrorCollector.Items.Insert(0, item);
             }
@@ -456,6 +457,26 @@ namespace mRemoteNG.UI.Window
             }
         }
 
+        /// <summary>
+        /// Whether an entry matches the search box.
+        /// </summary>
+        /// <remarks>
+        /// Matches the message text specifically, not <see cref="ListViewItem.Text"/>, which now
+        /// holds the timestamp. Filtering on the whole row would make a search for "10" match every
+        /// message logged in the tenth minute of an hour.
+        /// </remarks>
+        private static bool MatchesFilter(ListViewItem item, string filterText)
+        {
+            if (string.IsNullOrEmpty(filterText))
+                return true;
+
+            string haystack = item is NotificationMessageListViewItem notification
+                ? notification.MessageText
+                : item.Text;
+
+            return haystack.Contains(filterText, StringComparison.OrdinalIgnoreCase);
+        }
+
         private void ApplyFilter()
         {
             lvErrorCollector.BeginUpdate();
@@ -464,8 +485,7 @@ namespace mRemoteNG.UI.Window
             string filterText = tstbSearch.Text;
             foreach (var item in _allItems)
             {
-                if (string.IsNullOrEmpty(filterText) ||
-                    item.Text.Contains(filterText, StringComparison.OrdinalIgnoreCase))
+                if (MatchesFilter(item, filterText))
                 {
                     lvErrorCollector.Items.Add(item);
                 }

@@ -17,7 +17,22 @@ namespace mRemoteNG.Messages
         private readonly IList<IMessage> _messageList;
         private readonly object _listLock = new();
 
-        public IEnumerable<IMessage> Messages => _messageList;
+        /// <summary>
+        /// The messages collected so far, as a snapshot.
+        /// </summary>
+        /// <remarks>
+        /// A copy rather than the live list: messages arrive from background workers as well as the
+        /// UI thread, so handing out the backing list would let any caller enumerate it while it is
+        /// being appended to.
+        /// </remarks>
+        public IEnumerable<IMessage> Messages
+        {
+            get
+            {
+                lock (_listLock)
+                    return _messageList.ToArray();
+            }
+        }
 
         public MessageCollector()
         {
@@ -80,6 +95,48 @@ namespace mRemoteNG.Messages
         {
             lock (_listLock)
                 _messageList.Clear();
+        }
+
+        /// <summary>
+        /// Subscribes <paramref name="handler"/> and immediately hands it everything collected so
+        /// far, so a handler attached late still sees the messages it missed.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// This exists because the collector is a static singleton that starts receiving messages
+        /// long before the message writers are attached during <c>FrmMain_Load</c>. Without it,
+        /// anything reported in between reaches no writer at all — not the panel, not the popup
+        /// writer, not the log file — including the errors raised when loading or upgrading settings
+        /// fails.
+        /// </para>
+        /// <para>
+        /// Subscribing and snapshotting happen under the same lock, so no message can be appended
+        /// between the two and be missed. The backlog is then delivered outside the lock: writers
+        /// marshal to the UI thread, and holding the lock across that would deadlock against a
+        /// background thread already waiting to add a message.
+        /// </para>
+        /// <para>
+        /// Delivering outside the lock leaves a theoretical window where a message appended just
+        /// before subscription is delivered twice — once from the backlog, once by its own event,
+        /// which is raised outside the lock too. That window requires a concurrent writer, and the
+        /// only intended caller runs during form load before any background work has started. This
+        /// is a startup helper, not a general-purpose subscribe.
+        /// </para>
+        /// </remarks>
+        public void SubscribeAndReplay(NotifyCollectionChangedEventHandler handler)
+        {
+            ArgumentNullException.ThrowIfNull(handler);
+
+            IMessage[] backlog;
+
+            lock (_listLock)
+            {
+                backlog = _messageList.ToArray();
+                CollectionChanged += handler;
+            }
+
+            if (backlog.Length > 0)
+                handler(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, backlog));
         }
 
         public event NotifyCollectionChangedEventHandler? CollectionChanged;

@@ -324,6 +324,9 @@
   <data name="Message" xml:space="preserve">
     <value>Message</value>
   </data>
+  <data name="Date" xml:space="preserve">
+    <value>Date</value>
+  </data>
   <data name="CommandExitProgram" xml:space="preserve">
     <value>E&amp;xit {0}</value>
   </data>
