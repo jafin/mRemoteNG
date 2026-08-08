@@ -43,6 +43,7 @@
             lblCredentialsDomain = new Controls.MrngLabel();
             radCredentialsNoInfo = new Controls.MrngRadioButton();
             radCredentialsCustom = new Controls.MrngRadioButton();
+            chkUseSshAgent = new Controls.MrngCheckBox();
             lblRegistrySettingsUsedInfo = new System.Windows.Forms.Label();
             lblCredentialsGeneratorHelp = new Controls.MrngLabel();
             btnCredentialsGenerator = new System.Windows.Forms.Button();
@@ -70,11 +71,23 @@
             pnlCredentialsSettingsPanel.Controls.Add(tableLayoutPanel1);
             pnlCredentialsSettingsPanel.Controls.Add(radCredentialsNoInfo);
             pnlCredentialsSettingsPanel.Controls.Add(radCredentialsCustom);
+            pnlCredentialsSettingsPanel.Controls.Add(chkUseSshAgent);
             pnlCredentialsSettingsPanel.Dock = System.Windows.Forms.DockStyle.Top;
             pnlCredentialsSettingsPanel.Location = new System.Drawing.Point(0, 30);
             pnlCredentialsSettingsPanel.Name = "pnlCredentialsSettingsPanel";
-            pnlCredentialsSettingsPanel.Size = new System.Drawing.Size(610, 214);
+            pnlCredentialsSettingsPanel.Size = new System.Drawing.Size(610, 240);
             pnlCredentialsSettingsPanel.TabIndex = 0;
+            //
+            // chkUseSshAgent
+            //
+            chkUseSshAgent.AutoSize = true;
+            chkUseSshAgent.BackColor = System.Drawing.Color.Transparent;
+            chkUseSshAgent.Location = new System.Drawing.Point(6, 208);
+            chkUseSshAgent.Name = "chkUseSshAgent";
+            chkUseSshAgent.Size = new System.Drawing.Size(330, 17);
+            chkUseSshAgent.TabIndex = 5;
+            chkUseSshAgent.Text = "Use SSH agent (OpenSSH agent or PuTTY Pageant) for SSH keys";
+            chkUseSshAgent.UseVisualStyleBackColor = false;
             // 
             // lblDefaultCredentials
             // 
@@ -293,6 +306,7 @@
         #endregion
         internal System.Windows.Forms.Panel pnlDefaultCredentials;
         internal Controls.MrngRadioButton radCredentialsCustom;
+        internal Controls.MrngCheckBox chkUseSshAgent;
         internal Controls.MrngLabel lblDefaultCredentials;
         internal Controls.MrngRadioButton radCredentialsNoInfo;
         internal Controls.MrngRadioButton radCredentialsWindows;

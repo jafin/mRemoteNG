@@ -3,6 +3,8 @@ using Microsoft.Win32;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Security;
+using mRemoteNG.Security.Ssh;
+using mRemoteNG.Security.Ssh.Adapters;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tools;
 using mRemoteNG.Tools.Cmdline;
@@ -216,6 +218,89 @@ namespace mRemoteNG.Connection.Protocol
         protected virtual bool UseTerminalTitlePollingTimer => true;
 
         protected virtual int PowerModeChangedResizeDelay => 2000;
+
+        /// <summary>
+        /// The command line handed to PuTTY by the last <see cref="Connect"/> call.
+        /// Exposed so tests can pin the produced arguments without inspecting the process.
+        /// </summary>
+        internal string? LastBuiltArguments { get; private set; }
+
+        /// <summary>
+        /// Whether the configured PuTTY executable is PuTTYNG. Overridable so tests do not
+        /// depend on a real executable being present.
+        /// </summary>
+        protected virtual bool DetectIsPuttyNg()
+        {
+            return PuttyTypeDetector.GetPuttyType() == PuttyTypeDetector.PuttyType.PuttyNg;
+        }
+
+        /// <summary>
+        /// The version of the configured PuTTY executable, which selects between
+        /// <c>-pwfile</c> (0.81+) and <c>-pw</c>. Overridable so tests can pin both branches.
+        /// </summary>
+        protected virtual Version GetPuttyVersion()
+        {
+            return PuttyTypeDetector.GetPuttyVersion(PuttyPath ?? string.Empty);
+        }
+
+        /// <summary>
+        /// Starts the named pipe that carries the password to PuTTY and returns the pipe path
+        /// for <c>-pwfile</c>. Overridable so tests get a deterministic pipe name and do not
+        /// spawn the pipe server thread.
+        /// </summary>
+        protected virtual string CreatePasswordPipeArgument(string password)
+        {
+            string random = string.Join("", Guid.NewGuid().ToString("n").Take(8));
+            // write data to pipe
+            Thread thread = new(new ParameterizedThreadStart(CreatePipe));
+            thread.Start($"{random}{password}");
+            return $"\\\\.\\PIPE\\mRemoteNGSecretPipe{random}";
+        }
+
+        /// <summary>
+        /// Auto-discovers a default PuTTY-native key from the user profile. Overridable so tests
+        /// do not depend on the contents of the developer's <c>~/.ssh</c>.
+        /// </summary>
+        protected virtual string? FindDefaultPrivateKey()
+        {
+            return FindDefaultSshKey();
+        }
+
+        /// <summary>
+        /// Resolves this connection's SSH credentials. Discovery is routed back through
+        /// <see cref="FindDefaultPrivateKey"/> so the protocol keeps ownership of its own hook.
+        /// </summary>
+        protected virtual ResolvedSshCredential ResolveCredentials()
+        {
+            ISshCredentialResolver resolver = SshCredentialResolver.CreateDefault(
+                new DelegateSshKeyLocator(_ => FindDefaultPrivateKey()));
+
+            return resolver.Resolve(InterfaceControl.Info, SshCredentialResolutionOptions.ForPutty);
+        }
+
+        /// <summary>
+        /// Replays resolution diagnostics on the channel each one was recorded against. The
+        /// resolver cannot do this itself: <see cref="ProtocolBase.Event_ErrorOccured"/> is
+        /// protected and raises an event that callers subscribe to.
+        /// </summary>
+        private void ReplayCredentialDiagnostics(ResolvedSshCredential credential)
+        {
+            foreach (SshCredentialDiagnostic diagnostic in credential.Diagnostics)
+            {
+                switch (diagnostic.Severity)
+                {
+                    case SshCredentialDiagnosticSeverity.ProtocolError:
+                        Event_ErrorOccured(this, diagnostic.Message, 0);
+                        break;
+                    case SshCredentialDiagnosticSeverity.Error:
+                        Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, diagnostic.Message);
+                        break;
+                    default:
+                        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, diagnostic.Message);
+                        break;
+                }
+            }
+        }
 
         protected virtual string ReadTerminalWindowTitle()
         {
@@ -653,12 +738,13 @@ namespace mRemoteNG.Connection.Protocol
         public override bool Connect()
         {
             string optionalTemporaryPrivateKeyPath = ""; // path to ppk file instead of password. only temporary (extracted from credential vault).
+            ResolvedSshCredential? credential = null;
 
             try
             {
                 StopTerminalTitleTracking();
                 ResetPostOpenLayoutResizeState();
-                _isPuttyNg = PuttyTypeDetector.GetPuttyType() == PuttyTypeDetector.PuttyType.PuttyNg;
+                _isPuttyNg = DetectIsPuttyNg();
 
                 // Validate PuttyPath to prevent command injection
                 PathValidator.ValidateExecutablePathOrThrow(PuttyPath ?? string.Empty, nameof(PuttyPath));
@@ -683,214 +769,41 @@ namespace mRemoteNG.Connection.Protocol
                     if (PuttyProtocol == Putty_Protocol.ssh)
                     {
 
-                        string username = InterfaceControl.Info?.Username ?? "";
-                        string domain = InterfaceControl.Info?.Domain ?? "";
-                        //string password = InterfaceControl.Info?.Password?.ConvertToUnsecureString() ?? "";
-                        string password = InterfaceControl.Info?.Password ?? "";
-                        string UserViaAPI = InterfaceControl.Info?.UserViaAPI ?? "";
-                        string privatekey = "";
+                        credential = ResolveCredentials();
+                        ReplayCredentialDiagnostics(credential);
 
-                        // access secret server api if necessary
-                        if (InterfaceControl.Info?.ExternalCredentialProvider == ExternalCredentialProvider.DelineaSecretServer)
+                        // Provider-supplied key material is materialised to a temporary file so
+                        // PuTTY can load it with -i. Only Delinea and Passwordstate reach here;
+                        // the resolver withholds key material from the providers whose keys this
+                        // code path has always discarded.
+                        if (credential.HasKeyMaterial)
                         {
-                            try
+                            optionalTemporaryPrivateKeyPath = Path.GetTempFileName();
+                            File.WriteAllText(optionalTemporaryPrivateKeyPath, credential.RevealKeyMaterial());
+                            _ = new FileInfo(optionalTemporaryPrivateKeyPath)
                             {
-                                ExternalConnectors.DSS.SecretServerInterface.FetchSecretFromServer($"{UserViaAPI}", out username, out password, out _, out privatekey);
-
-                                if (!string.IsNullOrEmpty(privatekey))
-                                {
-                                    optionalTemporaryPrivateKeyPath = Path.GetTempFileName();
-                                    File.WriteAllText(optionalTemporaryPrivateKeyPath, privatekey);
-                                    FileInfo fileInfo = new(optionalTemporaryPrivateKeyPath)
-                                    {
-                                        Attributes = FileAttributes.Temporary
-                                    };
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Event_ErrorOccured(this, "Secret Server Interface Error: " + ex.Message, 0);
-                            }
+                                Attributes = FileAttributes.Temporary
+                            };
                         }
-                        else if (InterfaceControl.Info?.ExternalCredentialProvider == ExternalCredentialProvider.ClickstudiosPasswordState)
+
+                        // Auto-discovery is the resolver's job now; it reports a discovered key by
+                        // returning a path the connection did not configure.
+                        if (!string.IsNullOrEmpty(credential.PrivateKeyPath) &&
+                            !string.Equals(credential.PrivateKeyPath, InterfaceControl.Info?.PrivateKeyPath, StringComparison.Ordinal))
                         {
-                            try
-                            {
-                                ExternalConnectors.CPS.PasswordstateInterface.FetchSecretFromServer($"{UserViaAPI}", out username, out password, out _, out privatekey);
-
-                                if (!string.IsNullOrEmpty(privatekey))
-                                {
-                                    optionalTemporaryPrivateKeyPath = Path.GetTempFileName();
-                                    File.WriteAllText(optionalTemporaryPrivateKeyPath, privatekey);
-                                    FileInfo fileInfo = new(optionalTemporaryPrivateKeyPath)
-                                    {
-                                        Attributes = FileAttributes.Temporary
-                                    };
-                                }
-                            }
-                            catch (Exception ex)
-                            {
-                                Event_ErrorOccured(this, "Passwordstate Interface Error: " + ex.Message, 0);
-                            }
-                        }
-                        else if (InterfaceControl.Info?.ExternalCredentialProvider == ExternalCredentialProvider.OnePassword) {
-                            try
-                            {
-                                ExternalConnectors.OP.OnePasswordCli.ReadPassword($"{UserViaAPI}", out username, out password, out _, out privatekey);
-                            }
-                            catch (ExternalConnectors.OP.OnePasswordCliException ex)
-                            {
-                                Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, Language.ECPOnePasswordCommandLine + ": " + ex.Arguments);
-                                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ECPOnePasswordReadFailed + Environment.NewLine + ex.Message);
-                            }
-                        }
-                        else if (InterfaceControl.Info?.ExternalCredentialProvider == ExternalCredentialProvider.PasswordSafe) {
-                            try
-                            {
-                                ExternalConnectors.PasswordSafe.PasswordSafeCli.ReadPassword($"{UserViaAPI}", out username, out password, out _, out privatekey);
-                            }
-                            catch (ExternalConnectors.PasswordSafe.PasswordSafeCliException ex)
-                            {
-                                Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, Language.ECPPasswordSafeCommandLine + ": " + ex.Arguments);
-                                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ECPPasswordSafeReadFailed + Environment.NewLine + ex.Message);
-                            }
-                        }
-                        else if (InterfaceControl.Info?.ExternalCredentialProvider == ExternalCredentialProvider.VaultOpenbao) {
-                            try {
-                                if (InterfaceControl.Info?.VaultOpenbaoSecretEngine == VaultOpenbaoSecretEngine.SSHOTP)
-                                    ExternalConnectors.VO.VaultOpenbao.ReadOtpSSH($"{InterfaceControl.Info?.VaultOpenbaoMount}", $"{InterfaceControl.Info?.VaultOpenbaoRole}", $"{InterfaceControl.Info?.Username}", $"{InterfaceControl.Info?.Hostname}", out password);
-                                else
-                                    ExternalConnectors.VO.VaultOpenbao.ReadPasswordSSH((int)InterfaceControl.Info!.VaultOpenbaoSecretEngine, InterfaceControl.Info?.VaultOpenbaoMount ?? "", InterfaceControl.Info?.VaultOpenbaoRole ?? "", InterfaceControl.Info?.Username ?? "root", out password);
-                            } catch (ExternalConnectors.VO.VaultOpenbaoException ex) {
-                                Event_ErrorOccured(this, "Secret Server Interface Error: " + ex.Message, 0);
-                            }
-                        }
-                        else if (InterfaceControl.Info?.ExternalCredentialProvider == ExternalCredentialProvider.LAPS)
-                        {
-                            try
-                            {
-                                ExternalConnectors.LAPS.LAPSHelper.QueryLAPSPassword(InterfaceControl.Info?.Hostname ?? "", out username, out password, out _);
-                            }
-                            catch (ExternalConnectors.LAPS.LAPSException ex)
-                            {
-                                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ECPLAPSQueryFailed + Environment.NewLine + ex.Message);
-                            }
+                            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+                                $"No private key configured; auto-discovered SSH key: {credential.PrivateKeyPath}", true);
                         }
 
-                        if (string.IsNullOrEmpty(username))
-                        {
-                            switch (Properties.OptionsCredentialsPage.Default.EmptyCredentials)
-                            {
-                                case "windows":
-                                    username = Environment.UserName;
-                                    break;
-                                case "custom" when !string.IsNullOrEmpty(Properties.OptionsCredentialsPage.Default.DefaultUsername):
-                                    username = Properties.OptionsCredentialsPage.Default.DefaultUsername;
-                                    break;
-                                case "custom":
-                                    switch (Properties.OptionsCredentialsPage.Default.ExternalCredentialProviderDefault)
-                                    {
-                                        case ExternalCredentialProvider.DelineaSecretServer:
-                                            try
-                                            {
-                                                ExternalConnectors.DSS.SecretServerInterface.FetchSecretFromServer(
-                                                    $"{Properties.OptionsCredentialsPage.Default.UserViaAPIDefault}", out username, out password, out _, out privatekey);
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                Event_ErrorOccured(this, "Secret Server Interface Error: " + ex.Message, 0);
-                                            }
-
-                                            break;
-                                        case ExternalCredentialProvider.ClickstudiosPasswordState:
-                                            try
-                                            {
-                                                ExternalConnectors.CPS.PasswordstateInterface.FetchSecretFromServer(
-                                                    $"{Properties.OptionsCredentialsPage.Default.UserViaAPIDefault}", out username, out password, out _, out privatekey);
-                                            }
-                                            catch (Exception ex)
-                                            {
-                                                Event_ErrorOccured(this, "Passwordstate Interface Error: " + ex.Message, 0);
-                                            }
-
-                                            break;
-                                        case ExternalCredentialProvider.OnePassword:
-                                            try
-                                            {
-                                                ExternalConnectors.OP.OnePasswordCli.ReadPassword(
-                                                    $"{Properties.OptionsCredentialsPage.Default.UserViaAPIDefault}", out username, out password, out _, out privatekey);
-                                            }
-                                            catch (ExternalConnectors.OP.OnePasswordCliException ex)
-                                            {
-                                                Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, Language.ECPOnePasswordCommandLine + ": " + ex.Arguments);
-                                                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ECPOnePasswordReadFailed + Environment.NewLine + ex.Message);
-                                            }
-
-                                            break;
-                                        case ExternalCredentialProvider.PasswordSafe:
-                                            try
-                                            {
-                                                ExternalConnectors.PasswordSafe.PasswordSafeCli.ReadPassword(
-                                                    $"{Properties.OptionsCredentialsPage.Default.UserViaAPIDefault}", out username, out password, out _, out privatekey);
-                                            }
-                                            catch (ExternalConnectors.PasswordSafe.PasswordSafeCliException ex)
-                                            {
-                                                Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, Language.ECPPasswordSafeCommandLine + ": " + ex.Arguments);
-                                                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ECPPasswordSafeReadFailed + Environment.NewLine + ex.Message);
-                                            }
-
-                                            break;
-                                    }
-
-                                    break;
-                            }
-                        }
-
-
-                        if (string.IsNullOrEmpty(password) && !string.IsNullOrEmpty(optionalTemporaryPrivateKeyPath))
-                        {
-                            if (string.Equals(Properties.OptionsCredentialsPage.Default.EmptyCredentials, "custom", StringComparison.Ordinal))
-                            {
-                                LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-                                password = cryptographyProvider.Decrypt(Properties.OptionsCredentialsPage.Default.DefaultPassword, Runtime.EncryptionKey);
-                            }
-                        }
 
                         arguments.Add("-" + (int)PuttySSHVersion);
 
+                        PuttyArgsAdapter credentialAdapter = new(GetPuttyVersion(), CreatePasswordPipeArgument);
+
                         if (!Force.HasFlag(ConnectionInfo.Force.NoCredentials))
                         {
-                            if (!string.IsNullOrEmpty(username))
-                            {
-                                // Prepend domain if set and username isn't already domain-qualified
-                                string loginName = !string.IsNullOrEmpty(domain) && !username.Contains('\\') && !username.Contains('@')
-                                    ? domain + @"\" + username
-                                    : username;
-                                arguments.Add("-l", loginName);
-                            }
-
-                                                    if (!string.IsNullOrEmpty(password))
-                                                    {
-                                                        Version puttyVersion = PuttyTypeDetector.GetPuttyVersion(PuttyPath ?? string.Empty);
-                                                        // -pwfile was introduced in PuTTY 0.81
-                                                        if (puttyVersion >= new Version(0, 81))
-                                                        {
-                                                            string random = string.Join("", Guid.NewGuid().ToString("n").Take(8));
-                                                            // write data to pipe
-                                                            Thread thread = new(new ParameterizedThreadStart(CreatePipe));
-                                                            thread.Start($"{random}{password}");
-                                                            // start putty with piped password
-                                                            arguments.Add("-pwfile", $"\\\\.\\PIPE\\mRemoteNGSecretPipe{random}");
-                                                        }
-                                                        else
-                                                        {
-                                                            arguments.Add("-pw", password);
-                                                        }
-                                                        // NOTE: -batch is a plink.exe (command-line) option, NOT a
-                                                        // putty.exe (GUI) option. Passing it to putty.exe causes
-                                                        // "option -batch not available in this tool" error (#49).
-                                                        // Removed: arguments.Add("-batch");
-                                                    }                        }
+                            credentialAdapter.AppendLoginAndPassword(arguments, credential);
+                        }
 
                         if (InterfaceControl.Info?.ExternalCredentialProvider == ExternalCredentialProvider.VaultOpenbao && InterfaceControl.Info?.VaultOpenbaoSecretEngine == VaultOpenbaoSecretEngine.SSHOTP) {
                             if (!_isPuttyNg) {
@@ -900,7 +813,12 @@ namespace mRemoteNG.Connection.Protocol
                             arguments.Add("-auth-plugin");
                             string random = string.Join("", Guid.NewGuid().ToString("n").Take(8));
                             string pipename = $"mRemoteNGSecretPipe{random}";
-                            arguments.Add($"{App.Info.GeneralAppInfo.HomePath}\\vault-ssh-helper-plugin.exe {username} --pipeName={pipename}");
+                            // The plugin is handed the UNQUALIFIED username and matches it against
+                            // its data request, while -l on the same line carries the qualified
+                            // form. Collapsing the two breaks SSH-OTP whenever a domain is set.
+                            string otpUsername = credential.UnqualifiedUsername;
+                            string otpPassword = credential.RevealSecret();
+                            arguments.Add($"{App.Info.GeneralAppInfo.HomePath}\\vault-ssh-helper-plugin.exe {otpUsername} --pipeName={pipename}");
                             System.Threading.Tasks.Task.Run(async () => {
                                 using NamedPipeServerStream server = CreatePipeServer(pipename);
                                 var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token;
@@ -912,33 +830,14 @@ namespace mRemoteNG.Connection.Protocol
                                 await writer.WriteLineAsync("pong");
                                 string dataRequest = await reader.ReadLineAsync(cts) ?? throw new FormatException("Invalid data request from VaultOpenbao SSH OTP plugin");
                                 var data = DeserializeData(dataRequest);
-                                if (data.Username != username || data.Hostname != InterfaceControl.Info.Hostname || data.Port != InterfaceControl.Info.Port)
+                                if (data.Username != otpUsername || data.Hostname != InterfaceControl.Info.Hostname || data.Port != InterfaceControl.Info.Port)
                                     throw new FormatException("Mismatched data request from VaultOpenbao SSH OTP plugin");
-                                await writer.WriteLineAsync(password);
+                                await writer.WriteLineAsync(otpPassword);
                             }).ConfigureAwait(false);
                         }
 
-                        // use private key if specified; otherwise try auto-discovery of default keys
-                        if (!string.IsNullOrEmpty(optionalTemporaryPrivateKeyPath))
-                        {
-                            arguments.Add("-i", optionalTemporaryPrivateKeyPath);
-                        }
-                        else if (!string.IsNullOrEmpty(InterfaceControl.Info?.PrivateKeyPath))
-                        {
-                            arguments.Add("-i", InterfaceControl.Info.PrivateKeyPath);
-                        }
-                        else if (string.IsNullOrEmpty(password))
-                        {
-                            // No explicit key or password configured: auto-discover a default SSH key from ~/.ssh/
-                            string? discoveredKey = FindDefaultSshKey();
-                            if (discoveredKey != null)
-                            {
-                                Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                                    $"No private key configured; auto-discovered SSH key: {discoveredKey}", true);
-                                arguments.Add("-i", discoveredKey);
-                            }
-                        }
-
+                        // Provider-supplied key material wins, then the configured or discovered path.
+                        PuttyArgsAdapter.AppendIdentity(arguments, credential, optionalTemporaryPrivateKeyPath);
                     }
 
                     arguments.Add("-P", InterfaceControl.Info?.Port.ToString(CultureInfo.InvariantCulture) ?? "22");
@@ -957,6 +856,8 @@ namespace mRemoteNG.Connection.Protocol
                 {
                     PuttyProcess.StartInfo.Arguments += " " + InterfaceControl.Info.SSHOptions;
                 }
+
+                LastBuiltArguments = PuttyProcess.StartInfo.Arguments;
 
                 PuttyProcess.EnableRaisingEvents = true;
                 PuttyProcess.Exited += ProcessExited;
@@ -990,6 +891,8 @@ namespace mRemoteNG.Connection.Protocol
             }
             finally
             {
+                credential?.Dispose();
+
                 // Securely wipe then delete the temporary private key file
                 if (!string.IsNullOrEmpty(optionalTemporaryPrivateKeyPath))
                 {

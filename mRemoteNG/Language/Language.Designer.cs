@@ -3736,6 +3736,15 @@ namespace mRemoteNG.Resources.Language {
                 return ResourceManager.GetString("MyCurrentWindowsCreds", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Use SSH agent (OpenSSH agent or PuTTY Pageant) for SSH keys.
+        /// </summary>
+        internal static string UseSshAgent {
+            get {
+                return ResourceManager.GetString("UseSshAgent", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Looks up a localized string similar to Name.

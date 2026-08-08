@@ -943,6 +943,9 @@ Continue connecting anyway? Only do this if you trust this host - an untrusted c
   <data name="MyCurrentWindowsCreds" xml:space="preserve">
     <value>My current credentials (Windows logon information)</value>
   </data>
+  <data name="UseSshAgent" xml:space="preserve">
+    <value>Use SSH agent (OpenSSH agent or PuTTY Pageant) for SSH keys</value>
+  </data>
   <data name="Never" xml:space="preserve">
     <value>Never</value>
   </data>
