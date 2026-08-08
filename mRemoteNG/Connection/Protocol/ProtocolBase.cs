@@ -72,10 +72,23 @@ namespace mRemoteNG.Connection.Protocol
             {
                 _interfaceControl = value;
 
-                if (_interfaceControl.Parent is ConnectionTab ct)
-                    ConnectionTab = ct;
+                // Walk up: the interface control now lives in the tab's session host rather than
+                // directly on the tab, so its Parent is a splitter panel.
+                ConnectionTab? owner = mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl);
+                if (owner != null)
+                    ConnectionTab = owner;
             }
         }
+
+        /// <summary>
+        /// Re-applies the protocol's layout to the current size of its host.
+        /// </summary>
+        /// <remarks>
+        /// Protocols take their resize cue from the tab, but the session area can change size
+        /// without the tab doing so — a side panel opening beside it does exactly that. This lets
+        /// the host say so explicitly.
+        /// </remarks>
+        public void NotifyHostResized() => Resize(this, EventArgs.Empty);
 
         protected Control? Control { get; set; }
 
@@ -186,8 +199,11 @@ namespace mRemoteNG.Connection.Protocol
         {
             try
             {
-                if (_interfaceControl.Parent != null)
-                    _interfaceControl.Parent.Tag = _interfaceControl;
+                // The tag goes on the owning tab, which is what looks it up again when deciding
+                // whether a connection already has a tab open.
+                ConnectionTab? owner = mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl);
+                if (owner != null)
+                    owner.Tag = _interfaceControl;
                 _interfaceControl.Show();
 
                 if (Control == null)
@@ -279,7 +295,7 @@ namespace mRemoteNG.Connection.Protocol
                 {
                     if (_interfaceControl.Parent == null) return;
 
-                    if (_interfaceControl.Parent.Tag != null)
+                    if (mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl)?.Tag != null)
                     {
                         SetTagToNothing();
                     }

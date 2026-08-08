@@ -64,7 +64,42 @@ Ship it on demand, learn what the second connection actually costs, and revisit 
 a setting once that is known. Reversing the default later is easy; un-shipping a feature that prompts
 twice per connection is not.
 
-### D4 — The split lives in `InterfaceControl`, not in each protocol
+### D4 — The split lives *around* `InterfaceControl`, not inside it
+
+**Revised 2026-08-09 after the spike. The original text below was wrong and is kept for the record.**
+
+The split is a `SplitContainer` inside `ConnectionTab`. A session's `InterfaceControl` is parented
+into `Panel1`; a side panel goes in `Panel2`, collapsed until asked for. `InterfaceControl` itself is
+untouched.
+
+This matters because **ten** protocols reparent a native window onto `InterfaceControl.Handle` —
+PuTTY, OpenSSH, PowerShell, WSL, Terminal, AnyDesk, MSRA, VMRC, Winbox and IntegratedProgram — and
+RDP and PuTTY additionally drive their resize logic from `InterfaceControl.Size`. Splitting *inside*
+`InterfaceControl` would have required changing every one of those `SetParent` targets, and would
+have left `InterfaceControl.Size` describing the session area *plus* the panel, quietly breaking the
+resize maths in RDP and PuTTY. Splitting *around* it changes no protocol at all and keeps
+`InterfaceControl.Size` meaning exactly what it always did: the session area.
+
+Two constraints came out of building it:
+
+- **The split must exist before the session does.** Reparenting a managed control destroys and
+  recreates its handle, which would orphan every native window a protocol had already `SetParent`ed
+  onto it. So `ConnectionTab` builds the `SplitContainer` in its constructor and never rebuilds it;
+  showing a panel only un-collapses `Panel2`. Adding a splitter lazily, when the user first opens the
+  panel, is not an option.
+- **Collapsing and expanding does not resize the tab.** Protocols take their resize cue from the
+  tab's `Resize`, and only `Panel1` changes size here, so the session would keep its old dimensions
+  and be clipped by the panel that just appeared. `ProtocolBase.NotifyHostResized` exists for the
+  host to say so explicitly.
+
+Six places assumed `InterfaceControl.Parent` was the tab; they now ask `ConnectionTab.OwnerOf`, which
+walks up. `InterfaceControl.FindInterfaceControl` indexed `tab.Controls[0]`/`[1]` at a fixed depth —
+that fixed depth is what broke, so it now searches the tab's descendants and returns the last match,
+preserving the SSH-tunnel case where a tab holds two.
+
+---
+
+### D4 (original, superseded) — The split lives in `InterfaceControl`, not in each protocol
 
 The panel and the session view need to share the tab. Putting the split in `InterfaceControl` means
 protocols stay unaware of it.

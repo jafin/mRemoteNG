@@ -437,7 +437,8 @@ namespace mRemoteNG.Connection
                     if (dockContent is not ConnectionTab connectionTab) continue;
 
                     if (connectionTab.Tag is InterfaceControl interfaceControl &&
-                        !interfaceControl.IsDisposed && interfaceControl.Parent == connectionTab)
+                        !interfaceControl.IsDisposed &&
+                        ConnectionTab.OwnerOf(interfaceControl) == connectionTab)
                     {
                         if (AreEquivalentConnections(interfaceControl.Info, connectionInfo) ||
                             AreEquivalentConnections(interfaceControl.OriginalInfo, connectionInfo))
@@ -528,7 +529,13 @@ namespace mRemoteNG.Connection
                                                                ProtocolBase newProtocol,
                                                                Control connectionContainer)
         {
-            newProtocol.InterfaceControl = new InterfaceControl(connectionContainer, newProtocol, connectionInfo);
+            // A tab hosts its session inside a split, so the interface control is parented into
+            // the session host rather than onto the tab itself. It must be created there: moving a
+            // managed control between parents recreates its handle, orphaning any native window a
+            // protocol has already reparented onto it.
+            Control host = connectionContainer is ConnectionTab tab ? tab.SessionHost : connectionContainer;
+
+            newProtocol.InterfaceControl = new InterfaceControl(host, newProtocol, connectionInfo);
         }
 
         #endregion

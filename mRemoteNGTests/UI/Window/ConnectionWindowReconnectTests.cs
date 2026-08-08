@@ -252,13 +252,11 @@ namespace mRemoteNGTests.UI.Window
 
         private sealed class TestProtocol : ProtocolBase
         {
-            public override bool Initialize()
-            {
-                if (InterfaceControl.Parent != null)
-                    InterfaceControl.Parent.Tag = InterfaceControl;
-
-                return true;
-            }
+            // Initialize is deliberately not overridden. It used to be, duplicating production's
+            // "InterfaceControl.Parent.Tag = InterfaceControl" idiom — which silently stopped
+            // tagging the tab once a session moved into the tab's session host, because the parent
+            // became the splitter panel. Deferring to the base keeps the double from drifting from
+            // the thing it stands in for.
 
             public override bool Connect()
             {

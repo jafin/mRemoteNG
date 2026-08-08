@@ -111,18 +111,37 @@ namespace mRemoteNG.Connection
 
         public static InterfaceControl? FindInterfaceControl(ConnectionTab tab)
         {
-            if (tab.Controls.Count < 1) return null;
-            // if the tab has more than one controls and the second is an InterfaceControl than it must be a connection through SSH tunnel
-            // and the first Control is the SSH tunnel connection and thus the second control must be returned.
-            if (tab.Controls.Count > 1)
-            {
-                if (tab.Controls[1] is InterfaceControl ic1)
-                    return ic1;
-            }
-            if (tab.Controls[0] is InterfaceControl ic0)
-                return ic0;
+            ArgumentNullException.ThrowIfNull(tab);
 
-            return null;
+            // Searches the whole tab rather than indexing Controls[0]/[1]. A tab hosts its session
+            // inside a split so a side panel can share the space, which puts the interface control
+            // a level deeper than it used to be — and indexing a fixed depth is what made this
+            // break in the first place.
+            return FindLastInterfaceControl(tab);
+        }
+
+        /// <summary>
+        /// The last interface control anywhere beneath <paramref name="parent"/>.
+        /// </summary>
+        /// <remarks>
+        /// Last, not first: a connection made through an SSH tunnel puts two in the same tab, the
+        /// tunnel first and the connection the user is actually working with second. Does not
+        /// descend into an interface control, since whatever a protocol hosts inside one is not
+        /// another session.
+        /// </remarks>
+        private static InterfaceControl? FindLastInterfaceControl(Control parent)
+        {
+            InterfaceControl? found = null;
+
+            foreach (Control child in parent.Controls)
+            {
+                if (child is InterfaceControl interfaceControl)
+                    found = interfaceControl;
+                else
+                    found = FindLastInterfaceControl(child) ?? found;
+            }
+
+            return found;
         }
     }
 }

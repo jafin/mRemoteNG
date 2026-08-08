@@ -42,11 +42,125 @@ namespace mRemoteNG.UI.Tabs
         private Label? _closedStateLabel;
         private Panel? _closedStatePanel;
 
+        private readonly SplitContainer _sessionSplit;
+
         public ConnectionTab()
         {
             InitializeComponent();
+
+            // Created here, before any session exists, and never rebuilt. A protocol reparents its
+            // native window onto InterfaceControl's handle, and moving a managed control between
+            // parents destroys and recreates that handle — which would orphan the native child. So
+            // the session must be born inside its final parent. Collapsed, this is invisible and
+            // Panel1 fills the tab exactly as the tab itself used to.
+            _sessionSplit = new SplitContainer
+            {
+                Dock = DockStyle.Fill,
+                Orientation = Orientation.Vertical,
+                Panel2Collapsed = true,
+                FixedPanel = FixedPanel.Panel2,
+                SplitterWidth = 6
+            };
+
+            Controls.Add(_sessionSplit);
+
             Font = ConnectionTabAppearanceSettings.GetTabFont(Font);
             GotFocus += ConnectionTab_GotFocus;
+        }
+
+        /// <summary>
+        /// The control a session's <c>InterfaceControl</c> is parented into.
+        /// </summary>
+        /// <remarks>
+        /// Not the tab itself any more. Everything that needs "the tab that owns this session"
+        /// should go through <see cref="OwnerOf"/> rather than reading <c>Parent</c>.
+        /// </remarks>
+        public Control SessionHost => _sessionSplit.Panel1;
+
+        /// <summary>Whether a side panel is currently shown beside the session.</summary>
+        public bool IsSidePanelVisible => !_sessionSplit.Panel2Collapsed;
+
+        /// <summary>
+        /// Shows <paramref name="panel"/> beside the session, taking <paramref name="width"/> pixels.
+        /// </summary>
+        public void ShowSidePanel(Control panel, int width)
+        {
+            ArgumentNullException.ThrowIfNull(panel);
+
+            if (!_sessionSplit.Panel2.Contains(panel))
+            {
+                _sessionSplit.Panel2.Controls.Clear();
+                panel.Dock = DockStyle.Fill;
+                _sessionSplit.Panel2.Controls.Add(panel);
+            }
+
+            _sessionSplit.Panel2Collapsed = false;
+            ApplySidePanelWidth(width);
+            NotifySessionOfResize();
+        }
+
+        /// <summary>Hides the side panel, giving the space back to the session.</summary>
+        public void HideSidePanel()
+        {
+            if (_sessionSplit.Panel2Collapsed)
+                return;
+
+            _sessionSplit.Panel2Collapsed = true;
+            NotifySessionOfResize();
+        }
+
+        /// <summary>The width currently given to the side panel, or 0 when it is hidden.</summary>
+        public int SidePanelWidth =>
+            _sessionSplit.Panel2Collapsed ? 0 : _sessionSplit.Width - _sessionSplit.SplitterDistance - _sessionSplit.SplitterWidth;
+
+        private void ApplySidePanelWidth(int width)
+        {
+            int available = _sessionSplit.Width - _sessionSplit.SplitterWidth;
+            if (available <= 0)
+                return;
+
+            // SplitterDistance throws if it falls outside the panels' minimum sizes, and the tab can
+            // be narrower than the requested panel width.
+            int distance = available - Math.Max(width, _sessionSplit.Panel2MinSize);
+            distance = Math.Clamp(distance, _sessionSplit.Panel1MinSize, available - _sessionSplit.Panel2MinSize);
+
+            if (distance >= _sessionSplit.Panel1MinSize && distance <= available - _sessionSplit.Panel2MinSize)
+                _sessionSplit.SplitterDistance = distance;
+        }
+
+        /// <summary>
+        /// Tells the hosted protocol its area changed.
+        /// </summary>
+        /// <remarks>
+        /// Protocols listen to the <i>tab's</i> resize, and collapsing or expanding the split does
+        /// not resize the tab — only <see cref="SessionHost"/>. Without this the session's native
+        /// window keeps its old size and is clipped by the panel that just appeared.
+        /// </remarks>
+        private void NotifySessionOfResize()
+        {
+            foreach (Control child in _sessionSplit.Panel1.Controls)
+            {
+                if (child is InterfaceControl { IsDisposed: false } interfaceControl)
+                    interfaceControl.Protocol?.NotifyHostResized();
+            }
+        }
+
+        /// <summary>
+        /// Walks up from <paramref name="control"/> to the tab that owns it.
+        /// </summary>
+        /// <remarks>
+        /// A session's <c>InterfaceControl</c> is no longer a direct child of the tab, so
+        /// <c>Parent is ConnectionTab</c> no longer answers this question.
+        /// </remarks>
+        public static ConnectionTab? OwnerOf(Control? control)
+        {
+            for (Control? candidate = control; candidate is not null; candidate = candidate.Parent)
+            {
+                if (candidate is ConnectionTab tab)
+                    return tab;
+            }
+
+            return null;
         }
 
         private void ConnectionTab_GotFocus(object sender, EventArgs e)

@@ -2,7 +2,7 @@
 
 ## 1. Spikes
 
-- [ ] 1.1 **Hosting the split.** `PuttyBase` and `ProtocolOpenSSH` reparent a native window onto `InterfaceControl.Handle`. Prove a session window can be reparented into a child panel of a split without reintroducing window-chrome or focus artifacts, for PuTTY SSH2 and for `ProtocolOpenSSH`. If it proves messy, record the fallback (a dockable window bound to the active connection) and take it. Gates section 4.
+- [x] 1.1 **Hosting the split.** `PuttyBase` and `ProtocolOpenSSH` reparent a native window onto `InterfaceControl.Handle`. Prove a session window can be reparented into a child panel of a split without reintroducing window-chrome or focus artifacts, for PuTTY SSH2 and for `ProtocolOpenSSH`. If it proves messy, record the fallback (a dockable window bound to the active connection) and take it. Gates section 4. **Done 2026-08-09 — cleared, and it corrected the design.** No native window is reparented at all: the split goes *around* `InterfaceControl` (a `SplitContainer` in `ConnectionTab`, session in `Panel1`) rather than inside it, so all ten protocols that `SetParent` onto `InterfaceControl.Handle` are untouched and `InterfaceControl.Size` still means the session area. See design.md D4, revised. Full suite 7024/7024.
 - [ ] 1.2 Confirm what a second connection costs in practice: connect a session and a panel with an agent, with a stored password, and with a provider-supplied credential. Record how many prompts each produces.
 
 ## 2. SFTP session
