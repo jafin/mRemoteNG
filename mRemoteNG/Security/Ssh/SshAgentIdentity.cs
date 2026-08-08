@@ -24,5 +24,32 @@ namespace mRemoteNG.Security.Ssh
         /// </summary>
         public bool IsHardwareBacked =>
             Algorithm.StartsWith("sk-", StringComparison.Ordinal);
+
+        /// <summary>
+        /// The agent library's object for this identity, carried opaquely so the SSH.NET adapter
+        /// can authenticate with the exact identity that was enumerated.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Weakly typed on purpose. The alternative — declaring this as
+        /// <c>Renci.SshNet.IPrivateKeySource</c> — would put an SSH.NET type on the record that the
+        /// PuTTY and OpenSSH adapters also consume, which is exactly the coupling this model exists
+        /// to avoid. Only <c>SshNetAuthAdapter</c> unboxes it; every other consumer treats an
+        /// identity as the descriptive <see cref="Comment"/>/<see cref="Algorithm"/> pair it
+        /// appears to be.
+        /// </para>
+        /// <para>
+        /// The alternative to carrying it at all is re-querying the agent when the SSH.NET
+        /// authentication methods are built. That costs a second round trip per connection and,
+        /// worse, lets the identities we reported diverge from the ones we actually offer if a key
+        /// is added or removed in between.
+        /// </para>
+        /// <para>
+        /// It participates in record equality, so two identities describing the same key from
+        /// different agent sessions are not equal. Nothing relies on cross-session equality; the
+        /// provider de-duplicates on algorithm and comment rather than on the whole record.
+        /// </para>
+        /// </remarks>
+        internal object? KeyHandle { get; init; }
     }
 }
