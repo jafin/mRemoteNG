@@ -108,8 +108,14 @@ namespace mRemoteNG.UI.Window
             _remote.TransferRequested += (_, entries) => QueueTransfer(entries, TransferDirection.Download);
             _remote.ExternalFilesDropped += OnFilesDroppedOnRemote;
             _local.ExternalFilesDropped += OnFilesDroppedOnLocal;
+            _local.DeleteRequested += (_, entries) => QueueDeletion(_local, entries, TransferDirection.Upload);
+            _remote.DeleteRequested += (_, entries) => QueueDeletion(_remote, entries, TransferDirection.Download);
             _remote.FileActivated += OnRemoteFileActivated;
             _queue.AllCancelled += OnQueueCancelled;
+
+            // Deleting a thousand files would otherwise re-list a thousand times. Both panes, because a
+            // drained queue may have held work for either.
+            _queue.Drained += OnQueueDrained;
             Activated += OnTabActivated;
             FormClosing += OnTabClosing;
             _session.Dropped += OnSessionDropped;
@@ -380,6 +386,61 @@ namespace mRemoteNG.UI.Window
             }
         }
 
+        /// <summary>
+        /// Queues a confirmed deletion, deepest entries first.
+        /// </summary>
+        /// <remarks>
+        /// Through the queue rather than a loop here, which is what makes deleting a tree acceptable:
+        /// every entry is a row the user can see, the work runs one at a time, and "Cancel all" stops
+        /// the rest. The confirmation has already been given by the pane's command.
+        /// </remarks>
+        private void QueueDeletion(FilePaneControl pane,
+                                   IReadOnlyList<FileSystemEntry> entries,
+                                   TransferDirection side)
+        {
+            ArgumentNullException.ThrowIfNull(entries);
+
+            if (entries.Count == 0)
+                return;
+
+            DirectoryDeletionPlanner planner = new(pane.Controller.Browser);
+            planner.Skipped += OnExpansionSkipped;
+
+            _ = PlanAndQueueDeletionAsync(planner, pane, [.. entries], side, _expansion.Token);
+        }
+
+        private async Task PlanAndQueueDeletionAsync(DirectoryDeletionPlanner planner,
+                                                     FilePaneControl pane,
+                                                     IReadOnlyList<FileSystemEntry> entries,
+                                                     TransferDirection side,
+                                                     CancellationToken cancellationToken)
+        {
+            try
+            {
+                foreach (FileSystemEntry entry in entries)
+                {
+                    await foreach (FileSystemEntry doomed in
+                                   planner.PlanAsync(entry, cancellationToken).ConfigureAwait(false))
+                    {
+                        _queue.Enqueue(TransferItem.Deletion(side, doomed));
+                    }
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // The queue was cancelled or the tab closed. Both are the user's doing.
+            }
+            catch (Exception ex)
+            {
+                Report($"Could not plan the deletion: {ex.Message}", MessageClass.WarningMsg);
+            }
+            finally
+            {
+                planner.Skipped -= OnExpansionSkipped;
+                await RefreshAsync(pane).ConfigureAwait(false);
+            }
+        }
+
         private void OnExpansionSkipped(object? sender, string message) =>
             Report(message, MessageClass.InformationMsg);
 
@@ -390,6 +451,12 @@ namespace mRemoteNG.UI.Window
         /// Without this, "Cancel all" would empty the queue and then watch an expansion still in
         /// progress fill it straight back up.
         /// </remarks>
+        private void OnQueueDrained(object? sender, EventArgs e)
+        {
+            _ = RefreshAsync(_local);
+            _ = RefreshAsync(_remote);
+        }
+
         private void OnQueueCancelled(object? sender, EventArgs e)
         {
             CancellationTokenSource previous = Interlocked.Exchange(ref _expansion, new CancellationTokenSource());
@@ -489,6 +556,12 @@ namespace mRemoteNG.UI.Window
         /// </remarks>
         private async Task RunTransferAsync(TransferItem item, IProgress<long> progress, CancellationToken cancellationToken)
         {
+            if (item.Kind == TransferOperationKind.Delete)
+            {
+                await RunDeletionAsync(item, cancellationToken).ConfigureAwait(false);
+                return;
+            }
+
             IFileSystemBrowser source = item.Direction == TransferDirection.Upload
                 ? _local.Controller.Browser
                 : _remote.Controller.Browser;
@@ -505,6 +578,30 @@ namespace mRemoteNG.UI.Window
             }
 
             await RefreshAsync(item.Direction == TransferDirection.Upload ? _remote : _local).ConfigureAwait(false);
+        }
+
+        /// <summary>
+        /// Removes one queued entry.
+        /// </summary>
+        /// <remarks>
+        /// <para>
+        /// Calls the browser's single-entry delete, which still refuses a non-empty directory. That
+        /// refusal is the backstop the planner's ordering is checked against: if children were somehow
+        /// queued after their parent, the parent fails loudly here rather than taking the tree with it.
+        /// </para>
+        /// <para>
+        /// The pane is not refreshed per entry — deleting a thousand files would otherwise re-list a
+        /// thousand times. It is refreshed when the queue drains.
+        /// </para>
+        /// </remarks>
+        private async Task RunDeletionAsync(TransferItem item, CancellationToken cancellationToken)
+        {
+            if (item.DeleteTarget is not { } entry)
+                throw new InvalidOperationException("A deletion item carries no entry to delete.");
+
+            FilePaneControl pane = item.Direction == TransferDirection.Upload ? _local : _remote;
+
+            await pane.Controller.Browser.DeleteAsync(entry, cancellationToken).ConfigureAwait(false);
         }
 
         private Task RefreshAsync(FilePaneControl pane)
@@ -564,6 +661,7 @@ namespace mRemoteNG.UI.Window
                 ThemeManager.getInstance().ThemeChanged -= ApplyTheme;
                 _session.Dropped -= OnSessionDropped;
                 _queue.AllCancelled -= OnQueueCancelled;
+                _queue.Drained -= OnQueueDrained;
 
                 // Before the queue and session go: a walk still running would otherwise keep calling
                 // into a disposed session.

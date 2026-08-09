@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Linq;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
 using System.Windows.Forms;
@@ -24,6 +25,17 @@ namespace mRemoteNG.UI.Controls.FileTransfer
 
         /// <summary>Asks whether to delete <paramref name="count"/> entries.</summary>
         bool ConfirmDelete(int count);
+
+        /// <summary>
+        /// Asks whether to delete a selection that includes directories, contents and all.
+        /// </summary>
+        /// <remarks>
+        /// A question of its own rather than <see cref="ConfirmDelete"/>, whose message counts the
+        /// selected items and would read as though only those were going. This one has to say that
+        /// everything underneath goes too, because it does, and because the count cannot be known
+        /// without first walking a tree that may take minutes to read.
+        /// </remarks>
+        bool ConfirmRecursiveDelete(string what);
     }
 
     /// <inheritdoc />
@@ -40,6 +52,15 @@ namespace mRemoteNG.UI.Controls.FileTransfer
         public bool ConfirmDelete(int count)
         {
             string message = string.Format(CultureInfo.CurrentCulture, Language.ConfirmDeleteEntries, count);
+
+            return MessageBox.Show(owner, message, Language.Delete,
+                                   MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
+                                   MessageBoxDefaultButton.Button2) == DialogResult.Yes;
+        }
+
+        public bool ConfirmRecursiveDelete(string what)
+        {
+            string message = string.Format(CultureInfo.CurrentCulture, Language.ConfirmDeleteRecursive, what);
 
             return MessageBox.Show(owner, message, Language.Delete,
                                    MessageBoxButtons.YesNo, MessageBoxIcon.Warning,
@@ -90,17 +111,43 @@ namespace mRemoteNG.UI.Controls.FileTransfer
         }
 
         /// <summary>
-        /// Deletes the given entries after one confirmation for the whole set.
+        /// Confirms a deletion and decides how it should be carried out.
         /// </summary>
         /// <remarks>
+        /// <para>
         /// One prompt, not one per entry: confirming twenty times is a prompt people learn to click
         /// through, which is worse than not asking.
+        /// </para>
+        /// <para>
+        /// A selection containing a directory is not deleted here. It is handed back to the caller to
+        /// queue, so the user can watch it and stop it — which is the thing that makes deleting a tree
+        /// acceptable rather than reckless. Files alone keep the immediate path they have always had:
+        /// there is nothing to watch, and a queue would be ceremony.
+        /// </para>
         /// </remarks>
+        /// <returns>
+        /// How many entries were deleted immediately. Zero when the user declined, and zero when the
+        /// work was raised through <see cref="RecursiveDeleteRequested"/> instead.
+        /// </returns>
         public async Task<int> DeleteAsync(IReadOnlyList<FileSystemEntry> entries)
         {
             ArgumentNullException.ThrowIfNull(entries);
 
-            if (entries.Count == 0 || !_prompts.ConfirmDelete(entries.Count))
+            if (entries.Count == 0)
+                return 0;
+
+            bool containsDirectory = entries.Any(entry => entry.IsDirectory && !entry.IsSymbolicLink);
+
+            if (containsDirectory)
+            {
+                if (!_prompts.ConfirmRecursiveDelete(Describe(entries)))
+                    return 0;
+
+                RecursiveDeleteRequested?.Invoke(this, entries);
+                return 0;
+            }
+
+            if (!_prompts.ConfirmDelete(entries.Count))
                 return 0;
 
             int deleted = 0;
@@ -115,5 +162,16 @@ namespace mRemoteNG.UI.Controls.FileTransfer
 
             return deleted;
         }
+
+        /// <summary>
+        /// Raised when a confirmed deletion covers directories and must be queued rather than run here.
+        /// </summary>
+        public event EventHandler<IReadOnlyList<FileSystemEntry>>? RecursiveDeleteRequested;
+
+        /// <summary>Names the selection for the confirmation: one entry by name, several by count.</summary>
+        private static string Describe(IReadOnlyList<FileSystemEntry> entries) =>
+            entries.Count == 1
+                ? entries[0].Name
+                : string.Format(CultureInfo.CurrentCulture, "{0} selected items", entries.Count);
     }
 }

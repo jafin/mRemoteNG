@@ -104,7 +104,7 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             OLVColumn direction = new("", nameof(TransferItem.Direction))
             {
                 Width = 30,
-                AspectGetter = o => ((TransferItem)o).Direction == TransferDirection.Upload ? "↑" : "↓"
+                AspectGetter = o => Glyph((TransferItem)o)
             };
 
             OLVColumn source = new("Source", nameof(TransferItem.SourcePath))
@@ -116,6 +116,7 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             OLVColumn destination = new("Destination", nameof(TransferItem.DestinationPath))
             {
                 Width = 260,
+                // Blank for a deletion: there is nowhere the entry is going.
                 AspectGetter = o => ((TransferItem)o).DestinationPath
             };
 
@@ -146,6 +147,19 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             _list.AllColumns.AddRange(columns);
             _list.Columns.AddRange(columns);
             _list.RebuildColumns();
+        }
+
+        /// <summary>
+        /// The one-character mark in the leading column: which way a transfer is going, or that the
+        /// item removes something rather than moving it.
+        /// </summary>
+        internal static string Glyph(TransferItem item)
+        {
+            ArgumentNullException.ThrowIfNull(item);
+
+            return item.Kind == TransferOperationKind.Delete ? "✕"
+                 : item.Direction == TransferDirection.Upload ? "↑"
+                 : "↓";
         }
 
         private static string Describe(TransferItem item) =>

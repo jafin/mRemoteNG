@@ -48,6 +48,104 @@ namespace mRemoteNGTests.FileTransfer
         private static FileSystemEntry Entry(string name = "notes.txt") =>
             new(name, "/home/" + name, false, 10, DateTime.Now, "-rw-r--r--", false);
 
+        private static FileSystemEntry Directory(string name = "reports") =>
+            new(name, "/home/" + name, true, 0, DateTime.Now, "drwxr-xr-x", false);
+
+        // ---- deleting a directory ----------------------------------------------------
+
+        /// <summary>
+        /// A directory is not deleted here. It is raised for the tab to queue, so the user can watch it
+        /// and stop it — which is what makes deleting a tree acceptable rather than reckless.
+        /// </summary>
+        [Test]
+        public async Task ConfirmingADirectoryRaisesItForQueueingRatherThanDeletingItHere()
+        {
+            _prompts.ConfirmRecursiveDeleteResult = true;
+            IReadOnlyList<FileSystemEntry>? raised = null;
+            _commands.RecursiveDeleteRequested += (_, entries) => raised = entries;
+
+            int deleted = await _commands.DeleteAsync([Directory()]);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(deleted, Is.Zero, "nothing is deleted inline");
+                Assert.That(raised, Is.Not.Null);
+                Assert.That(raised!.Single().Name, Is.EqualTo("reports"));
+                Assert.That(_browser.Deleted, Is.Empty);
+            });
+        }
+
+        [Test]
+        public async Task DecliningADirectoryDeletionQueuesNothingAndDeletesNothing()
+        {
+            _prompts.ConfirmRecursiveDeleteResult = false;
+            bool raised = false;
+            _commands.RecursiveDeleteRequested += (_, _) => raised = true;
+
+            int deleted = await _commands.DeleteAsync([Directory()]);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(deleted, Is.Zero);
+                Assert.That(raised, Is.False);
+                Assert.That(_browser.Deleted, Is.Empty);
+            });
+        }
+
+        /// <summary>
+        /// The count-based question would read as though only the selected rows were going, when in
+        /// fact everything beneath them is.
+        /// </summary>
+        [Test]
+        public async Task ADirectoryAsksTheRecursiveQuestionNotTheCountOne()
+        {
+            _prompts.ConfirmRecursiveDeleteResult = true;
+
+            await _commands.DeleteAsync([Directory()]);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_prompts.ConfirmRecursiveDeleteCalls, Is.EqualTo(1));
+                Assert.That(_prompts.ConfirmDeleteCalls, Is.Zero);
+                Assert.That(_prompts.LastRecursiveDeleteTarget, Is.EqualTo("reports"));
+            });
+        }
+
+        [Test]
+        public async Task AMixedSelectionAsksTheRecursiveQuestionOnce()
+        {
+            _prompts.ConfirmRecursiveDeleteResult = true;
+
+            await _commands.DeleteAsync([Entry("a"), Directory("folder"), Entry("b")]);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(_prompts.ConfirmRecursiveDeleteCalls, Is.EqualTo(1));
+                Assert.That(_prompts.LastRecursiveDeleteTarget, Does.Contain("3"));
+            });
+        }
+
+        /// <summary>
+        /// A file-only selection keeps the immediate path: there is nothing to watch, and a queue would
+        /// be ceremony.
+        /// </summary>
+        [Test]
+        public async Task FilesAloneAreStillDeletedImmediately()
+        {
+            _prompts.ConfirmDeleteResult = true;
+            bool raised = false;
+            _commands.RecursiveDeleteRequested += (_, _) => raised = true;
+
+            int deleted = await _commands.DeleteAsync([Entry("a"), Entry("b")]);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(deleted, Is.EqualTo(2));
+                Assert.That(raised, Is.False);
+                Assert.That(_prompts.ConfirmRecursiveDeleteCalls, Is.Zero);
+            });
+        }
+
         // ---- delete ------------------------------------------------------------------
 
         [Test]
@@ -278,6 +376,19 @@ namespace mRemoteNGTests.FileTransfer
                 ConfirmDeleteCalls++;
                 LastConfirmDeleteCount = count;
                 return ConfirmDeleteResult;
+            }
+
+            public bool ConfirmRecursiveDeleteResult { get; set; }
+
+            public int ConfirmRecursiveDeleteCalls { get; private set; }
+
+            public string? LastRecursiveDeleteTarget { get; private set; }
+
+            public bool ConfirmRecursiveDelete(string what)
+            {
+                ConfirmRecursiveDeleteCalls++;
+                LastRecursiveDeleteTarget = what;
+                return ConfirmRecursiveDeleteResult;
             }
         }
 

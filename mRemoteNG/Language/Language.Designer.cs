@@ -3666,6 +3666,15 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string similar to Delete {0}, including everything inside it?.
+        /// </summary>
+        internal static string ConfirmDeleteRecursive {
+            get {
+                return ResourceManager.GetString("ConfirmDeleteRecursive", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Type.
         /// </summary>
         internal static string EntryKindColumn {

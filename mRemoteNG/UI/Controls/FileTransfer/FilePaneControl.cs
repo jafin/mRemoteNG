@@ -68,6 +68,7 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             Caption = caption;
             TransferCaption = transferCaption;
             _commands = new FilePaneCommands(controller, prompts);
+            _commands.RecursiveDeleteRequested += (_, entries) => DeleteRequested?.Invoke(this, entries);
             _connection = connection;
 
             if (connection is not null)
@@ -109,6 +110,15 @@ namespace mRemoteNG.UI.Controls.FileTransfer
 
         /// <summary>Raised when an operation fails, so the tab can surface it.</summary>
         public event EventHandler<string>? Failed;
+
+        /// <summary>
+        /// Raised when a confirmed deletion covers directories and must be queued.
+        /// </summary>
+        /// <remarks>
+        /// The pane does not own the queue, so it cannot do this itself. Deleting a tree needs to be
+        /// watchable and stoppable, and the queue is what provides both.
+        /// </remarks>
+        public event EventHandler<IReadOnlyList<FileSystemEntry>>? DeleteRequested;
 
         /// <summary>
         /// The selected entries, never including the <c>..</c> row.

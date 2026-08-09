@@ -366,6 +366,9 @@
   <data name="EnterFileName" xml:space="preserve">
     <value>Enter a name for the new file:</value>
   </data>
+  <data name="ConfirmDeleteRecursive" xml:space="preserve">
+    <value>Delete {0}, including everything inside it? This cannot be undone. The deletions are queued, so you can cancel the rest while it runs — but anything already deleted is gone.</value>
+  </data>
   <data name="EntryKindColumn" xml:space="preserve">
     <value>Type</value>
   </data>

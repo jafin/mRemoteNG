@@ -9,6 +9,18 @@ namespace mRemoteNG.FileTransfer
         Download = 1
     }
 
+    /// <summary>What a queued item does.</summary>
+    /// <remarks>
+    /// Separate from <see cref="TransferDirection"/> rather than a third member of it. A deletion has no
+    /// direction, and overloading the field that drives the queue's ↑/↓ glyph would make the display
+    /// claim something untrue about every deletion.
+    /// </remarks>
+    public enum TransferOperationKind
+    {
+        Transfer = 0,
+        Delete = 1
+    }
+
     public enum TransferStatus
     {
         Queued = 0,
@@ -30,7 +42,11 @@ namespace mRemoteNG.FileTransfer
     {
         private long _transferred;
 
-        public TransferItem(TransferDirection direction, string sourcePath, string destinationPath, long size)
+        public TransferItem(TransferDirection direction,
+                            string sourcePath,
+                            string destinationPath,
+                            long size,
+                            TransferOperationKind kind = TransferOperationKind.Transfer)
         {
             ArgumentNullException.ThrowIfNull(sourcePath);
             ArgumentNullException.ThrowIfNull(destinationPath);
@@ -39,9 +55,38 @@ namespace mRemoteNG.FileTransfer
             SourcePath = sourcePath;
             DestinationPath = destinationPath;
             Size = size;
+            Kind = kind;
         }
 
+        /// <summary>
+        /// A deletion of <paramref name="entry"/> on the given side.
+        /// </summary>
+        /// <remarks>
+        /// Keeps the entry rather than just its path. What has to be deleted — a file, a directory, a
+        /// link — is carried on the entry, and rebuilding it from a path and a size gets both wrong: an
+        /// empty file is indistinguishable from a directory by size, and a reconstructed entry loses
+        /// <c>IsSymbolicLink</c>, which is exactly what stops a link to a directory being deleted as
+        /// one. <paramref name="direction"/> only says which pane owns it.
+        /// </remarks>
+        public static TransferItem Deletion(TransferDirection direction, FileSystemEntry entry)
+        {
+            ArgumentNullException.ThrowIfNull(entry);
+
+            return new TransferItem(direction, entry.FullPath, string.Empty,
+                                    entry.IsDirectory ? 0 : entry.Length,
+                                    TransferOperationKind.Delete)
+            {
+                DeleteTarget = entry
+            };
+        }
+
+        /// <summary>What this item deletes. Non-null exactly when <see cref="Kind"/> is a deletion.</summary>
+        public FileSystemEntry? DeleteTarget { get; private init; }
+
         public TransferDirection Direction { get; }
+
+        /// <summary>Whether this item moves something or removes it.</summary>
+        public TransferOperationKind Kind { get; }
 
         public string SourcePath { get; }
 
@@ -67,6 +112,8 @@ namespace mRemoteNG.FileTransfer
         internal void SetTransferred(long value) => Interlocked.Exchange(ref _transferred, value);
 
         public override string ToString() =>
-            $"{Direction} {SourcePath} -> {DestinationPath} ({Status})";
+            Kind == TransferOperationKind.Delete
+                ? $"Delete {SourcePath} ({Status})"
+                : $"{Direction} {SourcePath} -> {DestinationPath} ({Status})";
     }
 }
