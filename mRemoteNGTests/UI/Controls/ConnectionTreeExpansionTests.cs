@@ -193,8 +193,9 @@ namespace mRemoteNGTests.UI.Controls
                 model.AddRootNode(root);
                 tree.ConnectionTreeModel = model;
 
+                // The single connection root is promoted (hidden); folder1/folder2 are the visible
+                // top-level nodes, so pre-filter expansion state is tracked on them.
                 tree.CollapseAll();
-                tree.Expand(root);
                 tree.Expand(folder1);
                 Application.DoEvents();
 
@@ -207,7 +208,6 @@ namespace mRemoteNGTests.UI.Controls
 
                 Assert.Multiple(() =>
                 {
-                    Assert.That(tree.IsExpanded(root), Is.True, "Root was expanded before filtering");
                     Assert.That(tree.IsExpanded(folder1), Is.True, "Folder1 was expanded before filtering");
                     Assert.That(tree.IsExpanded(folder2), Is.False, "Folder2 was collapsed before filtering");
                 });

@@ -1,6 +1,8 @@
 using System;
 using System.Threading;
 using System.Windows.Forms;
+using mRemoteNG.Connection;
+using mRemoteNG.Container;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
 using mRemoteNG.UI.Controls.ConnectionTree;
@@ -61,13 +63,17 @@ namespace mRemoteNGTests.UI.Controls
         {
             var model = new ConnectionTreeModel();
             var initialRoot = new RootNodeInfo(RootNodeType.Connection) { Name = "Initial Root" };
+            var child = new ConnectionInfo { Name = "Child" };
+            initialRoot.AddChild(child);
             model.AddRootNode(initialRoot);
 
             tree.ConnectionTreeModel = model;
             Application.DoEvents();
 
-            // Verify initial state
-            Assert.That(tree.Objects, Does.Contain(initialRoot));
+            // A single connection root is promoted to the pane heading: the root node itself is
+            // hidden and its children are shown at the top level.
+            Assert.That(tree.Roots, Does.Contain(child));
+            Assert.That(tree.Roots, Does.Not.Contain(initialRoot));
 
             // Add new root node
             var newRoot = new RootNodeInfo(RootNodeType.Connection) { Name = "New Root" };
@@ -77,6 +83,11 @@ namespace mRemoteNGTests.UI.Controls
             // Verify new root node is added to the tree
             // We check Roots because these are top level objects
             Assert.That(tree.Roots, Does.Contain(newRoot));
+
+            // A second connection root ends the promotion: both roots show, and the first root's
+            // child drops back under it instead of sitting at the top level.
+            Assert.That(tree.Roots, Does.Contain(initialRoot));
+            Assert.That(tree.Roots, Does.Not.Contain(child));
         });
 
         [Test]
@@ -85,15 +96,18 @@ namespace mRemoteNGTests.UI.Controls
             var model = new ConnectionTreeModel();
             var root1 = new RootNodeInfo(RootNodeType.Connection) { Name = "Root 1" };
             var root2 = new RootNodeInfo(RootNodeType.Connection) { Name = "Root 2" };
+            var child = new ConnectionInfo { Name = "Child" };
+            root2.AddChild(child);
             model.AddRootNode(root1);
             model.AddRootNode(root2);
 
             tree.ConnectionTreeModel = model;
             Application.DoEvents();
 
-            // Verify initial state
+            // Two connection roots: neither is promoted, so both show and the child stays nested.
             Assert.That(tree.Roots, Does.Contain(root1));
             Assert.That(tree.Roots, Does.Contain(root2));
+            Assert.That(tree.Roots, Does.Not.Contain(child));
 
             // Remove root node
             model.RemoveRootNode(root1);
@@ -101,7 +115,11 @@ namespace mRemoteNGTests.UI.Controls
 
             // Verify root node is removed from the tree
             Assert.That(tree.Roots, Does.Not.Contain(root1));
-            Assert.That(tree.Roots, Does.Contain(root2));
+
+            // Down to a single connection root, which is now promoted: it is hidden and its
+            // children take the top level.
+            Assert.That(tree.Roots, Does.Not.Contain(root2));
+            Assert.That(tree.Roots, Does.Contain(child));
         });
     }
 }
