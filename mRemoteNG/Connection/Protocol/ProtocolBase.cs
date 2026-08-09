@@ -72,23 +72,11 @@ namespace mRemoteNG.Connection.Protocol
             {
                 _interfaceControl = value;
 
-                // Walk up: the interface control now lives in the tab's session host rather than
-                // directly on the tab, so its Parent is a splitter panel.
                 ConnectionTab? owner = mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl);
                 if (owner != null)
                     ConnectionTab = owner;
             }
         }
-
-        /// <summary>
-        /// Re-applies the protocol's layout to the current size of its host.
-        /// </summary>
-        /// <remarks>
-        /// Protocols take their resize cue from the tab, but the session area can change size
-        /// without the tab doing so — a side panel opening beside it does exactly that. This lets
-        /// the host say so explicitly.
-        /// </remarks>
-        public void NotifyHostResized() => Resize(this, EventArgs.Empty);
 
         protected Control? Control { get; set; }
 
