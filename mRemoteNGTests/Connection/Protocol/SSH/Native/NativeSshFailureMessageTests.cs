@@ -28,6 +28,7 @@ public class NativeSshFailureMessageTests
         public IReadOnlyList<string> OfferedMethods { get; init; } = [];
         public string? OfferedKeyPath { get; init; }
         public string OfferedUsername { get; init; } = "someone";
+        public string Endpoint { get; init; } = "host.invalid:22";
         public IReadOnlyList<string> UnansweredPrompts { get; init; } = [];
 
         public bool IsConnected => false;
@@ -66,7 +67,8 @@ public class NativeSshFailureMessageTests
         {
             OfferedMethods = ["publickey", "keyboard-interactive"],
             OfferedKeyPath = @"C:\keys\id_ed25519",
-            OfferedUsername = "alice"
+            OfferedUsername = "alice",
+            Endpoint = "10.0.0.5:2222"
         };
 
         string message = ProtocolNativeSsh.DescribeFailure(Denied, session);
@@ -79,6 +81,9 @@ public class NativeSshFailureMessageTests
             Assert.That(message, Does.Contain("alice"),
                 "a correct key sent as the wrong user fails exactly like a wrong key, so the "
                 + "username has to be in the message");
+            Assert.That(message, Does.Contain("10.0.0.5:2222"),
+                "the port is reported nowhere else, and a correct key sent to the wrong port "
+                + "fails identically to a wrong key");
         });
     }
 

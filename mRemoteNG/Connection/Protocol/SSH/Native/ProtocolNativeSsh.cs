@@ -323,14 +323,17 @@ public class ProtocolNativeSsh : ProtocolBase
         {
             string keyPath = session?.OfferedKeyPath ?? string.Empty;
             string user = session?.OfferedUsername ?? string.Empty;
+            string endpoint = session?.Endpoint ?? string.Empty;
 
             // The username is named because it is the likeliest thing to be wrong and the hardest
             // to notice: it can be inherited from a folder or supplied by a credential provider,
             // so it is not necessarily what was typed into this connection. A correct key sent as
             // the wrong user fails exactly like a wrong key sent as the right one.
+            // The endpoint is named because the port is the one field nothing else reports, and a
+            // correct key sent to the wrong port fails identically to a wrong key.
             parts.Add(string.IsNullOrEmpty(keyPath)
-                ? string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefusedNoPath, user)
-                : string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefused, keyPath, user));
+                ? string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefusedNoPath, user, endpoint)
+                : string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefused, keyPath, user, endpoint));
         }
 
         return string.Join(" ", parts);

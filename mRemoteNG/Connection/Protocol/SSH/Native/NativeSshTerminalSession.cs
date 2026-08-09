@@ -112,6 +112,9 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
     /// <summary>The key file offered, if authentication used one. Not a secret; a path.</summary>
     public string? OfferedKeyPath => _credential.PrivateKeyPath;
 
+    /// <summary>The endpoint actually dialled. The port is not shown anywhere else.</summary>
+    public string Endpoint => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{_host}:{_port}");
+
     /// <summary>
     /// The username authentication was attempted as — which is not always the one typed into the
     /// connection, since it can be inherited or supplied by a credential provider.

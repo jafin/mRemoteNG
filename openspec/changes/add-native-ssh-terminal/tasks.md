@@ -56,5 +56,5 @@
 - [ ] 8.2 Full test suite; zero failures, no `[Ignore]`.
 - [ ] 8.3 Zero new analyzer warnings.
 - [ ] 8.4 `openspec validate add-native-ssh-terminal --strict`.
-- [ ] 8.5 Manual: connect with password, with a key, and with an agent identity; resize during a full-screen editor; UTF-8 and CJK output; large-output throughput; an SSH2 connection in a tab beside it, unchanged.
+- [ ] 8.5 Manual: connect with password, with a key, and with an agent identity; resize during a full-screen editor; UTF-8 and CJK output; large-output throughput; an SSH2 connection in a tab beside it, unchanged. — **key auth confirmed working in the app (2026-08-10)**, which is the first time the whole chain ran together: WebView2 host, page bridge, transport, host key prompt and settings. Remaining: password, agent identity, resize during a full-screen editor, UTF-8/CJK, throughput, and an SSH2 tab beside it.
 - [ ] 8.6 Record honestly what PuTTY still does better, so the default stays with PuTTY until that list is short.

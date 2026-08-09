@@ -40,6 +40,9 @@ public interface INativeSshTerminalSession : IDisposable
     /// <summary>The username authentication was attempted as.</summary>
     string OfferedUsername { get; }
 
+    /// <summary>The endpoint actually dialled, as host:port.</summary>
+    string Endpoint { get; }
+
     /// <summary>Keyboard-interactive prompts nothing could answer — typically a second factor.</summary>
     IReadOnlyList<string> UnansweredPrompts { get; }
 
