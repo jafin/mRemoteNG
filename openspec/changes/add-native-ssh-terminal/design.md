@@ -273,3 +273,52 @@ HTTP users as an unexplained "set properties failed". Fixing that belongs to its
   follow-up and does not disturb this.
 - Should the native terminal eventually replace SSH2, and if so, how do existing connections migrate?
 - Can the keyboard-interactive prompt gap be closed here, given a terminal has somewhere to prompt?
+
+## What PuTTY still does better (task 8.6)
+
+Written so the default stays with PuTTY until this list is short. Ordered by how likely it is to
+stop someone using the native terminal for real work.
+
+### Blocking for some users today
+
+- **No keyboard-interactive answering.** A server that asks for a verification code cannot be
+  answered, so any account behind a second factor cannot connect at all. The prompt is captured and
+  reported (`SshNetAuthentication.UnansweredPrompts`) rather than swallowed, but capturing is not
+  answering. A terminal is the natural place to fix this — D4 says so — and it is the single
+  largest gap.
+- **No session logging.** PuTTY writes session output to a file. Anyone using that for change
+  records or audit cannot move.
+- **No proxy support.** PuTTY does SOCKS/HTTP proxies and local proxy commands. Nothing here does.
+- **No SSH1, Telnet, Rlogin or RAW.** Out of scope by design, but it means the native terminal
+  cannot replace `PuttyBase`, only sit beside it.
+
+### Missing, and noticed quickly
+
+- **No X11 forwarding, no port forwarding, no agent forwarding.**
+- **No zmodem.**
+- **No `known_hosts` reuse** — a host already trusted elsewhere is asked about again (6.2).
+- **No saved-session import.** PuTTY sessions are importable for the PuTTY-backed protocols;
+  a native-terminal connection is configured from scratch.
+- **No per-connection appearance.** Font, colours and scrollback are application-wide (section 7),
+  where PuTTY themes each saved session.
+
+### Smaller, but real
+
+- **No mouse reporting** verified — untested in the spike, and applications like `mc` or `vim` with
+  mouse enabled will behave differently.
+- **No bell, no window-title reporting, no configurable cursor.**
+- **Startup is slower.** WebView2 costs roughly 600 ms of environment initialisation and ~900 ms to
+  a ready page (S1.1) before the SSH handshake even starts. PuTTY appears faster because it is.
+- **Memory.** A browser engine per tab against a PuTTY process per tab; not measured, and worth
+  measuring before this becomes the default.
+
+### Where it is already better
+
+Stated for balance, not to argue the list above is short: it renders true colour, handles UTF-8 and
+CJK correctly, resizes cleanly, is themable with the application, copies on select, and is one
+process rather than a reparented foreign window — so no chrome artefacts, no focus quirks, and the
+scrollback belongs to mRemoteNG. Throughput is not a concern (25 MB/s, S1.1).
+
+**Recommendation: PuTTY stays the default.** The keyboard-interactive gap alone locks out anyone
+with a second factor, and session logging locks out anyone with an audit requirement. Neither is
+hard to close, and neither is closed today.

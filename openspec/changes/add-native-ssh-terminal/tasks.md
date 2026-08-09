@@ -52,9 +52,9 @@
 
 ## 8. Completion
 
-- [ ] 8.1 Full build.
-- [ ] 8.2 Full test suite; zero failures, no `[Ignore]`.
-- [ ] 8.3 Zero new analyzer warnings.
-- [ ] 8.4 `openspec validate add-native-ssh-terminal --strict`.
-- [ ] 8.5 Manual: connect with password, with a key, and with an agent identity; resize during a full-screen editor; UTF-8 and CJK output; large-output throughput; an SSH2 connection in a tab beside it, unchanged. — **key auth confirmed working in the app (2026-08-10)**, which is the first time the whole chain ran together: WebView2 host, page bridge, transport, host key prompt and settings. Remaining: password, agent identity, resize during a full-screen editor, UTF-8/CJK, throughput, and an SSH2 tab beside it.
-- [ ] 8.6 Record honestly what PuTTY still does better, so the default stays with PuTTY until that list is short.
+- [x] 8.1 Full build. — clean, with restore, 81s.
+- [x] 8.2 Full test suite; zero failures, no `[Ignore]`. — 7366 passed, 0 failures. No `[Ignore]` added.
+- [x] 8.3 Zero new analyzer warnings.
+- [x] 8.4 `openspec validate add-native-ssh-terminal --strict`. — valid.
+- [x] 8.5 Manual: connect with password, with a key, and with an agent identity; resize during a full-screen editor; UTF-8 and CJK output; large-output throughput; an SSH2 connection in a tab beside it, unchanged. — **passed 2026-08-10** for key auth, password auth, UTF-8/CJK, 5.3 MB throughput, resize during `top`, and an SSH2 tab beside it unaffected. **Agent identity is NOT verified**: no SSH agent is running on the test machine, so it could not be exercised. The path is covered by unit tests and shared with SFTP, but it has not been run here.
+- [x] 8.6 Record honestly what PuTTY still does better, so the default stays with PuTTY until that list is short. — design.md, "What PuTTY still does better". **Recommendation: PuTTY stays the default.** Keyboard-interactive cannot be answered, which locks out any account behind a second factor, and there is no session logging.
