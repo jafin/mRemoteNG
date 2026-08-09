@@ -1,5 +1,7 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Runtime.Versioning;
 using System.Text.Json.Nodes;
 using System.Threading.Tasks;
@@ -263,9 +265,41 @@ public class ProtocolNativeSsh : ProtocolBase
         catch (Exception ex)
         {
             Runtime.MessageCollector.AddExceptionStackTrace(Language.SshNativeConnectFailed, ex);
-            Event_Disconnected(this, ex.Message, null);
+            Event_Disconnected(this, DescribeFailure(ex.Message, _session?.Diagnostics), null);
             Close();
         }
+    }
+
+    /// <summary>
+    /// Combines the transport's failure with anything credential resolution already knew was wrong.
+    /// </summary>
+    /// <remarks>
+    /// "Permission denied (keyboard-interactive)" is what a server says when no key was offered, and
+    /// it says nothing about why. The reason is usually already known — a configured key file that
+    /// was not found, or one that is passphrase-encrypted and could not be loaded — but it is
+    /// recorded on the message channel, which is not where someone looks when a tab fails to open.
+    /// Putting it in the disconnect message is the difference between an error a user can act on
+    /// and one they can only re-try.
+    /// </remarks>
+    internal static string DescribeFailure(string message, IReadOnlyList<SshCredentialDiagnostic>? diagnostics)
+    {
+        if (diagnostics is null || diagnostics.Count == 0)
+            return message;
+
+        List<string> reasons = [];
+        foreach (SshCredentialDiagnostic diagnostic in diagnostics)
+        {
+            // Informational diagnostics narrate what worked; only the ones describing something
+            // unusable help here, and repeating the rest would bury them.
+            if (diagnostic.Severity is SshCredentialDiagnosticSeverity.Error
+                or SshCredentialDiagnosticSeverity.ProtocolError
+                && !reasons.Contains(diagnostic.Message, StringComparer.Ordinal))
+            {
+                reasons.Add(diagnostic.Message);
+            }
+        }
+
+        return reasons.Count == 0 ? message : $"{message} {string.Join(" ", reasons)}";
     }
 
     /// <summary>
