@@ -70,13 +70,6 @@ Rules:
 - A build failing only on **file-copy locks** (running mRemoteNG.exe holds `bin\`) is not a code failure — compile succeeded. Ask the user to close the app, or build to a temp `OutputPath` to verify.
 - Never skip verification for the categories that need it, and never report success for a build or test run that was not actually performed.
 
-## Repository Structure
-- **Origin (fork):** `robertpopa22/mRemoteNG`
-- **Upstream (official):** `mRemoteNG/mRemoteNG`
-- **Main branch:** `main` — active development; latest stable tag **v1.82.0**
-- **Stable:** cut by pushing a `vX.Y.Z` tag from `main` (latest = v1.82.0). `release/1.81` is a historical frozen branch (upstream PR #3189)
-- **Solution:** `mRemoteNG.sln` (.NET 10, SDK-style projects with COM references)
-
 ## Build Instructions
 
 **Do NOT use `dotnet build`** — fails with `MSB4803` on COM references (`MSTSCLib` RDP ActiveX control). Must use full VS BuildTools MSBuild.
@@ -150,28 +143,6 @@ Every test failure MUST be resolved before finishing a task. NO EXCEPTIONS.
 | 3 | CodeQL | Push to `main` + weekly (CI) | `.github/workflows/codeql.yml` |
 | 4 | Roslynator | Included in Level 1 (NuGet) | `Directory.Packages.props` |
 | 5 | Qodo Code Review | On-demand (AI review) | GitHub App + `scripts/qodo-review.sh` |
-
-### Rules:
-- **Gradual adoption** — warnings only, NOT `TreatWarningsAsErrors` (legacy codebase)
-- Noisy rules suppressed in `.editorconfig` (MA0004 ConfigureAwait, MA0011 IFormatProvider, MA0076 ToString culture)
-- `EnforceCodeStyleInBuild=true`, `AnalysisLevel=latest-recommended` in `Directory.Build.props`
-- **Două `.editorconfig`**: root (pentru ExternalConnectors, ObjectListView etc.) + `mRemoteNG/.editorconfig` (cu `root=true`, nu moștenește de la root)
-- SonarCloud: `SONAR_TOKEN` secret setat, Automatic Analysis DEZACTIVAT pe sonarcloud.io (altfel conflict cu CI scan)
-- CodeQL: `build-mode: manual` (COM refs break autobuild), CodeQL Action **v4** (v3 deprecated Dec 2026), Default Setup DEZACTIVAT în repo Settings → Code Security
-- **NU există `sonar-project.properties`** — SonarScanner for .NET nu-l suportă, toate setările se dau ca parametri la `dotnet-sonarscanner begin`
-
-### Qodo Code Review:
-- GitHub App `qodo-code-review` instalat pe fork — AI-powered review complementar cu static analysis
-- **On-demand only** — rulat prin `./scripts/qodo-review.sh [commits] [branch]`
-- **NU funcționează ca GitHub Action** — Qodo ignoră PR-uri create de bots
-- **Targetează doar default branch** — PR-ul trebuie să aibă `main` ca base
-- Prinde bugs logice (bounds check, SQL mismatch, plaintext secrets) pe care SonarCloud/CodeQL le ratează
-
-### Lecții setup CI (2026-02-28):
-- CodeQL default setup NU coexistă cu workflow custom — trebuie dezactivat în Settings → Code Security
-- SonarCloud Automatic Analysis NU coexistă cu CI analysis — trebuie dezactivat în SonarCloud → Administration → Analysis Method
-- Meziantou MA0049 (type name matches namespace) e **error** by default — trebuie suprimat explicit pentru legacy code
-- `gh run list` pe un fork caută pe upstream — folosește `--repo robertpopa22/mRemoteNG`
 
 ## Branch Strategy
 
