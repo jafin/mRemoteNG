@@ -73,7 +73,12 @@ acceptance criteria for tasks 5.1–5.3:
       `fg` to resume. Ctrl-Z at an idle prompt correctly does nothing, so testing it there proves
       nothing. Test these two outside `showkey -a`: in raw mode it captures Ctrl-C/Ctrl-Z as bytes
       instead of letting them become signals.
-- [ ] Bracketed paste — paste multi-line text into `cat`, confirm it is not executed line by line
+- [x] Bracketed paste — **covered by `--benchmark`**, which drives xterm's own paste path with mode
+      2004 enabled and asserts the `^[[200~` / `^[[201~` wrapping. Do *not* test this by pasting
+      into a bare `cat -v`: bash clears mode 2004 before running any command, so an unwrapped paste
+      there is correct and proves nothing. To check it by hand, paste a multi-line block at the
+      **bash prompt** and confirm the lines sit in the input buffer instead of each executing as
+      its newline arrives.
 - [ ] Clipboard copy from the terminal (selection, Ctrl+Insert, right-click)
 - [ ] Clipboard paste into the terminal (Ctrl+V, Shift+Insert, middle-click)
 - [ ] One IME (any non-Latin input method); type into `cat` and confirm composition works

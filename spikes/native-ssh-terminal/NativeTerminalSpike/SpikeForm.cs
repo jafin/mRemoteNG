@@ -1,4 +1,4 @@
-using System.Diagnostics;
+﻿using System.Diagnostics;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -25,6 +25,7 @@ public sealed class SpikeForm : Form
     private Scenario? _current;
     private TaskCompletionSource<Scenario>? _scenarioDone;
     private readonly StringBuilder _tail = new();
+    private StringBuilder? _probe;
 
     private double _envReadyMs;
     private double _pageReadyMs;
@@ -239,6 +240,8 @@ public sealed class SpikeForm : Form
 
     private void PushToPage(string text, int bytes)
     {
+        _probe?.Append(text);
+
         Scenario? scenario = _current;
         long seq = ++_seq;
         double now = _clock.Elapsed.TotalMilliseconds;
@@ -343,6 +346,8 @@ public sealed class SpikeForm : Form
             "fullscreen-redraw-200", "SEN" + "T_REDRAW",
             "for i in $(seq 1 200); do printf '\\033[H\\033[2J'; cat /config/bench/screen.txt; done; printf 'SEN%s\\n' 'T_REDRAW'"));
 
+        await RunPasteProbeAsync();
+
         // Leave something coloured on screen and photograph it. Computed styles describe the DOM,
         // and the DOM is not necessarily what the renderer painted — only a capture settles that.
         await RunScenarioAsync("colour-sample", "SEN" + "T_COLOUR",
@@ -355,6 +360,38 @@ public sealed class SpikeForm : Form
 
         WriteResults(results);
         Finish(success: results.TrueForAll(r => !r.TimedOut));
+    }
+
+    /// <summary>
+    /// Answers task 1.2's bracketed-paste question without a human. Enables mode 2004 explicitly
+    /// and reads with `cat -v`, so whatever the emulator sends comes back rendered visibly. Testing
+    /// this at a bare `cat -v` proves nothing: bash clears mode 2004 before running any command,
+    /// so an unwrapped paste there is correct behaviour.
+    /// </summary>
+    private async Task RunPasteProbeAsync()
+    {
+        _probe = new StringBuilder();
+
+        _session!.Write("printf '\\033[?2004h'; cat -v\n");
+        await Task.Delay(800);
+
+        JsonObject paste = new() { ["t"] = "paste", ["d"] = "echo one\necho two\n" };
+        _web.CoreWebView2.PostWebMessageAsJson(paste.ToJsonString());
+        await Task.Delay(900);
+
+        _session.Write("\u0004");                        // Ctrl-D ends cat
+        await Task.Delay(400);
+        _session.Write("printf '\\033[?2004l'\n");       // leave the shell as we found it
+        await Task.Delay(300);
+
+        string seen = _probe.ToString();
+        _probe = null;
+
+        bool start = seen.Contains("^[[200~", StringComparison.Ordinal);
+        bool end = seen.Contains("^[[201~", StringComparison.Ordinal);
+        Log($"bracketed paste: start marker {start}, end marker {end}");
+        Log($"  raw: {seen.Replace("\r", "<CR>", StringComparison.Ordinal).Replace("\n", "<LF>", StringComparison.Ordinal)}");
+        FlushLog();
     }
 
     private async Task CapturePreviewAsync()

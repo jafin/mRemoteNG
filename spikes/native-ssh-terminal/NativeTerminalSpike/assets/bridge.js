@@ -102,6 +102,10 @@
             term.write(m.d, function () {
                 post({ t: 'a', s: m.s, ts: performance.now() });
             });
+        } else if (m.t === 'paste') {
+            // Goes through xterm's own paste path, so bracketed-paste wrapping is exercised
+            // exactly as a Ctrl+V would exercise it.
+            term.paste(m.d);
         } else if (m.t === 'theme') {
             applyTheme(m.name);
         } else if (m.t === 'fit') {
