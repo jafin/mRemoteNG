@@ -55,6 +55,27 @@ namespace mRemoteNGTests.Connection.Sftp
             Assert.That(SftpSession.Describe(file).FullName, Is.EqualTo("/home/alice/docs"));
         }
 
+        /// <summary>
+        /// A backslash is a legal character in a unix filename. Correcting it the way a typed path is
+        /// corrected would record the entry under a path that does not exist, and every later operation
+        /// on it — download, delete — would address the wrong thing or fail.
+        /// </summary>
+        [Test]
+        public void ABackslashInAServerPathIsPreserved()
+        {
+            ISftpFile file = FakeFile(@"a\b.txt", @"/home/alice/a\b.txt", isDirectory: false);
+
+            Assert.That(SftpSession.Describe(file).FullName, Is.EqualTo(@"/home/alice/a\b.txt"));
+        }
+
+        [Test]
+        public void RedundantSeparatorsAreStillCollapsedInAServerPath()
+        {
+            ISftpFile file = FakeFile("notes.txt", "/home//alice//notes.txt", isDirectory: false);
+
+            Assert.That(SftpSession.Describe(file).FullName, Is.EqualTo("/home/alice/notes.txt"));
+        }
+
         // ---- permission rendering ---------------------------------------------------
 
         [Test]

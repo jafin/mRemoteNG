@@ -74,7 +74,29 @@ namespace mRemoteNG.Connection.Sftp
         {
             ArgumentNullException.ThrowIfNull(path);
 
-            string working = path.Replace('\\', '/').Trim();
+            return NormalizeCore(path.Replace('\\', '/'));
+        }
+
+        /// <summary>
+        /// Tidies a path the <i>server</i> gave us, leaving backslashes alone.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Normalize"/> converts backslashes to separators, which is a deliberate trade for
+        /// text a Windows user typed. Applying that same trade to a path the server reported is not a
+        /// trade at all, only damage: a backslash is a legal character in a unix filename, so a file
+        /// genuinely called <c>a\b.txt</c> would be recorded under a path that does not exist, and every
+        /// later operation on it would address the wrong thing or fail.
+        /// </remarks>
+        public static string NormalizeServerPath(string path)
+        {
+            ArgumentNullException.ThrowIfNull(path);
+
+            return NormalizeCore(path);
+        }
+
+        private static string NormalizeCore(string path)
+        {
+            string working = path.Trim();
             if (working.Length == 0)
                 return Root;
 

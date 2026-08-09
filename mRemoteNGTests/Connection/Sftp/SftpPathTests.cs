@@ -95,6 +95,30 @@ namespace mRemoteNGTests.Connection.Sftp
             Assert.That(SftpPath.Normalize(@"\home\alice"), Is.EqualTo("/home/alice"));
         }
 
+        /// <summary>
+        /// The same trade applied to a path the server reported is not a trade, only damage: the entry
+        /// would be recorded under a path that does not exist.
+        /// </summary>
+        [Test]
+        public void AServerPathKeepsItsBackslashes()
+        {
+            Assert.That(SftpPath.NormalizeServerPath(@"/home/alice/a\b.txt"),
+                        Is.EqualTo(@"/home/alice/a\b.txt"));
+        }
+
+        [TestCase("/home//alice", "/home/alice")]
+        [TestCase("/home/alice/", "/home/alice")]
+        [TestCase("", "/")]
+        [TestCase("   ", "/")]
+        public void AServerPathIsStillTidied(string path, string expected)
+        {
+            Assert.That(SftpPath.NormalizeServerPath(path), Is.EqualTo(expected));
+        }
+
+        [Test]
+        public void AServerPathRejectsNull() =>
+            Assert.Throws<ArgumentNullException>(() => SftpPath.NormalizeServerPath(null!));
+
         // ---- IsRoot / argument validation -------------------------------------------
 
         [TestCase("/", true)]

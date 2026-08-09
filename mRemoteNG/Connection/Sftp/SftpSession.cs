@@ -7,6 +7,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using mRemoteNG.Security.Ssh;
 using mRemoteNG.Security.Ssh.Adapters;
+using mRemoteNG.Security.Ssh.Agent;
 using mRemoteNG.Tools;
 using Renci.SshNet;
 using Renci.SshNet.Common;
@@ -66,8 +67,14 @@ namespace mRemoteNG.Connection.Sftp
 
             bool agentEnabled = (agentSettings ?? DefaultAgentSettings.Instance).IsEnabled;
 
+            // The provider has to be supplied, not just asked for. The resolver consults the agent only
+            // when ConsultAgent *and* a provider are both present, so the parameterless CreateDefault
+            // left every SFTP connection unable to authenticate from the agent however the setting was
+            // configured — which is precisely the case that is meant to make the file manager's second
+            // connection silent.
             ResolvedSshCredential credential = SshCredentialResolver
-                .CreateDefault()
+                .CreateDefault(new DefaultSshKeyLocator(),
+                               agentEnabled ? new SshNetAgentProvider() : null)
                 .Resolve(connectionInfo, SshCredentialResolutionOptions.ForSshNet(agentEnabled));
 
             return new SftpSession(connectionInfo.Hostname.Trim(), connectionInfo.Port, credential);
@@ -261,7 +268,9 @@ namespace mRemoteNG.Connection.Sftp
 
             return new SftpEntry(
                 Name: file.Name,
-                FullName: SftpPath.Normalize(file.FullName),
+                // Server-safe: this path came from the server, not from the user, so a backslash in it
+                // is part of a real filename rather than a Windows habit to be corrected.
+                FullName: SftpPath.NormalizeServerPath(file.FullName),
                 IsDirectory: isDirectory,
                 IsSymbolicLink: file.IsSymbolicLink,
                 Length: isDirectory ? 0 : file.Length,
