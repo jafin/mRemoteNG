@@ -1,4 +1,3 @@
-using System;
 using System.Reflection;
 using ExternalConnectors.PasswordSafe;
 using NUnit.Framework;

@@ -7,106 +7,105 @@ using mRemoteNG.App;
 
 // ReSharper disable ArrangeAccessorOwnerBody
 
-namespace mRemoteNG.Tools.Cmdline
+namespace mRemoteNG.Tools.Cmdline;
+
+[SupportedOSPlatform("windows")]
+//
+//* Arguments class: application arguments interpreter
+//*
+//* Authors:		R. LOPES
+//* Contributors:	R. LOPES
+//* Created:		25 October 2002
+//* Modified:		28 October 2002
+//*
+//* Version:		1.0
+//
+public class CmdArgumentsInterpreter
 {
-    [SupportedOSPlatform("windows")]
-    //
-    //* Arguments class: application arguments interpreter
-    //*
-    //* Authors:		R. LOPES
-    //* Contributors:	R. LOPES
-    //* Created:		25 October 2002
-    //* Modified:		28 October 2002
-    //*
-    //* Version:		1.0
-    //
-    public class CmdArgumentsInterpreter
+    private readonly StringDictionary _parameters;
+
+    // Retrieve a parameter value if it exists
+    public string? this[string param] => _parameters[param];
+
+    public CmdArgumentsInterpreter(IEnumerable<string> args)
     {
-        private readonly StringDictionary _parameters;
+        _parameters = [];
+        Regex spliter = new("^-{1,2}|^/|=|:", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        Regex remover = new("^[\'\"]?(.*?)[\'\"]?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+        string? parameter = null;
 
-        // Retrieve a parameter value if it exists
-        public string? this[string param] => _parameters[param];
+        // Valid parameters forms:
+        // {-,/,--}param{ ,=,:}((",')value(",'))
+        // Examples: -param1 value1 --param2 /param3:"Test-:-work" /param4=happy -param5 '--=nice=--'
 
-        public CmdArgumentsInterpreter(IEnumerable<string> args)
+        try
         {
-            _parameters = [];
-            Regex spliter = new("^-{1,2}|^/|=|:", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-            Regex remover = new("^[\'\"]?(.*?)[\'\"]?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-            string? parameter = null;
-
-            // Valid parameters forms:
-            // {-,/,--}param{ ,=,:}((",')value(",'))
-            // Examples: -param1 value1 --param2 /param3:"Test-:-work" /param4=happy -param5 '--=nice=--'
-
-            try
+            foreach (string txt in args)
             {
-                foreach (string txt in args)
+                // Look for new parameters (-,/ or --) and a possible enclosed value (=,:)
+                string[] parts = spliter.Split(txt, 3);
+                switch (parts.Length)
                 {
-                    // Look for new parameters (-,/ or --) and a possible enclosed value (=,:)
-                    string[] Parts = spliter.Split(txt, 3);
-                    switch (Parts.Length)
-                    {
-                        case 1:
-                            // Found a value (for the last parameter found (space separator))
-                            if (parameter != null)
-                            {
-                                if (!_parameters.ContainsKey(parameter))
-                                {
-                                    Parts[0] = remover.Replace(Parts[0], "$1");
-                                    _parameters.Add(parameter, Parts[0]);
-                                }
-
-                                parameter = null;
-                            }
-
-                            // else Error: no parameter waiting for a value (skipped)
-                            break;
-                        case 2:
-                            // Found just a parameter
-                            // The last parameter is still waiting. With no value, set it to true.
-                            if (parameter != null)
-                            {
-                                if (!_parameters.ContainsKey(parameter))
-                                {
-                                    _parameters.Add(parameter, "true");
-                                }
-                            }
-
-                            parameter = Parts[1];
-                            break;
-                        case 3:
-                            // Parameter with enclosed value
-                            // The last parameter is still waiting. With no value, set it to true.
-                            if (parameter != null)
-                            {
-                                if (!_parameters.ContainsKey(parameter))
-                                {
-                                    _parameters.Add(parameter, "true");
-                                }
-                            }
-
-                            parameter = Parts[1];
-                            // Remove possible enclosing characters (",')
+                    case 1:
+                        // Found a value (for the last parameter found (space separator))
+                        if (parameter != null)
+                        {
                             if (!_parameters.ContainsKey(parameter))
                             {
-                                Parts[2] = remover.Replace(Parts[2], "$1");
-                                _parameters.Add(parameter, Parts[2]);
+                                parts[0] = remover.Replace(parts[0], "$1");
+                                _parameters.Add(parameter, parts[0]);
                             }
 
                             parameter = null;
-                            break;
-                    }
-                }
+                        }
 
-                // In case a parameter is still waiting
-                if (parameter == null) return;
-                if (!_parameters.ContainsKey(parameter))
-                    _parameters.Add(parameter, "true");
+                        // else Error: no parameter waiting for a value (skipped)
+                        break;
+                    case 2:
+                        // Found just a parameter
+                        // The last parameter is still waiting. With no value, set it to true.
+                        if (parameter != null)
+                        {
+                            if (!_parameters.ContainsKey(parameter))
+                            {
+                                _parameters.Add(parameter, "true");
+                            }
+                        }
+
+                        parameter = parts[1];
+                        break;
+                    case 3:
+                        // Parameter with enclosed value
+                        // The last parameter is still waiting. With no value, set it to true.
+                        if (parameter != null)
+                        {
+                            if (!_parameters.ContainsKey(parameter))
+                            {
+                                _parameters.Add(parameter, "true");
+                            }
+                        }
+
+                        parameter = parts[1];
+                        // Remove possible enclosing characters (",')
+                        if (!_parameters.ContainsKey(parameter))
+                        {
+                            parts[2] = remover.Replace(parts[2], "$1");
+                            _parameters.Add(parameter, parts[2]);
+                        }
+
+                        parameter = null;
+                        break;
+                }
             }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionMessage("Creating new Args failed", ex);
-            }
+
+            // In case a parameter is still waiting
+            if (parameter == null) return;
+            if (!_parameters.ContainsKey(parameter))
+                _parameters.Add(parameter, "true");
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddExceptionMessage("Creating new Args failed", ex);
         }
     }
 }

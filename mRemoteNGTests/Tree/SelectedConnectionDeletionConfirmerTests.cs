@@ -1,43 +1,42 @@
-﻿using mRemoteNG.Connection;
+﻿using System.Windows.Forms;
+using mRemoteNG.Connection;
 using mRemoteNG.Tree;
 using NUnit.Framework;
-using System.Windows.Forms;
 
 
-namespace mRemoteNGTests.Tree
+namespace mRemoteNGTests.Tree;
+
+public class SelectedConnectionDeletionConfirmerTests
 {
-    public class SelectedConnectionDeletionConfirmerTests
+    private ConnectionInfo _testConnectionInfo;
+
+    [SetUp]
+    public void Setup()
     {
-        private ConnectionInfo _testConnectionInfo;
+        _testConnectionInfo = new ConnectionInfo();
+    }
 
-        [SetUp]
-        public void Setup()
-        {
-            _testConnectionInfo = new ConnectionInfo();
-        }
+    [Test]
+    public void ClickingYesReturnsTrue()
+    {
+        var deletionConfirmer = new SelectedConnectionDeletionConfirmer(MockClickYes);
+        Assert.That(deletionConfirmer.Confirm(_testConnectionInfo), Is.True);
+    }
 
-        [Test]
-        public void ClickingYesReturnsTrue()
-        {
-            var deletionConfirmer = new SelectedConnectionDeletionConfirmer(MockClickYes);
-            Assert.That(deletionConfirmer.Confirm(_testConnectionInfo), Is.True);
-        }
+    [Test]
+    public void ClickingNoReturnsFalse()
+    {
+        var deletionConfirmer = new SelectedConnectionDeletionConfirmer(MockClickNo);
+        Assert.That(deletionConfirmer.Confirm(_testConnectionInfo), Is.False);
+    }
 
-        [Test]
-        public void ClickingNoReturnsFalse()
-        {
-            var deletionConfirmer = new SelectedConnectionDeletionConfirmer(MockClickNo);
-            Assert.That(deletionConfirmer.Confirm(_testConnectionInfo), Is.False);
-        }
+    private DialogResult MockClickYes(string promptMessage)
+    {
+        return DialogResult.Yes;
+    }
 
-        private DialogResult MockClickYes(string promptMessage)
-        {
-            return DialogResult.Yes;
-        }
-
-        private DialogResult MockClickNo(string promptMessage)
-        {
-            return DialogResult.No;
-        }
+    private DialogResult MockClickNo(string promptMessage)
+    {
+        return DialogResult.No;
     }
 }

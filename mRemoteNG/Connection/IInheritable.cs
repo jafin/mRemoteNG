@@ -1,7 +1,6 @@
-﻿namespace mRemoteNG.Connection
+﻿namespace mRemoteNG.Connection;
+
+public interface IInheritable
 {
-    public interface IInheritable
-    {
-        ConnectionInfoInheritance Inheritance { get; set; }
-    }
+    ConnectionInfoInheritance Inheritance { get; set; }
 }

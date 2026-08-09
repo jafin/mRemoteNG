@@ -3,47 +3,46 @@ using System.Runtime.InteropServices;
 using System.Security;
 using System.Text.RegularExpressions;
 
-namespace mRemoteNG.Security
+namespace mRemoteNG.Security;
+
+public static class SecureStringExtensions
 {
-    public static class SecureStringExtensions
+    /// <summary>
+    /// Method to marshall a SecureString out of protected memory into a standard String object that is required by most other functions.
+    /// Code initially taken from Fabio Pintos
+    /// Source: https://blogs.msdn.microsoft.com/fpintos/2009/06/12/how-to-properly-convert-securestring-to-string/
+    /// </summary>
+    /// <param name="securePassword"></param>
+    /// <returns></returns>
+    public static string ConvertToUnsecureString(this SecureString securePassword)
     {
-        /// <summary>
-        /// Method to marshall a SecureString out of protected memory into a standard String object that is required by most other functions.
-        /// Code initially taken from Fabio Pintos
-        /// Source: https://blogs.msdn.microsoft.com/fpintos/2009/06/12/how-to-properly-convert-securestring-to-string/
-        /// </summary>
-        /// <param name="securePassword"></param>
-        /// <returns></returns>
-        public static string ConvertToUnsecureString(this SecureString securePassword)
+        ArgumentNullException.ThrowIfNull(securePassword);
+
+        IntPtr unmanagedString = IntPtr.Zero;
+        try
         {
-            ArgumentNullException.ThrowIfNull(securePassword);
-
-            IntPtr unmanagedString = IntPtr.Zero;
-            try
-            {
-                unmanagedString = Marshal.SecureStringToGlobalAllocUnicode(securePassword);
-                return Marshal.PtrToStringUni(unmanagedString)!;
-            }
-            finally
-            {
-                Marshal.ZeroFreeGlobalAllocUnicode(unmanagedString);
-            }
+            unmanagedString = Marshal.SecureStringToGlobalAllocUnicode(securePassword);
+            return Marshal.PtrToStringUni(unmanagedString)!;
         }
-
-        public static SecureString ConvertToSecureString(this string unsecuredPassword)
+        finally
         {
-            ArgumentNullException.ThrowIfNull(unsecuredPassword);
-
-            SecureString secureString = new();
-            foreach (char character in unsecuredPassword)
-                secureString.AppendChar(character);
-            return secureString;
+            Marshal.ZeroFreeGlobalAllocUnicode(unmanagedString);
         }
+    }
 
-        public static bool IsBase64String(this string s)
-        {
-            s = s.Trim();
-            return (s.Length % 4 == 0) && Regex.IsMatch(s, @"^[a-zA-Z0-9\+/]*={0,3}$", RegexOptions.None);
-        }
+    public static SecureString ConvertToSecureString(this string unsecuredPassword)
+    {
+        ArgumentNullException.ThrowIfNull(unsecuredPassword);
+
+        SecureString secureString = new();
+        foreach (char character in unsecuredPassword)
+            secureString.AppendChar(character);
+        return secureString;
+    }
+
+    public static bool IsBase64String(this string s)
+    {
+        s = s.Trim();
+        return (s.Length % 4 == 0) && Regex.IsMatch(s, @"^[a-zA-Z0-9\+/]*={0,3}$", RegexOptions.None);
     }
 }

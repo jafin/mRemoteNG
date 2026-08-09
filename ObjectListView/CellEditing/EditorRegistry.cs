@@ -30,184 +30,184 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Reflection;
-using System.Text;
 using System.Windows.Forms;
 
-namespace BrightIdeasSoftware {
+namespace BrightIdeasSoftware;
+
+/// <summary>
+/// A delegate that creates an editor for the given value
+/// </summary>
+/// <param name="model">The model from which that value came</param>
+/// <param name="column">The column for which the editor is being created</param>
+/// <param name="value">A representative value of the type to be edited. This value may not be the exact
+/// value for the column/model combination. It could be simply representative of
+/// the appropriate type of value.</param>
+/// <returns>A control which can edit the given value</returns>
+public delegate Control EditorCreatorDelegate(Object model, OLVColumn column, Object value);
+
+/// <summary>
+/// An editor registry gives a way to decide what cell editor should be used to edit
+/// the value of a cell. Programmers can register non-standard types and the control that
+/// should be used to edit instances of that type.
+/// </summary>
+/// <remarks>
+/// <para>All ObjectListViews share the same editor registry.</para>
+/// </remarks>
+public class EditorRegistry {
+    #region Initializing
 
     /// <summary>
-    /// A delegate that creates an editor for the given value
+    /// Create an EditorRegistry
     /// </summary>
-    /// <param name="model">The model from which that value came</param>
-    /// <param name="column">The column for which the editor is being created</param>
-    /// <param name="value">A representative value of the type to be edited. This value may not be the exact
+    public EditorRegistry() {
+        this.InitializeStandardTypes();
+    }
+
+    private void InitializeStandardTypes() {
+        this.Register(typeof(Boolean), typeof(BooleanCellEditor));
+        this.Register(typeof(Int16), typeof(IntUpDown));
+        this.Register(typeof(Int32), typeof(IntUpDown));
+        this.Register(typeof(Int64), typeof(IntUpDown));
+        this.Register(typeof(UInt16), typeof(UintUpDown));
+        this.Register(typeof(UInt32), typeof(UintUpDown));
+        this.Register(typeof(UInt64), typeof(UintUpDown));
+        this.Register(typeof(Single), typeof(FloatCellEditor));
+        this.Register(typeof(Double), typeof(FloatCellEditor));
+        this.Register(typeof(DateTime), delegate
+        {
+            DateTimePicker c = new DateTimePicker();
+            c.Format = DateTimePickerFormat.Short;
+            return c;
+        });
+        this.Register(typeof(Boolean), delegate(Object _, OLVColumn column, Object _) {
+            CheckBox c = new BooleanCellEditor2();
+            c.ThreeState = column.TriStateCheckBoxes;
+            return c;
+        });
+    }
+
+    #endregion
+
+    #region Registering
+
+    /// <summary>
+    /// Register that values of 'type' should be edited by instances of 'controlType'.
+    /// </summary>
+    /// <param name="type">The type of value to be edited</param>
+    /// <param name="controlType">The type of the Control that will edit values of 'type'</param>
+    /// <example>
+    /// ObjectListView.EditorRegistry.Register(typeof(Color), typeof(MySpecialColorEditor));
+    /// </example>
+    public void Register(Type type, Type controlType) {
+        Register(type, delegate
+        {
+            return controlType.InvokeMember("", BindingFlags.CreateInstance, null, null, null, CultureInfo.InvariantCulture) as Control;
+        });
+    }
+
+    /// <summary>
+    /// Register the given delegate so that it is called to create editors
+    /// for values of the given type
+    /// </summary>
+    /// <param name="type">The type of value to be edited</param>
+    /// <param name="creator">The delegate that will create a control that can edit values of 'type'</param>
+    /// <example>
+    /// ObjectListView.EditorRegistry.Register(typeof(Color), CreateColorEditor);
+    /// ...
+    /// public Control CreateColorEditor(Object model, OLVColumn column, Object value)
+    /// {
+    ///     return new MySpecialColorEditor();
+    /// }
+    /// </example>
+    public void Register(Type type, EditorCreatorDelegate creator) {
+        this._creatorMap[type] = creator;
+    }
+
+    /// <summary>
+    /// Register a delegate that will be called to create an editor for values
+    /// that have not been handled.
+    /// </summary>
+    /// <param name="creator">The delegate that will create a editor for all other types</param>
+    public void RegisterDefault(EditorCreatorDelegate creator) {
+        this._defaultCreator = creator;
+    }
+
+    /// <summary>
+    /// Register a delegate that will be given a chance to create a control
+    /// before any other option is considered.
+    /// </summary>
+    /// <param name="creator">The delegate that will create a control</param>
+    public void RegisterFirstChance(EditorCreatorDelegate creator) {
+        this._firstChanceCreator = creator;
+    }
+
+    /// <summary>
+    /// Remove the registered handler for the given type
+    /// </summary>
+    /// <remarks>Does nothing if the given type doesn't exist</remarks>
+    /// <param name="type">The type whose registration is to be removed</param>
+    public void Unregister(Type type) {
+        this._creatorMap.Remove(type);
+    }
+
+    #endregion
+
+    #region Accessing
+
+    /// <summary>
+    /// Create and return an editor that is appropriate for the given value.
+    /// Return null if no appropriate editor can be found.
+    /// </summary>
+    /// <param name="model">The model involved</param>
+    /// <param name="column">The column to be edited</param>
+    /// <param name="value">The value to be edited. This value may not be the exact
     /// value for the column/model combination. It could be simply representative of
     /// the appropriate type of value.</param>
-    /// <returns>A control which can edit the given value</returns>
-    public delegate Control EditorCreatorDelegate(Object model, OLVColumn column, Object value);
+    /// <returns>A Control that can edit the given type of values</returns>
+    public Control GetEditor(Object model, OLVColumn column, Object value) {
+        Control editor;
+
+        // Give the first chance delegate a chance to decide
+        if (this._firstChanceCreator != null) {
+            editor = this._firstChanceCreator(model, column, value);
+            if (editor != null)
+                return editor;
+        }
+
+        // Try to find a creator based on the type of the value (or the column)
+        Type type = value == null ? column.DataType : value.GetType();
+        if (type != null && this._creatorMap.TryGetValue(type, out var creator)) {
+            editor = creator(model, column, value);
+            if (editor != null)
+                return editor;
+        }
+
+        // Enums without other processing get a special editor
+        if (value != null && value.GetType().IsEnum)
+            return CreateEnumEditor(value.GetType());
+
+        // Give any default creator a final chance
+        if (this._defaultCreator != null)
+            return this._defaultCreator(model, column, value);
+
+        return null;
+    }
 
     /// <summary>
-    /// An editor registry gives a way to decide what cell editor should be used to edit
-    /// the value of a cell. Programmers can register non-standard types and the control that 
-    /// should be used to edit instances of that type. 
+    /// Create and return an editor that will edit values of the given type
     /// </summary>
-    /// <remarks>
-    /// <para>All ObjectListViews share the same editor registry.</para>
-    /// </remarks>
-    public class EditorRegistry {
-        #region Initializing
-
-        /// <summary>
-        /// Create an EditorRegistry
-        /// </summary>
-        public EditorRegistry() {
-            this.InitializeStandardTypes();
-        }
-
-        private void InitializeStandardTypes() {
-            this.Register(typeof(Boolean), typeof(BooleanCellEditor));
-            this.Register(typeof(Int16), typeof(IntUpDown));
-            this.Register(typeof(Int32), typeof(IntUpDown));
-            this.Register(typeof(Int64), typeof(IntUpDown));
-            this.Register(typeof(UInt16), typeof(UintUpDown));
-            this.Register(typeof(UInt32), typeof(UintUpDown));
-            this.Register(typeof(UInt64), typeof(UintUpDown));
-            this.Register(typeof(Single), typeof(FloatCellEditor));
-            this.Register(typeof(Double), typeof(FloatCellEditor));
-            this.Register(typeof(DateTime), delegate(Object model, OLVColumn column, Object value) {
-                DateTimePicker c = new DateTimePicker();
-                c.Format = DateTimePickerFormat.Short;
-                return c;
-            });
-            this.Register(typeof(Boolean), delegate(Object model, OLVColumn column, Object value) {
-                CheckBox c = new BooleanCellEditor2();
-                c.ThreeState = column.TriStateCheckBoxes;
-                return c;
-            });
-        }
-
-        #endregion
-
-        #region Registering
-
-        /// <summary>
-        /// Register that values of 'type' should be edited by instances of 'controlType'.
-        /// </summary>
-        /// <param name="type">The type of value to be edited</param>
-        /// <param name="controlType">The type of the Control that will edit values of 'type'</param>
-        /// <example>
-        /// ObjectListView.EditorRegistry.Register(typeof(Color), typeof(MySpecialColorEditor));
-        /// </example>
-        public void Register(Type type, Type controlType) {
-            this.Register(type, delegate(Object model, OLVColumn column, Object value) {
-                return controlType.InvokeMember("", BindingFlags.CreateInstance, null, null, null, CultureInfo.InvariantCulture) as Control;
-            });
-        }
-
-        /// <summary>
-        /// Register the given delegate so that it is called to create editors
-        /// for values of the given type
-        /// </summary>
-        /// <param name="type">The type of value to be edited</param>
-        /// <param name="creator">The delegate that will create a control that can edit values of 'type'</param>
-        /// <example>
-        /// ObjectListView.EditorRegistry.Register(typeof(Color), CreateColorEditor);
-        /// ...
-        /// public Control CreateColorEditor(Object model, OLVColumn column, Object value)
-        /// {
-        ///     return new MySpecialColorEditor();
-        /// }
-        /// </example>
-        public void Register(Type type, EditorCreatorDelegate creator) {
-            this.creatorMap[type] = creator;
-        }
-
-        /// <summary>
-        /// Register a delegate that will be called to create an editor for values
-        /// that have not been handled.
-        /// </summary>
-        /// <param name="creator">The delegate that will create a editor for all other types</param>
-        public void RegisterDefault(EditorCreatorDelegate creator) {
-            this.defaultCreator = creator;
-        }
-
-        /// <summary>
-        /// Register a delegate that will be given a chance to create a control
-        /// before any other option is considered.
-        /// </summary>
-        /// <param name="creator">The delegate that will create a control</param>
-        public void RegisterFirstChance(EditorCreatorDelegate creator) {
-            this.firstChanceCreator = creator;
-        }
-
-        /// <summary>
-        /// Remove the registered handler for the given type
-        /// </summary>
-        /// <remarks>Does nothing if the given type doesn't exist</remarks>
-        /// <param name="type">The type whose registration is to be removed</param>
-        public void Unregister(Type type) {
-            this.creatorMap.Remove(type);
-        }
-
-        #endregion
-
-        #region Accessing
-
-        /// <summary>
-        /// Create and return an editor that is appropriate for the given value.
-        /// Return null if no appropriate editor can be found.
-        /// </summary>
-        /// <param name="model">The model involved</param>
-        /// <param name="column">The column to be edited</param>
-        /// <param name="value">The value to be edited. This value may not be the exact
-        /// value for the column/model combination. It could be simply representative of
-        /// the appropriate type of value.</param>
-        /// <returns>A Control that can edit the given type of values</returns>
-        public Control GetEditor(Object model, OLVColumn column, Object value) {
-            Control editor;
-
-            // Give the first chance delegate a chance to decide
-            if (this.firstChanceCreator != null) {
-                editor = this.firstChanceCreator(model, column, value);
-                if (editor != null)
-                    return editor;
-            }
-
-            // Try to find a creator based on the type of the value (or the column)
-            Type type = value == null ? column.DataType : value.GetType();
-            if (type != null && this.creatorMap.TryGetValue(type, out var creator)) {
-                editor = creator(model, column, value);
-                if (editor != null)
-                    return editor;
-            }
-
-            // Enums without other processing get a special editor
-            if (value != null && value.GetType().IsEnum)
-                return CreateEnumEditor(value.GetType());
-
-            // Give any default creator a final chance
-            if (this.defaultCreator != null)
-                return this.defaultCreator(model, column, value);
-
-            return null;
-        }
-
-        /// <summary>
-        /// Create and return an editor that will edit values of the given type
-        /// </summary>
-        /// <param name="type">A enum type</param>
-        protected static Control CreateEnumEditor(Type type) {
-            return new EnumCellEditor(type);
-        }
-
-        #endregion
-
-        #region Private variables
-
-        private EditorCreatorDelegate firstChanceCreator;
-        private EditorCreatorDelegate defaultCreator;
-        private Dictionary<Type, EditorCreatorDelegate> creatorMap = new Dictionary<Type, EditorCreatorDelegate>();
-
-        #endregion
+    /// <param name="type">A enum type</param>
+    protected static Control CreateEnumEditor(Type type) {
+        return new EnumCellEditor(type);
     }
+
+    #endregion
+
+    #region Private variables
+
+    private EditorCreatorDelegate _firstChanceCreator;
+    private EditorCreatorDelegate _defaultCreator;
+    private readonly Dictionary<Type, EditorCreatorDelegate> _creatorMap = new();
+
+    #endregion
 }

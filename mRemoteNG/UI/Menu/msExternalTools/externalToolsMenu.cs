@@ -1,33 +1,23 @@
-﻿using System;
+﻿using System.ComponentModel;
 using System.Windows.Forms;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
-using mRemoteNG.UI.Window;
-using mRemoteNG.UI.Forms;
-using mRemoteNG.UI.Panels;
 
-namespace mRemoteNG.UI.Menu.msExternalTools
+namespace mRemoteNG.UI.Menu.msExternalTools;
+
+public partial class externalToolsMenu : ToolStripMenuItem
 {
-    public partial class externalToolsMenu : ToolStripMenuItem
+    public externalToolsMenu()
     {
-        public externalToolsMenu()
-        {
-            Initialize();
-        }
+        Initialize();
+    }
 
-        public externalToolsMenu(IContainer container)
-        {
-            container.Add(this);
+    public externalToolsMenu(IContainer container)
+    {
+        container.Add(this);
 
-            Initialize();
-        }
+        Initialize();
+    }
 
-        private static void Initialize()
-        {
-        }
+    private static void Initialize()
+    {
     }
 }

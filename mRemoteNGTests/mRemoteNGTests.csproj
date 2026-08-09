@@ -18,15 +18,8 @@
     <PackageReference Include="Google.Protobuf" />
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" />
-    <PackageReference Include="Microsoft.NETCore.Platforms" />
-    <PackageReference Include="Microsoft.NETCore.Targets" />
-    <PackageReference Include="NETStandard.Library" />
     <PackageReference Include="NSubstitute" />
     <PackageReference Include="NUnit" />
-    <PackageReference Include="NUnit.Console" />
-    <PackageReference Include="NUnit.ConsoleRunner" />
-    <PackageReference Include="NUnit.Extension.TeamCityEventListener" />
-    <PackageReference Include="NUnit.Runners" />
     <PackageReference Include="NUnit3TestAdapter" />
     <PackageReference Include="coverlet.collector">
       <PrivateAssets>all</PrivateAssets>

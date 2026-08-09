@@ -1,42 +1,40 @@
-﻿using Microsoft.Win32;
-using System;
-using System.Collections.Generic;
-using System.Runtime.Versioning; // Add for SupportedOSPlatform
+﻿using System.Collections.Generic;
+using System.Runtime.Versioning;
+using Microsoft.Win32; // Add for SupportedOSPlatform
 
-namespace mRemoteNG.App.Update
+namespace mRemoteNG.App.Update;
+
+public static class VCppRuntimeCheck
 {
-    public static class VCppRuntimeCheck
+    [SupportedOSPlatform("windows")]
+    public static IList<string> GetInstalledVcRedistVersions()
     {
-        [SupportedOSPlatform("windows")]
-        public static IList<string> GetInstalledVcRedistVersions()
+        var installedVersions = new List<string>();
+        var baseKeys = new[]
         {
-            var installedVersions = new List<string>();
-            var baseKeys = new[]
-            {
-                @"SOFTWARE\Microsoft\VisualStudio",
-                @"SOFTWARE\WOW6432Node\Microsoft\VisualStudio"
-            };
+            @"SOFTWARE\Microsoft\VisualStudio",
+            @"SOFTWARE\WOW6432Node\Microsoft\VisualStudio"
+        };
 
-            for (int major = 14; major <= 17; major++) // Covers 2015–2022+
+        for (int major = 14; major <= 17; major++) // Covers 2015–2022+
+        {
+            for (int minor = 0; minor <= 3; minor++)
             {
-                for (int minor = 0; minor <= 3; minor++)
+                string version = $"{major}.{minor}";
+                foreach (var baseKey in baseKeys)
                 {
-                    string version = $"{major}.{minor}";
-                    foreach (var baseKey in baseKeys)
+                    string path = $@"{baseKey}\{version}\VC\Runtimes\x64";
+                    using (RegistryKey? key = Registry.LocalMachine.OpenSubKey(path))
                     {
-                        string path = $@"{baseKey}\{version}\VC\Runtimes\x64";
-                        using (RegistryKey? key = Registry.LocalMachine.OpenSubKey(path))
+                        if (key?.GetValue("Installed") is int installed && installed == 1)
                         {
-                            if (key?.GetValue("Installed") is int installed && installed == 1)
-                            {
-                                installedVersions.Add(version);
-                            }
+                            installedVersions.Add(version);
                         }
                     }
                 }
             }
-
-            return installedVersions;
         }
+
+        return installedVersions;
     }
 }

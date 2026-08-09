@@ -2,10 +2,9 @@
 using mRemoteNG.Connection;
 
 
-namespace mRemoteNG.Config.Putty
+namespace mRemoteNG.Config.Putty;
+
+public class PuttySessionChangedEventArgs(PuttySessionInfo? sessionChanged = null) : EventArgs
 {
-    public class PuttySessionChangedEventArgs(PuttySessionInfo? sessionChanged = null) : EventArgs
-    {
-        public PuttySessionInfo? Session { get; set; } = sessionChanged;
-    }
+    public PuttySessionInfo? Session { get; set; } = sessionChanged;
 }

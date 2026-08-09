@@ -1,35 +1,34 @@
-﻿using mRemoteNG.Credential;
-using mRemoteNG.Security;
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Xml.Linq;
+using mRemoteNG.Credential;
+using mRemoteNG.Security;
 
-namespace mRemoteNG.Config.Serializers.CredentialSerializer
+namespace mRemoteNG.Config.Serializers.CredentialSerializer;
+
+public class XmlCredentialRecordSerializer : ISerializer<IEnumerable<ICredentialRecord>, string>
 {
-    public class XmlCredentialRecordSerializer : ISerializer<IEnumerable<ICredentialRecord>, string>
-    {
-        public Version Version { get; } = new Version(1, 0);
+    public Version Version { get; } = new Version(1, 0);
 
-        public string Serialize(IEnumerable<ICredentialRecord> credentialRecords)
+    public string Serialize(IEnumerable<ICredentialRecord> credentialRecords)
+    {
+        XDocument xdoc = new(
+            new XElement("Credentials",
+                new XAttribute("SchemaVersion", Version.ToString(2)),
+                from r in credentialRecords
+                select new XElement("Credential",
+                    new XAttribute("Id", r.Id),
+                    new XAttribute("Title", r.Title),
+                    new XAttribute("Username", r.Username),
+                    new XAttribute("Domain", r.Domain),
+                    new XAttribute("Password", r.Password.ConvertToUnsecureString())
+                )
+            )
+        )
         {
-            XDocument xdoc = new(
-                                     new XElement("Credentials",
-                                                  new XAttribute("SchemaVersion", Version.ToString(2)),
-                                                  from r in credentialRecords
-                                                  select new XElement("Credential",
-                                                                      new XAttribute("Id", r.Id),
-                                                                      new XAttribute("Title", r.Title),
-                                                                      new XAttribute("Username", r.Username),
-                                                                      new XAttribute("Domain", r.Domain),
-                                                                      new XAttribute("Password", r.Password.ConvertToUnsecureString())
-                                                                     )
-                                                 )
-                                    )
-            {
-                Declaration = new XDeclaration("1.0", "utf-8", null)
-            };
-            return xdoc.Declaration + Environment.NewLine + xdoc;
-        }
+            Declaration = new XDeclaration("1.0", "utf-8", null)
+        };
+        return xdoc.Declaration + Environment.NewLine + xdoc;
     }
 }

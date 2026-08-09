@@ -12,274 +12,273 @@ using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
 using mRemoteNG.Security;
 using mRemoteNG.Security.SymmetricEncryption;
-using mRemoteNG.Tools;
 using mRemoteNG.Tree.Root;
 
-namespace mRemoteNG.Config.Serializers.ConnectionSerializers.Sql
+namespace mRemoteNG.Config.Serializers.ConnectionSerializers.Sql;
+
+[SupportedOSPlatform("windows")]
+public class SqlDatabaseMetaDataRetriever : ISqlDatabaseMetaDataRetriever
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlDatabaseMetaDataRetriever : ISqlDatabaseMetaDataRetriever
+    public SqlConnectionListMetaData? GetDatabaseMetaData(IDatabaseConnector databaseConnector)
     {
-        public SqlConnectionListMetaData? GetDatabaseMetaData(IDatabaseConnector databaseConnector)
+        SqlConnectionListMetaData metaData;
+        DbDataReader? dbDataReader = null;
+
+        try
         {
-            SqlConnectionListMetaData metaData;
-            DbDataReader? dbDataReader = null;
+            if (!databaseConnector.IsConnected)
+                databaseConnector.Connect();
 
-            try
+            if (!DoesDbTableExist(databaseConnector, "tblRoot"))
             {
-                if (!databaseConnector.IsConnected)
-                    databaseConnector.Connect();
-
-                if (!DoesDbTableExist(databaseConnector, "tblRoot"))
+                // tblRoot is absent.  Before wiping anything, check whether tblCons
+                // already exists — if it does the database is in an inconsistent state
+                // (metadata lost but connections are present).  Attempting to
+                // InitializeDatabaseSchema would DROP tblCons and erase all connections,
+                // so throw instead to surface the problem without causing data loss (#1784).
+                if (DoesDbTableExist(databaseConnector, "tblCons"))
                 {
-                    // tblRoot is absent.  Before wiping anything, check whether tblCons
-                    // already exists — if it does the database is in an inconsistent state
-                    // (metadata lost but connections are present).  Attempting to
-                    // InitializeDatabaseSchema would DROP tblCons and erase all connections,
-                    // so throw instead to surface the problem without causing data loss (#1784).
-                    if (DoesDbTableExist(databaseConnector, "tblCons"))
-                    {
-                        throw new InvalidOperationException(
-                            "Database is in an inconsistent state: tblCons exists but tblRoot is missing. " +
-                            "Load aborted to prevent data loss. Please restore the tblRoot table or " +
-                            "recreate the database schema manually.");
-                    }
-
-                    // Truly new/empty database — safe to initialize the schema.
-                    InitializeDatabaseSchema(databaseConnector);
-                }
-                else
-                {
-                    UpgradeSchema(databaseConnector);
+                    throw new InvalidOperationException(
+                        "Database is in an inconsistent state: tblCons exists but tblRoot is missing. " +
+                        "Load aborted to prevent data loss. Please restore the tblRoot table or " +
+                        "recreate the database schema manually.");
                 }
 
-                DbCommand dbCommand = databaseConnector.DbCommand("SELECT * FROM tblRoot");
-                dbDataReader = dbCommand.ExecuteReader();
-                if (!dbDataReader.HasRows)
-                {
-                    // assume new empty database
-                    return null;
-                }
-                else
-                {
-                    dbDataReader.Read();
-                }
-
-                metaData = new SqlConnectionListMetaData
-                {
-                    Name = dbDataReader["Name"] as string ?? "",
-                    Protected = dbDataReader["Protected"] as string ?? "",
-                    Export = dbDataReader["Export"] != DBNull.Value && Convert.ToBoolean(dbDataReader["Export"], CultureInfo.InvariantCulture),
-                    ConfVersion = new Version(Convert.ToString(dbDataReader["confVersion"], CultureInfo.InvariantCulture) ?? string.Empty)
-                };
+                // Truly new/empty database — safe to initialize the schema.
+                InitializeDatabaseSchema(databaseConnector);
             }
-            catch (Exception ex)
+            else
             {
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, $"Retrieving database version failed. {ex}");
-                throw;
-            }
-            finally
-            {
-                if (dbDataReader != null && !dbDataReader.IsClosed)
-                    dbDataReader.Close();
+                UpgradeSchema(databaseConnector);
             }
 
-            return metaData;
+            DbCommand dbCommand = databaseConnector.DbCommand("SELECT * FROM tblRoot");
+            dbDataReader = dbCommand.ExecuteReader();
+            if (!dbDataReader.HasRows)
+            {
+                // assume new empty database
+                return null;
+            }
+            else
+            {
+                dbDataReader.Read();
+            }
+
+            metaData = new SqlConnectionListMetaData
+            {
+                Name = dbDataReader["Name"] as string ?? "",
+                Protected = dbDataReader["Protected"] as string ?? "",
+                Export = dbDataReader["Export"] != DBNull.Value && Convert.ToBoolean(dbDataReader["Export"], CultureInfo.InvariantCulture),
+                ConfVersion = new Version(Convert.ToString(dbDataReader["confVersion"], CultureInfo.InvariantCulture) ?? string.Empty)
+            };
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, $"Retrieving database version failed. {ex}");
+            throw;
+        }
+        finally
+        {
+            if (dbDataReader != null && !dbDataReader.IsClosed)
+                dbDataReader.Close();
         }
 
-        public void WriteDatabaseMetaData(RootNodeInfo rootTreeNode, IDatabaseConnector databaseConnector)
+        return metaData;
+    }
+
+    public void WriteDatabaseMetaData(RootNodeInfo rootTreeNode, IDatabaseConnector databaseConnector)
+    {
+        WriteDatabaseMetaData(rootTreeNode, databaseConnector, null);
+    }
+
+    public void WriteDatabaseMetaData(RootNodeInfo rootTreeNode, IDatabaseConnector databaseConnector, DbTransaction? transaction)
+    {
+        LegacyRijndaelCryptographyProvider cryptographyProvider = new();
+
+        string strProtected;
+
+        if (rootTreeNode != null)
         {
-            WriteDatabaseMetaData(rootTreeNode, databaseConnector, null);
-        }
-
-        public void WriteDatabaseMetaData(RootNodeInfo rootTreeNode, IDatabaseConnector databaseConnector, DbTransaction? transaction)
-        {
-            LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-
-            string strProtected;
-
-            if (rootTreeNode != null)
+            if (rootTreeNode.Password)
             {
-                if (rootTreeNode.Password)
-                {
-                    SecureString password = rootTreeNode.PasswordString.ConvertToSecureString();
+                SecureString password = rootTreeNode.PasswordString.ConvertToSecureString();
 
-                    strProtected = cryptographyProvider.Encrypt("ThisIsProtected", password);
-                }
-                else
-                {
-                    strProtected = cryptographyProvider.Encrypt("ThisIsNotProtected", Runtime.EncryptionKey);
-                }
+                strProtected = cryptographyProvider.Encrypt("ThisIsProtected", password);
             }
             else
             {
                 strProtected = cryptographyProvider.Encrypt("ThisIsNotProtected", Runtime.EncryptionKey);
             }
-
-            bool mustDisposeTransaction = false;
-            if (transaction == null)
-            {
-                transaction = databaseConnector.DbConnection().BeginTransaction();
-                mustDisposeTransaction = true;
-            }
-
-            try
-            {
-                SqlSafeUpdateHelper.DeleteAllRows(
-                    databaseConnector,
-                    transaction,
-                    "DELETE FROM tblRoot",
-                    "DELETE FROM tblRoot LIMIT 1");
-
-                if (rootTreeNode != null)
-                {
-                    DbCommand cmd = databaseConnector.DbCommand(
-                            "INSERT INTO tblRoot (Name, Export, Protected, ConfVersion) VALUES(@Name, 0, @Protected, @ConfVersion)");
-                    cmd.Transaction = transaction;
-
-                    DbParameter nameParam = cmd.CreateParameter();
-                    nameParam.ParameterName = "@Name";
-                    nameParam.Value = rootTreeNode.Name;
-                    cmd.Parameters.Add(nameParam);
-
-                    DbParameter protectedParam = cmd.CreateParameter();
-                    protectedParam.ParameterName = "@Protected";
-                    protectedParam.DbType = System.Data.DbType.String;
-                    protectedParam.Size = -1; // nvarchar(MAX) — column is 4048 which exceeds nvarchar param limit of 4000
-                    protectedParam.Value = strProtected;
-                    cmd.Parameters.Add(protectedParam);
-
-                    DbParameter confVersionParam = cmd.CreateParameter();
-                    confVersionParam.ParameterName = "@ConfVersion";
-                    confVersionParam.Value = ConnectionsFileInfo.ConnectionFileVersion.ToString();
-                    cmd.Parameters.Add(confVersionParam);
-
-                    cmd.ExecuteNonQuery();
-                }
-                else
-                {
-                    Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, $"UpdateRootNodeTable: rootTreeNode was null. Could not insert!");
-                }
-
-                if (mustDisposeTransaction)
-                {
-                    transaction.Commit();
-                }
-            }
-            catch
-            {
-                if (mustDisposeTransaction)
-                {
-                    transaction.Rollback();
-                }
-                throw;
-            }
-            finally
-            {
-                if (mustDisposeTransaction)
-                {
-                    transaction.Dispose();
-                }
-            }
+        }
+        else
+        {
+            strProtected = cryptographyProvider.Encrypt("ThisIsNotProtected", Runtime.EncryptionKey);
         }
 
-        private static bool IsValidTableName(string tableName)
+        bool mustDisposeTransaction = false;
+        if (transaction == null)
         {
-            // Table names should only contain alphanumeric characters and underscores
-            // This prevents SQL injection when table names must be used directly in queries
-            if (string.IsNullOrWhiteSpace(tableName))
+            transaction = databaseConnector.DbConnection().BeginTransaction();
+            mustDisposeTransaction = true;
+        }
+
+        try
+        {
+            SqlSafeUpdateHelper.DeleteAllRows(
+                databaseConnector,
+                transaction,
+                "DELETE FROM tblRoot",
+                "DELETE FROM tblRoot LIMIT 1");
+
+            if (rootTreeNode != null)
+            {
+                DbCommand cmd = databaseConnector.DbCommand(
+                    "INSERT INTO tblRoot (Name, Export, Protected, ConfVersion) VALUES(@Name, 0, @Protected, @ConfVersion)");
+                cmd.Transaction = transaction;
+
+                DbParameter nameParam = cmd.CreateParameter();
+                nameParam.ParameterName = "@Name";
+                nameParam.Value = rootTreeNode.Name;
+                cmd.Parameters.Add(nameParam);
+
+                DbParameter protectedParam = cmd.CreateParameter();
+                protectedParam.ParameterName = "@Protected";
+                protectedParam.DbType = System.Data.DbType.String;
+                protectedParam.Size = -1; // nvarchar(MAX) — column is 4048 which exceeds nvarchar param limit of 4000
+                protectedParam.Value = strProtected;
+                cmd.Parameters.Add(protectedParam);
+
+                DbParameter confVersionParam = cmd.CreateParameter();
+                confVersionParam.ParameterName = "@ConfVersion";
+                confVersionParam.Value = ConnectionsFileInfo.ConnectionFileVersion.ToString();
+                cmd.Parameters.Add(confVersionParam);
+
+                cmd.ExecuteNonQuery();
+            }
+            else
+            {
+                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, $"UpdateRootNodeTable: rootTreeNode was null. Could not insert!");
+            }
+
+            if (mustDisposeTransaction)
+            {
+                transaction.Commit();
+            }
+        }
+        catch
+        {
+            if (mustDisposeTransaction)
+            {
+                transaction.Rollback();
+            }
+            throw;
+        }
+        finally
+        {
+            if (mustDisposeTransaction)
+            {
+                transaction.Dispose();
+            }
+        }
+    }
+
+    private static bool IsValidTableName(string tableName)
+    {
+        // Table names should only contain alphanumeric characters and underscores
+        // This prevents SQL injection when table names must be used directly in queries
+        if (string.IsNullOrWhiteSpace(tableName))
+            return false;
+
+        foreach (char c in tableName)
+        {
+            if (!char.IsLetterOrDigit(c) && c != '_')
                 return false;
-
-            foreach (char c in tableName)
-            {
-                if (!char.IsLetterOrDigit(c) && c != '_')
-                    return false;
-            }
-
-            return true;
         }
 
-        private static bool DoesDbTableExist(IDatabaseConnector databaseConnector, string tableName)
+        return true;
+    }
+
+    private static bool DoesDbTableExist(IDatabaseConnector databaseConnector, string tableName)
+    {
+        bool exists;
+
+        try
         {
-            bool exists;
+            // ANSI SQL way.  Works in PostgreSQL, MSSQL, MySQL.
+            string database_name = Properties.OptionsDBsPage.Default.SQLDatabaseName;
+            DbCommand cmd = databaseConnector.DbCommand("select case when exists((select * from information_schema.tables where table_name = @TableName and table_schema = @DatabaseName)) then 1 else 0 end");
 
-            try
-            {
-                // ANSI SQL way.  Works in PostgreSQL, MSSQL, MySQL.
-                string database_name = Properties.OptionsDBsPage.Default.SQLDatabaseName;
-                DbCommand cmd = databaseConnector.DbCommand("select case when exists((select * from information_schema.tables where table_name = @TableName and table_schema = @DatabaseName)) then 1 else 0 end");
-                
-                DbParameter tableNameParam = cmd.CreateParameter();
-                tableNameParam.ParameterName = "@TableName";
-                tableNameParam.Value = tableName;
-                cmd.Parameters.Add(tableNameParam);
+            DbParameter tableNameParam = cmd.CreateParameter();
+            tableNameParam.ParameterName = "@TableName";
+            tableNameParam.Value = tableName;
+            cmd.Parameters.Add(tableNameParam);
 
-                DbParameter databaseNameParam = cmd.CreateParameter();
-                databaseNameParam.ParameterName = "@DatabaseName";
-                databaseNameParam.Value = database_name;
-                cmd.Parameters.Add(databaseNameParam);
+            DbParameter databaseNameParam = cmd.CreateParameter();
+            databaseNameParam.ParameterName = "@DatabaseName";
+            databaseNameParam.Value = database_name;
+            cmd.Parameters.Add(databaseNameParam);
 
-                short cmdResult = Convert.ToInt16(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
-                exists = (cmdResult == 1);
+            short cmdResult = Convert.ToInt16(cmd.ExecuteScalar(), CultureInfo.InvariantCulture);
+            exists = (cmdResult == 1);
 
-                // If information_schema reports the table as absent, verify with a direct
-                // query before concluding it doesn't exist.  This guards against false
-                // negatives caused by schema-name case-sensitivity (Linux MySQL) or
-                // insufficient information_schema permissions — either of which would
-                // otherwise trigger InitializeDatabaseSchema and erase all data (#1784).
-                if (!exists && IsValidTableName(tableName))
-                {
-                    try
-                    {
-                        DbCommand verifyCmd = databaseConnector.DbCommand($"select 1 from {tableName} where 1 = 0");
-                        verifyCmd.ExecuteNonQuery();
-                        exists = true; // table is reachable — information_schema was wrong
-                    }
-                    catch
-                    {
-                        exists = false; // table truly does not exist
-                    }
-                }
-            }
-            catch
+            // If information_schema reports the table as absent, verify with a direct
+            // query before concluding it doesn't exist.  This guards against false
+            // negatives caused by schema-name case-sensitivity (Linux MySQL) or
+            // insufficient information_schema permissions — either of which would
+            // otherwise trigger InitializeDatabaseSchema and erase all data (#1784).
+            if (!exists && IsValidTableName(tableName))
             {
                 try
                 {
-                    // Other RDBMS.  Graceful degradation
-                    // Note: Table names cannot be parameterized in standard SQL.
-                    // Validate tableName to prevent SQL injection
-                    if (!IsValidTableName(tableName))
-                    {
-                        exists = false;
-                    }
-                    else
-                    {
-                        exists = true;
-                        DbCommand cmdOthers = databaseConnector.DbCommand($"select 1 from {tableName} where 1 = 0");
-                        cmdOthers.ExecuteNonQuery();
-                    }
+                    DbCommand verifyCmd = databaseConnector.DbCommand($"select 1 from {tableName} where 1 = 0");
+                    verifyCmd.ExecuteNonQuery();
+                    exists = true; // table is reachable — information_schema was wrong
                 }
                 catch
                 {
-                    exists = false;
+                    exists = false; // table truly does not exist
                 }
             }
-
-            return exists;
+        }
+        catch
+        {
+            try
+            {
+                // Other RDBMS.  Graceful degradation
+                // Note: Table names cannot be parameterized in standard SQL.
+                // Validate tableName to prevent SQL injection
+                if (!IsValidTableName(tableName))
+                {
+                    exists = false;
+                }
+                else
+                {
+                    exists = true;
+                    DbCommand cmdOthers = databaseConnector.DbCommand($"select 1 from {tableName} where 1 = 0");
+                    cmdOthers.ExecuteNonQuery();
+                }
+            }
+            catch
+            {
+                exists = false;
+            }
         }
 
-        private static void InitializeDatabaseSchema(IDatabaseConnector databaseConnector)
-        {
-            string sql;
-            
-            if (databaseConnector.GetType() == typeof(MSSqlDatabaseConnector)
-                || databaseConnector.GetType() == typeof(OdbcDatabaseConnector))
-            {
-                // *********************************
-                // ********* MICROSOFT SQL *********
-                // *********************************
+        return exists;
+    }
 
-                sql = @"
+    private static void InitializeDatabaseSchema(IDatabaseConnector databaseConnector)
+    {
+        string sql;
+
+        if (databaseConnector.GetType() == typeof(MSSqlDatabaseConnector)
+            || databaseConnector.GetType() == typeof(OdbcDatabaseConnector))
+        {
+            // *********************************
+            // ********* MICROSOFT SQL *********
+            // *********************************
+
+            sql = @"
 if exists (select * from dbo.sysobjects
     where id = object_id(N'[dbo].[tblCons]') and OBJECTPROPERTY(id, N'IsUserTable') = 1)
 drop table [dbo].[tblCons]
@@ -501,14 +500,14 @@ CREATE TABLE [dbo].[tblExternalTools] (
         [Passphrase] [nvarchar] (1024) NOT NULL DEFAULT ''
 ) ON [PRIMARY]
 ";
-            }
-            else if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
-            {
-                // **************************
-                // ********* MY SQL *********
-                // **************************
+        }
+        else if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
+        {
+            // **************************
+            // ********* MY SQL *********
+            // **************************
 
-                sql = @"
+            sql = @"
 /*!40101 SET @OLD_CHARACTER_SET_CLIENT=@@CHARACTER_SET_CLIENT */;
 /*!40101 SET @OLD_CHARACTER_SET_RESULTS=@@CHARACTER_SET_RESULTS */;
 /*!40101 SET @OLD_COLLATION_CONNECTION=@@COLLATION_CONNECTION */;
@@ -776,241 +775,240 @@ CREATE TABLE `tblExternalTools` (
 /*!40101 SET COLLATION_CONNECTION=@OLD_COLLATION_CONNECTION */;
 /*!40111 SET SQL_NOTES=@OLD_SQL_NOTES */;
 ";
-            }
-            else
+        }
+        else
+        {
+            throw new NotSupportedException("Unknown database backend");
+        }
+
+        DbCommand cmd = databaseConnector.DbCommand(sql);
+        cmd.ExecuteNonQuery();
+    }
+
+    private static void UpgradeSchema(IDatabaseConnector databaseConnector)
+    {
+        try
+        {
+            // One bulk INFORMATION_SCHEMA fetch instead of one round-trip per
+            // expected column (200+ sequential queries on every load, which on a
+            // remote/VPN SQL Server added seconds to every startup — #120).
+            // Null means the bulk fetch failed; callers fall back to per-column checks.
+            ISet<string>? existingColumns = GetExistingColumns(databaseConnector, "tblCons");
+
+            if (databaseConnector.GetType() == typeof(MSSqlDatabaseConnector))
             {
-                throw new NotSupportedException("Unknown database backend");
+                UpgradeMssqlSchema(databaseConnector, existingColumns);
+            }
+            else if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
+            {
+                UpgradeMysqlSchema(databaseConnector, existingColumns);
+            }
+
+            if (!ColumnExists(databaseConnector, existingColumns, "tblCons", "User"))
+            {
+                string sql = databaseConnector.GetType() == typeof(MySqlDatabaseConnector)
+                    ? "ALTER TABLE tblCons ADD COLUMN `User` varchar(512) DEFAULT NULL"
+                    : "ALTER TABLE tblCons ADD [User] nvarchar(512) NULL";
+                databaseConnector.DbCommand(sql).ExecuteNonQuery();
+                existingColumns?.Add("User");
+            }
+
+            if (!ColumnExists(databaseConnector, existingColumns, "tblCons", "Role"))
+            {
+                string sql = databaseConnector.GetType() == typeof(MySqlDatabaseConnector)
+                    ? "ALTER TABLE tblCons ADD COLUMN `Role` varchar(512) DEFAULT NULL"
+                    : "ALTER TABLE tblCons ADD [Role] nvarchar(512) NULL";
+                databaseConnector.DbCommand(sql).ExecuteNonQuery();
+                existingColumns?.Add("Role");
+            }
+
+            if (databaseConnector.GetType() == typeof(MSSqlDatabaseConnector))
+            {
+                if (!ColumnExists(databaseConnector, existingColumns, "tblCons", "RowVersion"))
+                {
+                    databaseConnector.DbCommand("ALTER TABLE tblCons ADD [RowVersion] rowversion NOT NULL").ExecuteNonQuery();
+                    existingColumns?.Add("RowVersion");
+                }
+            }
+            else if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
+            {
+                if (!ColumnExists(databaseConnector, existingColumns, "tblCons", "RowVersion"))
+                {
+                    databaseConnector.DbCommand("ALTER TABLE tblCons ADD COLUMN `RowVersion` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP").ExecuteNonQuery();
+                    existingColumns?.Add("RowVersion");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddExceptionStackTrace("Schema upgrade failed", ex);
+        }
+    }
+
+    private static void UpgradeMssqlSchema(IDatabaseConnector databaseConnector, ISet<string>? existingColumns)
+    {
+        DataTable expectedSchema = DataTableSerializer.GetExpectedSchema();
+
+        foreach (DataColumn expectedColumn in expectedSchema.Columns)
+        {
+            if (ColumnExists(databaseConnector, existingColumns, "tblCons", expectedColumn.ColumnName))
+            {
+                continue;
+            }
+
+            // Use NOT NULL DEFAULT for value-type columns so existing rows get
+            // a proper default value and new INSERTs don't fail.  (#1796)
+            string sqlType = expectedColumn.DataType switch
+            {
+                Type t when t == typeof(bool) => "bit NOT NULL DEFAULT 0",
+                Type t when t == typeof(int) => "int NOT NULL DEFAULT 0",
+                Type t when t == typeof(SqlDateTime) || t == typeof(DateTime) => "datetime NULL",
+                Type t when t == typeof(string) => "nvarchar(4000) NULL",
+                _ => "nvarchar(4000) NULL",
+            };
+
+            databaseConnector.DbCommand($"ALTER TABLE [tblCons] ADD [{expectedColumn.ColumnName}] {sqlType}").ExecuteNonQuery();
+            existingColumns?.Add(expectedColumn.ColumnName);
+        }
+    }
+
+    private static void UpgradeMysqlSchema(IDatabaseConnector databaseConnector, ISet<string>? existingColumns)
+    {
+        DataTable expectedSchema = DataTableSerializer.GetExpectedSchema();
+
+        foreach (DataColumn expectedColumn in expectedSchema.Columns)
+        {
+            if (ColumnExists(databaseConnector, existingColumns, "tblCons", expectedColumn.ColumnName))
+            {
+                continue;
+            }
+
+            string sqlType = expectedColumn.DataType switch
+            {
+                Type t when t == typeof(bool) => "TINYINT(1) NOT NULL DEFAULT 0",
+                Type t when t == typeof(int) => "INT NOT NULL DEFAULT 0",
+                Type t when t == typeof(SqlDateTime) || t == typeof(DateTime) => "DATETIME NULL",
+                // TEXT stores off-page (a small in-row pointer). With many string columns,
+                // inline VARCHAR(4000) blows past MySQL/MariaDB's 65535-byte row limit and the
+                // upgrade fails "Row size too large" (#147). Upgrade only adds non-key columns
+                // (ConstantID must already exist on a usable tblCons; the legacy ID column is
+                // intentionally absent from the expected schema), so none need indexing.
+                Type t when t == typeof(string) => "TEXT NULL",
+                _ => "VARCHAR(4000) NULL",
+            };
+
+            databaseConnector.DbCommand($"ALTER TABLE tblCons ADD COLUMN `{expectedColumn.ColumnName}` {sqlType}").ExecuteNonQuery();
+            existingColumns?.Add(expectedColumn.ColumnName);
+        }
+    }
+
+    /// <summary>
+    /// Fetches all column names of <paramref name="tableName"/> in one round-trip.
+    /// Returns null when the bulk fetch fails or yields no columns (a table always
+    /// has at least one, so an empty result means the query hit the wrong scope) —
+    /// callers then fall back to the per-column <see cref="DoesColumnExist"/> path.
+    /// </summary>
+    private static ISet<string>? GetExistingColumns(IDatabaseConnector databaseConnector, string tableName)
+    {
+        try
+        {
+            string databaseName = Properties.OptionsDBsPage.Default.SQLDatabaseName;
+            string sql = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @TableName";
+
+            if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
+            {
+                sql += " AND TABLE_SCHEMA = @DatabaseName";
             }
 
             DbCommand cmd = databaseConnector.DbCommand(sql);
-            cmd.ExecuteNonQuery();
-        }
 
-        private static void UpgradeSchema(IDatabaseConnector databaseConnector)
-        {
-            try
+            DbParameter tableNameParam = cmd.CreateParameter();
+            tableNameParam.ParameterName = "@TableName";
+            tableNameParam.Value = tableName;
+            cmd.Parameters.Add(tableNameParam);
+
+            if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
             {
-                // One bulk INFORMATION_SCHEMA fetch instead of one round-trip per
-                // expected column (200+ sequential queries on every load, which on a
-                // remote/VPN SQL Server added seconds to every startup — #120).
-                // Null means the bulk fetch failed; callers fall back to per-column checks.
-                ISet<string>? existingColumns = GetExistingColumns(databaseConnector, "tblCons");
+                DbParameter dbNameParam = cmd.CreateParameter();
+                dbNameParam.ParameterName = "@DatabaseName";
+                dbNameParam.Value = databaseName;
+                cmd.Parameters.Add(dbNameParam);
+            }
 
-                if (databaseConnector.GetType() == typeof(MSSqlDatabaseConnector))
+            HashSet<string> columns = new(StringComparer.OrdinalIgnoreCase);
+            using (DbDataReader reader = cmd.ExecuteReader())
+            {
+                while (reader.Read())
                 {
-                    UpgradeMssqlSchema(databaseConnector, existingColumns);
-                }
-                else if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
-                {
-                    UpgradeMysqlSchema(databaseConnector, existingColumns);
-                }
-
-                if (!ColumnExists(databaseConnector, existingColumns, "tblCons", "User"))
-                {
-                    string sql = databaseConnector.GetType() == typeof(MySqlDatabaseConnector)
-                        ? "ALTER TABLE tblCons ADD COLUMN `User` varchar(512) DEFAULT NULL"
-                        : "ALTER TABLE tblCons ADD [User] nvarchar(512) NULL";
-                    databaseConnector.DbCommand(sql).ExecuteNonQuery();
-                    existingColumns?.Add("User");
-                }
-
-                if (!ColumnExists(databaseConnector, existingColumns, "tblCons", "Role"))
-                {
-                    string sql = databaseConnector.GetType() == typeof(MySqlDatabaseConnector)
-                        ? "ALTER TABLE tblCons ADD COLUMN `Role` varchar(512) DEFAULT NULL"
-                        : "ALTER TABLE tblCons ADD [Role] nvarchar(512) NULL";
-                    databaseConnector.DbCommand(sql).ExecuteNonQuery();
-                    existingColumns?.Add("Role");
-                }
-
-                if (databaseConnector.GetType() == typeof(MSSqlDatabaseConnector))
-                {
-                     if (!ColumnExists(databaseConnector, existingColumns, "tblCons", "RowVersion"))
-                     {
-                         databaseConnector.DbCommand("ALTER TABLE tblCons ADD [RowVersion] rowversion NOT NULL").ExecuteNonQuery();
-                         existingColumns?.Add("RowVersion");
-                     }
-                }
-                else if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
-                {
-                    if (!ColumnExists(databaseConnector, existingColumns, "tblCons", "RowVersion"))
-                    {
-                        databaseConnector.DbCommand("ALTER TABLE tblCons ADD COLUMN `RowVersion` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP").ExecuteNonQuery();
-                        existingColumns?.Add("RowVersion");
-                    }
+                    string? columnName = Convert.ToString(reader[0], CultureInfo.InvariantCulture);
+                    if (!string.IsNullOrEmpty(columnName))
+                        columns.Add(columnName);
                 }
             }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace("Schema upgrade failed", ex);
-            }
-        }
 
-        private static void UpgradeMssqlSchema(IDatabaseConnector databaseConnector, ISet<string>? existingColumns)
-        {
-            DataTable expectedSchema = DataTableSerializer.GetExpectedSchema();
-
-            foreach (DataColumn expectedColumn in expectedSchema.Columns)
-            {
-                if (ColumnExists(databaseConnector, existingColumns, "tblCons", expectedColumn.ColumnName))
-                {
-                    continue;
-                }
-
-                // Use NOT NULL DEFAULT for value-type columns so existing rows get
-                // a proper default value and new INSERTs don't fail.  (#1796)
-                string sqlType = expectedColumn.DataType switch
-                {
-                    Type t when t == typeof(bool) => "bit NOT NULL DEFAULT 0",
-                    Type t when t == typeof(int) => "int NOT NULL DEFAULT 0",
-                    Type t when t == typeof(SqlDateTime) || t == typeof(DateTime) => "datetime NULL",
-                    Type t when t == typeof(string) => "nvarchar(4000) NULL",
-                    _ => "nvarchar(4000) NULL",
-                };
-
-                databaseConnector.DbCommand($"ALTER TABLE [tblCons] ADD [{expectedColumn.ColumnName}] {sqlType}").ExecuteNonQuery();
-                existingColumns?.Add(expectedColumn.ColumnName);
-            }
-        }
-
-        private static void UpgradeMysqlSchema(IDatabaseConnector databaseConnector, ISet<string>? existingColumns)
-        {
-            DataTable expectedSchema = DataTableSerializer.GetExpectedSchema();
-
-            foreach (DataColumn expectedColumn in expectedSchema.Columns)
-            {
-                if (ColumnExists(databaseConnector, existingColumns, "tblCons", expectedColumn.ColumnName))
-                {
-                    continue;
-                }
-
-                string sqlType = expectedColumn.DataType switch
-                {
-                    Type t when t == typeof(bool) => "TINYINT(1) NOT NULL DEFAULT 0",
-                    Type t when t == typeof(int) => "INT NOT NULL DEFAULT 0",
-                    Type t when t == typeof(SqlDateTime) || t == typeof(DateTime) => "DATETIME NULL",
-                    // TEXT stores off-page (a small in-row pointer). With many string columns,
-                    // inline VARCHAR(4000) blows past MySQL/MariaDB's 65535-byte row limit and the
-                    // upgrade fails "Row size too large" (#147). Upgrade only adds non-key columns
-                    // (ConstantID must already exist on a usable tblCons; the legacy ID column is
-                    // intentionally absent from the expected schema), so none need indexing.
-                    Type t when t == typeof(string) => "TEXT NULL",
-                    _ => "VARCHAR(4000) NULL",
-                };
-
-                databaseConnector.DbCommand($"ALTER TABLE tblCons ADD COLUMN `{expectedColumn.ColumnName}` {sqlType}").ExecuteNonQuery();
-                existingColumns?.Add(expectedColumn.ColumnName);
-            }
-        }
-
-        /// <summary>
-        /// Fetches all column names of <paramref name="tableName"/> in one round-trip.
-        /// Returns null when the bulk fetch fails or yields no columns (a table always
-        /// has at least one, so an empty result means the query hit the wrong scope) —
-        /// callers then fall back to the per-column <see cref="DoesColumnExist"/> path.
-        /// </summary>
-        private static ISet<string>? GetExistingColumns(IDatabaseConnector databaseConnector, string tableName)
-        {
-            try
-            {
-                string databaseName = Properties.OptionsDBsPage.Default.SQLDatabaseName;
-                string sql = "SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @TableName";
-
-                if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
-                {
-                    sql += " AND TABLE_SCHEMA = @DatabaseName";
-                }
-
-                DbCommand cmd = databaseConnector.DbCommand(sql);
-
-                DbParameter tableNameParam = cmd.CreateParameter();
-                tableNameParam.ParameterName = "@TableName";
-                tableNameParam.Value = tableName;
-                cmd.Parameters.Add(tableNameParam);
-
-                if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
-                {
-                    DbParameter dbNameParam = cmd.CreateParameter();
-                    dbNameParam.ParameterName = "@DatabaseName";
-                    dbNameParam.Value = databaseName;
-                    cmd.Parameters.Add(dbNameParam);
-                }
-
-                HashSet<string> columns = new(StringComparer.OrdinalIgnoreCase);
-                using (DbDataReader reader = cmd.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        string? columnName = Convert.ToString(reader[0], CultureInfo.InvariantCulture);
-                        if (!string.IsNullOrEmpty(columnName))
-                            columns.Add(columnName);
-                    }
-                }
-
-                if (columns.Count == 0)
-                {
-                    Runtime.MessageCollector.AddMessage(MessageClass.DebugMsg,
-                        $"Bulk column lookup for '{tableName}' returned no columns; falling back to per-column checks.");
-                    return null;
-                }
-
-                return columns;
-            }
-            catch (Exception ex)
+            if (columns.Count == 0)
             {
                 Runtime.MessageCollector.AddMessage(MessageClass.DebugMsg,
-                    $"Bulk column lookup for '{tableName}' failed ({ex.Message}); falling back to per-column checks.");
+                    $"Bulk column lookup for '{tableName}' returned no columns; falling back to per-column checks.");
                 return null;
             }
-        }
 
-        private static bool ColumnExists(IDatabaseConnector databaseConnector, ISet<string>? existingColumns, string tableName, string columnName)
+            return columns;
+        }
+        catch (Exception ex)
         {
-            return existingColumns?.Contains(columnName) ?? DoesColumnExist(databaseConnector, tableName, columnName);
+            Runtime.MessageCollector.AddMessage(MessageClass.DebugMsg,
+                $"Bulk column lookup for '{tableName}' failed ({ex.Message}); falling back to per-column checks.");
+            return null;
         }
-
-        private static bool DoesColumnExist(IDatabaseConnector databaseConnector, string tableName, string columnName)
-        {
-             try
-             {
-                 string databaseName = Properties.OptionsDBsPage.Default.SQLDatabaseName;
-                 // INFORMATION_SCHEMA is standard
-                 string sql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @TableName AND COLUMN_NAME = @ColumnName";
-                 
-                 // However, some DBs might need database name filter if table names are not unique across schemas
-                 if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
-                 {
-                     sql += " AND TABLE_SCHEMA = @DatabaseName";
-                 }
-
-                 DbCommand cmd = databaseConnector.DbCommand(sql);
-                 
-                 DbParameter tableNameParam = cmd.CreateParameter();
-                 tableNameParam.ParameterName = "@TableName";
-                 tableNameParam.Value = tableName;
-                 cmd.Parameters.Add(tableNameParam);
-
-                 DbParameter columnNameParam = cmd.CreateParameter();
-                 columnNameParam.ParameterName = "@ColumnName";
-                 columnNameParam.Value = columnName;
-                 cmd.Parameters.Add(columnNameParam);
-
-                 if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
-                 {
-                     DbParameter dbNameParam = cmd.CreateParameter();
-                     dbNameParam.ParameterName = "@DatabaseName";
-                     dbNameParam.Value = databaseName;
-                     cmd.Parameters.Add(dbNameParam);
-                 }
-
-                 object? result = cmd.ExecuteScalar();
-                 return result != null && Convert.ToInt32(result, CultureInfo.InvariantCulture) > 0;
-             }
-             catch
-             {
-                 return false;
-             }
-        }
-        
     }
+
+    private static bool ColumnExists(IDatabaseConnector databaseConnector, ISet<string>? existingColumns, string tableName, string columnName)
+    {
+        return existingColumns?.Contains(columnName) ?? DoesColumnExist(databaseConnector, tableName, columnName);
+    }
+
+    private static bool DoesColumnExist(IDatabaseConnector databaseConnector, string tableName, string columnName)
+    {
+        try
+        {
+            string databaseName = Properties.OptionsDBsPage.Default.SQLDatabaseName;
+            // INFORMATION_SCHEMA is standard
+            string sql = "SELECT COUNT(*) FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = @TableName AND COLUMN_NAME = @ColumnName";
+
+            // However, some DBs might need database name filter if table names are not unique across schemas
+            if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
+            {
+                sql += " AND TABLE_SCHEMA = @DatabaseName";
+            }
+
+            DbCommand cmd = databaseConnector.DbCommand(sql);
+
+            DbParameter tableNameParam = cmd.CreateParameter();
+            tableNameParam.ParameterName = "@TableName";
+            tableNameParam.Value = tableName;
+            cmd.Parameters.Add(tableNameParam);
+
+            DbParameter columnNameParam = cmd.CreateParameter();
+            columnNameParam.ParameterName = "@ColumnName";
+            columnNameParam.Value = columnName;
+            cmd.Parameters.Add(columnNameParam);
+
+            if (databaseConnector.GetType() == typeof(MySqlDatabaseConnector))
+            {
+                DbParameter dbNameParam = cmd.CreateParameter();
+                dbNameParam.ParameterName = "@DatabaseName";
+                dbNameParam.Value = databaseName;
+                cmd.Parameters.Add(dbNameParam);
+            }
+
+            object? result = cmd.ExecuteScalar();
+            return result != null && Convert.ToInt32(result, CultureInfo.InvariantCulture) > 0;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
 }

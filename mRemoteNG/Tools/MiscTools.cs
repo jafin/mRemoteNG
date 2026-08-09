@@ -5,494 +5,493 @@ using System.Drawing;
 using System.Drawing.Imaging;
 using System.Globalization;
 using System.IO;
+using System.Runtime.Versioning;
 using System.Security;
 using mRemoteNG.App;
 using mRemoteNG.Connection;
 using mRemoteNG.Messages;
-using mRemoteNG.UI.Forms;
 using mRemoteNG.Resources.Language;
-using System.Runtime.Versioning;
+using mRemoteNG.UI.Forms;
 
-namespace mRemoteNG.Tools
+namespace mRemoteNG.Tools;
+
+[SupportedOSPlatform("windows")]
+public static class MiscTools
 {
-    [SupportedOSPlatform("windows")]
-    public static class MiscTools
+    public static Icon? GetIconFromFile(string fileName)
     {
-        public static Icon? GetIconFromFile(string FileName)
+        try
         {
-            try
-            {
-                return File.Exists(FileName) ? Icon.ExtractAssociatedIcon(FileName) : null;
-            }
-            catch (ArgumentException AEx)
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, "GetIconFromFile failed (Tools.Misc) - using default icon" + Environment.NewLine + AEx.Message, true);
-                return Properties.Resources.mRemoteNG_Icon;
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, "GetIconFromFile failed (Tools.Misc)" + Environment.NewLine + ex.Message, true);
-                return null;
-            }
+            return File.Exists(fileName) ? Icon.ExtractAssociatedIcon(fileName) : null;
+        }
+        catch (ArgumentException aEx)
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, "GetIconFromFile failed (Tools.Misc) - using default icon" + Environment.NewLine + aEx.Message, true);
+            return Properties.Resources.mRemoteNG_Icon;
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, "GetIconFromFile failed (Tools.Misc)" + Environment.NewLine + ex.Message, true);
+            return null;
+        }
+    }
+
+    public static Optional<SecureString> PasswordDialog(string? passwordName = null, bool verify = true)
+    {
+        //var splash = FrmSplashScreenNew.GetInstance();
+        //TODO: something not right there 
+        //if (PresentationSource.FromVisual(splash))
+        //    splash.Close();
+
+        passwordName ??= string.Empty; // Ensure passwordName is not null
+        FrmPassword passwordForm = new(passwordName, verify);
+        return passwordForm.GetKey();
+    }
+
+    public static string LeadingZero(string number)
+    {
+        if (Convert.ToInt32(number, CultureInfo.InvariantCulture) < 10)
+        {
+            return "0" + number;
         }
 
-        public static Optional<SecureString> PasswordDialog(string? passwordName = null, bool verify = true)
-        {
-            //var splash = FrmSplashScreenNew.GetInstance();
-            //TODO: something not right there 
-            //if (PresentationSource.FromVisual(splash))
-            //    splash.Close();
+        return number;
+    }
 
-            passwordName ??= string.Empty; // Ensure passwordName is not null
-            FrmPassword passwordForm = new(passwordName, verify);
-            return passwordForm.GetKey();
+    public static bool GetBooleanValue(object dataObject)
+    {
+        // A column read from an older / partially-migrated SQL schema can be DBNull
+        // (the value was never set). Treat it as false instead of letting GetType()
+        // fall through to the "type not handled" error path. (#113)
+        if (dataObject is null or DBNull)
+            return false;
+
+        Type type = dataObject.GetType();
+
+        if (type == typeof(bool))
+        {
+            return (bool)dataObject;
+        }
+        if (type == typeof(string))
+        {
+            return string.Equals((string)dataObject, "1", StringComparison.Ordinal);
+        }
+        if (type == typeof(sbyte))
+        {
+            return (sbyte)dataObject == 1;
         }
 
-        public static string LeadingZero(string Number)
+        Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, $"Conversion of object to boolean failed because the type, {type}, is not handled.");
+        return false;
+    }
+
+    public static string DbDate(DateTime dt)
+    {
+        switch (Properties.OptionsDBsPage.Default.SQLServerType)
         {
-            if (Convert.ToInt32(Number, CultureInfo.InvariantCulture) < 10)
+            case "mysql":
+                return dt.ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture);
+            case "mssql":
+            default:
+                return dt.ToString("yyyyMMdd HH:mm:ss", CultureInfo.InvariantCulture);
+        }
+    }
+
+    public static Type DbTimeStampType()
+    {
+        switch (Properties.OptionsDBsPage.Default.SQLServerType)
+        {
+            case "mysql":
+                // MySQL/MariaDB columns are DATETIME; use native DateTime so MySql.Data binds
+                // it directly. MySqlDateTime.ToString() emits a culture-formatted string
+                // (US MM/dd/yyyy), which MariaDB strict mode rejects (#146).
+                return typeof(DateTime);
+            case "mssql":
+            default:
+                return typeof(SqlDateTime);
+        }
+    }
+
+    public static object DbTimeStampNow()
+    {
+        switch (Properties.OptionsDBsPage.Default.SQLServerType)
+        {
+            case "mysql":
+            case "mssql":
+            default:
+                return DateTime.Now.ToUniversalTime();
+        }
+    }
+
+    public static string PrepareValueForDb(string text)
+    {
+        return text.Replace("\'", "\'\'", StringComparison.Ordinal);
+    }
+
+    public static string GetExceptionMessageRecursive(Exception ex)
+    {
+        return GetExceptionMessageRecursive(ex, Environment.NewLine);
+    }
+
+    private static string GetExceptionMessageRecursive(Exception ex, string separator)
+    {
+        string message = ex.Message;
+        if (ex.InnerException == null) return message;
+        string innerMessage = GetExceptionMessageRecursive(ex.InnerException, separator);
+        message = String.Join(separator, message, innerMessage);
+        return message;
+    }
+
+
+    public static Image? TakeScreenshot(UI.Tabs.ConnectionTab sender)
+    {
+        try
+        {
+            if (sender != null)
             {
-                return "0" + Number;
+                Bitmap bmp = new(sender.Width, sender.Height, PixelFormat.Format32bppRgb);
+                Graphics g = Graphics.FromImage(bmp);
+                g.CopyFromScreen(sender.PointToScreen(System.Drawing.Point.Empty), System.Drawing.Point.Empty, bmp.Size, CopyPixelOperation.SourceCopy);
+                return bmp;
+            }
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddExceptionStackTrace("Taking Screenshot failed", ex);
+        }
+
+        return null;
+    }
+
+    public class EnumTypeConverter(Type type) : EnumConverter(type)
+    {
+        private readonly Type _enumType = type;
+
+        public override bool CanConvertTo(ITypeDescriptorContext? context, Type? destinationType)
+        {
+            return destinationType == typeof(string) || base.CanConvertTo(context, destinationType);
+        }
+
+        public override object ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type? destinationType)
+        {
+            if (value == null) return string.Empty;
+
+            string? enumName = Enum.GetName(_enumType, value);
+            if (enumName == null)
+            {
+                throw new ArgumentException("Invalid enum value provided.", nameof(value));
             }
 
-            return Number;
+            System.Reflection.FieldInfo? fi = _enumType.GetField(enumName);
+            if (fi == null)
+            {
+                throw new ArgumentException("FieldInfo could not be retrieved for the provided enum value.", nameof(value));
+            }
+
+            DescriptionAttribute? dna = (DescriptionAttribute?)Attribute.GetCustomAttribute(fi, typeof(DescriptionAttribute));
+            return dna?.Description ?? value.ToString() ?? string.Empty;
         }
 
-        public static bool GetBooleanValue(object dataObject)
+        public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
         {
-            // A column read from an older / partially-migrated SQL schema can be DBNull
-            // (the value was never set). Treat it as false instead of letting GetType()
-            // fall through to the "type not handled" error path. (#113)
-            if (dataObject is null or DBNull)
+            return sourceType == typeof(string) || base.CanConvertFrom(context, sourceType);
+        }
+
+        public override object ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value)
+        {
+            if (value is string stringValue)
+            {
+                foreach (System.Reflection.FieldInfo fi in _enumType.GetFields())
+                {
+                    DescriptionAttribute? dna = (DescriptionAttribute?)Attribute.GetCustomAttribute(fi, typeof(DescriptionAttribute));
+
+                    if (dna != null && string.Equals(stringValue, dna.Description, StringComparison.Ordinal))
+                    {
+                        return Enum.Parse(_enumType, fi.Name);
+                    }
+                }
+
+                return Enum.Parse(_enumType, stringValue);
+            }
+
+            throw new ArgumentNullException(nameof(value), "Value cannot be null.");
+        }
+    }
+
+    public class YesNoTypeConverter : TypeConverter
+    {
+        public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
+        {
+            return sourceType == typeof(string) || base.CanConvertFrom(context, sourceType);
+        }
+        public override bool CanConvertTo(ITypeDescriptorContext? context, Type? destinationType)
+        {
+            return destinationType == typeof(string) || base.CanConvertTo(context, destinationType);
+        }
+
+        public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value)
+        {
+            if (value is not string stringValue)
+            {
+                // Ensure 'value' is not null before passing it to the base method
+                return value != null
+                    ? base.ConvertFrom(context, culture, value)
+                    : throw new ArgumentNullException(nameof(value), "Value cannot be null.");
+            }
+
+            if (string.Equals(stringValue, Language.Yes, StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (string.Equals(stringValue, Language.No, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            throw new FormatException("Values must be \"Yes\" or \"No\"");
+        }
+
+        public override object ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
+        {
+            if (destinationType == typeof(string))
+            {
+                return Convert.ToBoolean(value, CultureInfo.InvariantCulture) ? Language.Yes : Language.No;
+            }
+
+            return base.ConvertTo(context, culture, value, destinationType) ?? throw new InvalidOperationException("Base conversion returned null.");
+        }
+
+        public override bool GetStandardValuesSupported(ITypeDescriptorContext? context)
+        {
+            return true;
+        }
+
+        public override bool GetStandardValuesExclusive(ITypeDescriptorContext? context)
+        {
+            return true;
+        }
+
+        public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
+        {
+            bool[] bools = { true, false };
+
+            StandardValuesCollection svc = new(bools);
+
+            return svc;
+        }
+    }
+
+    public class YesNoAutoTypeConverter : YesNoTypeConverter
+    {
+        private const string AutoText = "Auto";
+
+        public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value)
+        {
+            if (value is AutoSelection autoSelection)
+            {
+                if (autoSelection == AutoSelection.Yes)
+                    return true;
+                if (autoSelection == AutoSelection.No)
+                    return false;
+                return ConvertFromAutoSelection(context);
+            }
+
+            if (value is string stringValue &&
+                string.Equals(stringValue, AutoText, StringComparison.OrdinalIgnoreCase))
+            {
+                return ConvertFromAutoSelection(context);
+            }
+
+            return base.ConvertFrom(context, culture, value);
+        }
+
+        public override object ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
+        {
+            if (destinationType == typeof(string) && value is AutoSelection autoSelection)
+            {
+                if (autoSelection == AutoSelection.Yes)
+                    return Language.Yes;
+                if (autoSelection == AutoSelection.No)
+                    return Language.No;
+                return AutoText;
+            }
+
+            return base.ConvertTo(context, culture, value, destinationType);
+        }
+
+        public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
+        {
+            AutoSelection[] values = { AutoSelection.Yes, AutoSelection.No, AutoSelection.Auto };
+            return new StandardValuesCollection(values);
+        }
+
+        private static bool ConvertFromAutoSelection(ITypeDescriptorContext? context)
+        {
+            ConnectionInfoInheritance? inheritance = GetInheritanceFromContext(context);
+            if (inheritance == null)
                 return false;
 
-            Type type = dataObject.GetType();
-
-            if (type == typeof(bool))
-            {
-                return (bool)dataObject;
-            }
-            if (type == typeof(string))
-            {
-                return string.Equals((string)dataObject, "1", StringComparison.Ordinal);
-            }
-            if (type == typeof(sbyte))
-            {
-                return (sbyte)dataObject == 1;
-            }
-
-            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, $"Conversion of object to boolean failed because the type, {type}, is not handled.");
-            return false;
+            inheritance.RequestAutomaticEverythingInheritanceEvaluation();
+            return !inheritance.EverythingInherited;
         }
 
-        public static string DBDate(DateTime Dt)
-		{
-			switch (Properties.OptionsDBsPage.Default.SQLServerType)
-			{
-				case "mysql":
-					return Dt.ToString("yyyy/MM/dd HH:mm:ss", CultureInfo.InvariantCulture);
-				case "mssql":
-				default:
-					return Dt.ToString("yyyyMMdd HH:mm:ss", CultureInfo.InvariantCulture);
-			}
-		}
-
-		public static Type DBTimeStampType()
-		{
-			switch (Properties.OptionsDBsPage.Default.SQLServerType)
-			{
-				case "mysql":
-					// MySQL/MariaDB columns are DATETIME; use native DateTime so MySql.Data binds
-					// it directly. MySqlDateTime.ToString() emits a culture-formatted string
-					// (US MM/dd/yyyy), which MariaDB strict mode rejects (#146).
-					return typeof(DateTime);
-				case "mssql":
-				default:
-					return typeof(SqlDateTime);
-			}
-		}
-
-		public static object DBTimeStampNow()
-		{
-			switch (Properties.OptionsDBsPage.Default.SQLServerType)
-			{
-				case "mysql":
-				case "mssql":
-				default:
-					return DateTime.Now.ToUniversalTime();
-			}
-		}
-
-        public static string PrepareValueForDB(string Text)
+        private static ConnectionInfoInheritance? GetInheritanceFromContext(ITypeDescriptorContext? context)
         {
-            return Text.Replace("\'", "\'\'", StringComparison.Ordinal);
-        }
+            if (context?.Instance is ConnectionInfoInheritance inheritance)
+                return inheritance;
 
-        public static string GetExceptionMessageRecursive(Exception ex)
-        {
-            return GetExceptionMessageRecursive(ex, Environment.NewLine);
-        }
-
-        private static string GetExceptionMessageRecursive(Exception ex, string separator)
-        {
-            string message = ex.Message;
-            if (ex.InnerException == null) return message;
-            string innerMessage = GetExceptionMessageRecursive(ex.InnerException, separator);
-            message = String.Join(separator, message, innerMessage);
-            return message;
-        }
-
-
-        public static Image? TakeScreenshot(UI.Tabs.ConnectionTab sender)
-        {
-            try
+            if (context?.Instance is object[] instances)
             {
-                if (sender != null)
+                foreach (object instance in instances)
                 {
-                    Bitmap bmp = new(sender.Width, sender.Height, PixelFormat.Format32bppRgb);
-                    Graphics g = Graphics.FromImage(bmp);
-                    g.CopyFromScreen(sender.PointToScreen(System.Drawing.Point.Empty), System.Drawing.Point.Empty, bmp.Size, CopyPixelOperation.SourceCopy);
-                    return bmp;
+                    if (instance is ConnectionInfoInheritance inheritanceInstance)
+                        return inheritanceInstance;
                 }
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace("Taking Screenshot failed", ex);
             }
 
             return null;
         }
 
-        public class EnumTypeConverter(Type type) : EnumConverter(type)
+        private enum AutoSelection
         {
-            private readonly Type _enumType = type;
+            Yes,
+            No,
+            Auto
+        }
+    }
 
-            public override bool CanConvertTo(ITypeDescriptorContext? context, Type? destinationType)
+    public class TabColorConverter : TypeConverter
+    {
+        public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
+        {
+            return sourceType == typeof(string) || sourceType == typeof(Color) || base.CanConvertFrom(context, sourceType);
+        }
+
+        public override bool CanConvertTo(ITypeDescriptorContext? context, Type? destinationType)
+        {
+            return destinationType == typeof(string) || destinationType == typeof(Color) || base.CanConvertTo(context, destinationType);
+        }
+
+        public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value)
+        {
+            if (value == null || (value is string str && string.IsNullOrWhiteSpace(str)))
             {
-                return destinationType == typeof(string) || base.CanConvertTo(context, destinationType);
+                return string.Empty;
             }
 
-            public override object ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type? destinationType)
+            if (value is string stringValue)
             {
-                if (value == null) return string.Empty;
+                return stringValue;
+            }
 
-                string? enumName = Enum.GetName(_enumType, value);
-                if (enumName == null)
+            if (value is Color colorValue)
+            {
+                // An empty color means "no color set" and must stay an empty string.
+                if (colorValue.IsEmpty)
                 {
-                    throw new ArgumentException("Invalid enum value provided.", nameof(value));
+                    return string.Empty;
                 }
 
-                System.Reflection.FieldInfo? fi = _enumType.GetField(enumName);
-                if (fi == null)
+                // Convert Color to string representation
+                // Use named color if it's a known color, otherwise use hex format
+                if (colorValue.IsNamedColor)
                 {
-                    throw new ArgumentException("FieldInfo could not be retrieved for the provided enum value.", nameof(value));
+                    return colorValue.Name;
                 }
-
-                DescriptionAttribute? dna = (DescriptionAttribute?)Attribute.GetCustomAttribute(fi, typeof(DescriptionAttribute));
-                return dna?.Description ?? value.ToString() ?? string.Empty;
-            }
-
-            public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
-            {
-                return sourceType == typeof(string) || base.CanConvertFrom(context, sourceType);
-            }
-
-            public override object ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value)
-            {
-                if (value is string stringValue)
+                else
                 {
-                    foreach (System.Reflection.FieldInfo fi in _enumType.GetFields())
+                    // Return hex format without alpha if fully opaque, otherwise include alpha
+                    if (colorValue.A == 255)
                     {
-                        DescriptionAttribute? dna = (DescriptionAttribute?)Attribute.GetCustomAttribute(fi, typeof(DescriptionAttribute));
-
-                        if (dna != null && string.Equals(stringValue, dna.Description, StringComparison.Ordinal))
-                        {
-                            return Enum.Parse(_enumType, fi.Name);
-                        }
+                        return $"#{colorValue.R:X2}{colorValue.G:X2}{colorValue.B:X2}";
                     }
-
-                    return Enum.Parse(_enumType, stringValue);
-                }
-
-                throw new ArgumentNullException(nameof(value), "Value cannot be null.");
-            }
-        }
-
-        public class YesNoTypeConverter : TypeConverter
-        {
-            public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
-            {
-                return sourceType == typeof(string) || base.CanConvertFrom(context, sourceType);
-            }
-            public override bool CanConvertTo(ITypeDescriptorContext? context, Type? destinationType)
-            {
-                return destinationType == typeof(string) || base.CanConvertTo(context, destinationType);
-            }
-
-            public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value)
-            {
-                if (value is not string stringValue)
-                {
-                    // Ensure 'value' is not null before passing it to the base method
-                    return value != null
-                        ? base.ConvertFrom(context, culture, value)
-                        : throw new ArgumentNullException(nameof(value), "Value cannot be null.");
-                }
-
-                if (string.Equals(stringValue, Language.Yes, StringComparison.OrdinalIgnoreCase))
-                {
-                    return true;
-                }
-
-                if (string.Equals(stringValue, Language.No, StringComparison.OrdinalIgnoreCase))
-                {
-                    return false;
-                }
-
-                throw new FormatException("Values must be \"Yes\" or \"No\"");
-            }
-
-            public override object ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
-            {
-                if (destinationType == typeof(string))
-                {
-                    return Convert.ToBoolean(value, CultureInfo.InvariantCulture) ? Language.Yes : Language.No;
-                }
-
-                return base.ConvertTo(context, culture, value, destinationType) ?? throw new InvalidOperationException("Base conversion returned null.");
-            }
-
-            public override bool GetStandardValuesSupported(ITypeDescriptorContext? context)
-            {
-                return true;
-            }
-
-            public override bool GetStandardValuesExclusive(ITypeDescriptorContext? context)
-            {
-                return true;
-            }
-
-            public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
-            {
-                bool[] bools = { true, false };
-
-                StandardValuesCollection svc = new(bools);
-
-                return svc;
-            }
-        }
-
-        public class YesNoAutoTypeConverter : YesNoTypeConverter
-        {
-            private const string AutoText = "Auto";
-
-            public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value)
-            {
-                if (value is AutoSelection autoSelection)
-                {
-                    if (autoSelection == AutoSelection.Yes)
-                        return true;
-                    if (autoSelection == AutoSelection.No)
-                        return false;
-                    return ConvertFromAutoSelection(context);
-                }
-
-                if (value is string stringValue &&
-                    string.Equals(stringValue, AutoText, StringComparison.OrdinalIgnoreCase))
-                {
-                    return ConvertFromAutoSelection(context);
-                }
-
-                return base.ConvertFrom(context, culture, value);
-            }
-
-            public override object ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
-            {
-                if (destinationType == typeof(string) && value is AutoSelection autoSelection)
-                {
-                    if (autoSelection == AutoSelection.Yes)
-                        return Language.Yes;
-                    if (autoSelection == AutoSelection.No)
-                        return Language.No;
-                    return AutoText;
-                }
-
-                return base.ConvertTo(context, culture, value, destinationType);
-            }
-
-            public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
-            {
-                AutoSelection[] values = { AutoSelection.Yes, AutoSelection.No, AutoSelection.Auto };
-                return new StandardValuesCollection(values);
-            }
-
-            private static bool ConvertFromAutoSelection(ITypeDescriptorContext? context)
-            {
-                ConnectionInfoInheritance? inheritance = GetInheritanceFromContext(context);
-                if (inheritance == null)
-                    return false;
-
-                inheritance.RequestAutomaticEverythingInheritanceEvaluation();
-                return !inheritance.EverythingInherited;
-            }
-
-            private static ConnectionInfoInheritance? GetInheritanceFromContext(ITypeDescriptorContext? context)
-            {
-                if (context?.Instance is ConnectionInfoInheritance inheritance)
-                    return inheritance;
-
-                if (context?.Instance is object[] instances)
-                {
-                    foreach (object instance in instances)
+                    else
                     {
-                        if (instance is ConnectionInfoInheritance inheritanceInstance)
-                            return inheritanceInstance;
+                        return $"#{colorValue.A:X2}{colorValue.R:X2}{colorValue.G:X2}{colorValue.B:X2}";
                     }
                 }
-
-                return null;
             }
 
-            private enum AutoSelection
-            {
-                Yes,
-                No,
-                Auto
-            }
+            return base.ConvertFrom(context, culture, value);
         }
 
-        public class TabColorConverter : TypeConverter
+        public override object ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
         {
-            public override bool CanConvertFrom(ITypeDescriptorContext? context, Type sourceType)
-            {
-                return sourceType == typeof(string) || sourceType == typeof(Color) || base.CanConvertFrom(context, sourceType);
-            }
-
-            public override bool CanConvertTo(ITypeDescriptorContext? context, Type? destinationType)
-            {
-                return destinationType == typeof(string) || destinationType == typeof(Color) || base.CanConvertTo(context, destinationType);
-            }
-
-            public override object? ConvertFrom(ITypeDescriptorContext? context, CultureInfo? culture, object? value)
+            if (destinationType == typeof(string))
             {
                 if (value == null || (value is string str && string.IsNullOrWhiteSpace(str)))
                 {
                     return string.Empty;
                 }
+                return value.ToString() ?? string.Empty;
+            }
+
+            if (destinationType == typeof(Color))
+            {
+                if (value == null || (value is string str && string.IsNullOrWhiteSpace(str)))
+                {
+                    return Color.Empty;
+                }
 
                 if (value is string stringValue)
                 {
-                    return stringValue;
-                }
-
-                if (value is Color colorValue)
-                {
-                    // An empty color means "no color set" and must stay an empty string.
-                    if (colorValue.IsEmpty)
+                    try
                     {
-                        return string.Empty;
+                        ColorConverter converter = new ColorConverter();
+                        return converter.ConvertFromString(stringValue) ?? Color.Empty;
                     }
-
-                    // Convert Color to string representation
-                    // Use named color if it's a known color, otherwise use hex format
-                    if (colorValue.IsNamedColor)
-                    {
-                        return colorValue.Name;
-                    }
-                    else
-                    {
-                        // Return hex format without alpha if fully opaque, otherwise include alpha
-                        if (colorValue.A == 255)
-                        {
-                            return $"#{colorValue.R:X2}{colorValue.G:X2}{colorValue.B:X2}";
-                        }
-                        else
-                        {
-                            return $"#{colorValue.A:X2}{colorValue.R:X2}{colorValue.G:X2}{colorValue.B:X2}";
-                        }
-                    }
-                }
-
-                return base.ConvertFrom(context, culture, value);
-            }
-
-            public override object ConvertTo(ITypeDescriptorContext? context, CultureInfo? culture, object? value, Type destinationType)
-            {
-                if (destinationType == typeof(string))
-                {
-                    if (value == null || (value is string str && string.IsNullOrWhiteSpace(str)))
-                    {
-                        return string.Empty;
-                    }
-                    return value.ToString() ?? string.Empty;
-                }
-
-                if (destinationType == typeof(Color))
-                {
-                    if (value == null || (value is string str && string.IsNullOrWhiteSpace(str)))
+                    catch
                     {
                         return Color.Empty;
                     }
-
-                    if (value is string stringValue)
-                    {
-                        try
-                        {
-                            ColorConverter converter = new ColorConverter();
-                            return converter.ConvertFromString(stringValue) ?? Color.Empty;
-                        }
-                        catch
-                        {
-                            return Color.Empty;
-                        }
-                    }
                 }
-
-                return base.ConvertTo(context, culture, value, destinationType) ?? throw new InvalidOperationException("Base conversion returned null.");
             }
 
-            public override bool GetStandardValuesSupported(ITypeDescriptorContext? context)
-            {
-                return true;
-            }
+            return base.ConvertTo(context, culture, value, destinationType) ?? throw new InvalidOperationException("Base conversion returned null.");
+        }
 
-            public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
-            {
-                // Provide a list of common colors for the dropdown. The values must be
-                // strings: the annotated properties are strings, and the grid commits the
-                // picked standard value without running it through this converter.
-                Color[] colors =
-                [
-                    Color.Red,
-                    Color.Orange,
-                    Color.Yellow,
-                    Color.Green,
-                    Color.Blue,
-                    Color.Purple,
-                    Color.Pink,
-                    Color.Brown,
-                    Color.Black,
-                    Color.White,
-                    Color.Gray,
-                    Color.LightGray,
-                    Color.DarkGray,
-                    Color.Cyan,
-                    Color.Magenta,
-                    Color.Lime,
-                    Color.Navy,
-                    Color.Teal,
-                    Color.Maroon,
-                    Color.Olive
-                ];
+        public override bool GetStandardValuesSupported(ITypeDescriptorContext? context)
+        {
+            return true;
+        }
 
-                return new StandardValuesCollection(Array.ConvertAll(colors, color => color.Name));
-            }
+        public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
+        {
+            // Provide a list of common colors for the dropdown. The values must be
+            // strings: the annotated properties are strings, and the grid commits the
+            // picked standard value without running it through this converter.
+            Color[] colors =
+            [
+                Color.Red,
+                Color.Orange,
+                Color.Yellow,
+                Color.Green,
+                Color.Blue,
+                Color.Purple,
+                Color.Pink,
+                Color.Brown,
+                Color.Black,
+                Color.White,
+                Color.Gray,
+                Color.LightGray,
+                Color.DarkGray,
+                Color.Cyan,
+                Color.Magenta,
+                Color.Lime,
+                Color.Navy,
+                Color.Teal,
+                Color.Maroon,
+                Color.Olive
+            ];
 
-            public override bool GetStandardValuesExclusive(ITypeDescriptorContext? context)
-            {
-                // Return false to allow custom values (hex codes or other color names)
-                return false;
-            }
+            return new StandardValuesCollection(Array.ConvertAll(colors, color => color.Name));
+        }
+
+        public override bool GetStandardValuesExclusive(ITypeDescriptorContext? context)
+        {
+            // Return false to allow custom values (hex codes or other color names)
+            return false;
         }
     }
 }

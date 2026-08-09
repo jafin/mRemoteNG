@@ -4,72 +4,71 @@ using mRemoteNG.Security.PasswordCreation;
 using NUnit.Framework;
 
 
-namespace mRemoteNGTests.Security.PasswordCreation
+namespace mRemoteNGTests.Security.PasswordCreation;
+
+public class PasswordIncludesSpecialCharactersConstraintTests
 {
-    public class PasswordIncludesSpecialCharactersConstraintTests
+    private static readonly char[] CustomCharsOpenParen = ['('];
+
+    private PasswordIncludesSpecialCharactersConstraint _specialCharactersConstraint;
+
+    [Test]
+    public void PasswordWithMinimumSpecialCharsPassesValidation()
     {
-        private static readonly char[] CustomCharsOpenParen = ['('];
+        var password = "hello$".ConvertToSecureString();
+        _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint();
+        Assert.That(_specialCharactersConstraint.Validate(password), Is.True);
+    }
 
-        private PasswordIncludesSpecialCharactersConstraint _specialCharactersConstraint;
+    [Test]
+    public void PasswordExceedingMinimumSpecialCharsPassesValidation()
+    {
+        var password = "hello!#%$".ConvertToSecureString();
+        _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint(3);
+        Assert.That(_specialCharactersConstraint.Validate(password), Is.True);
+    }
 
-        [Test]
-        public void PasswordWithMinimumSpecialCharsPassesValidation()
-        {
-            var password = "hello$".ConvertToSecureString();
-            _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint();
-            Assert.That(_specialCharactersConstraint.Validate(password), Is.True);
-        }
+    [Test]
+    public void PasswordUnderMinimumSpecialCharsFailsValidation()
+    {
+        var password = "hello!".ConvertToSecureString();
+        _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint(2);
+        Assert.That(_specialCharactersConstraint.Validate(password), Is.False);
+    }
 
-        [Test]
-        public void PasswordExceedingMinimumSpecialCharsPassesValidation()
-        {
-            var password = "hello!#%$".ConvertToSecureString();
-            _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint(3);
-            Assert.That(_specialCharactersConstraint.Validate(password), Is.True);
-        }
+    [Test]
+    public void PasswordWithoutSpecialCharsFailsValidation()
+    {
+        var password = "hello".ConvertToSecureString();
+        _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint();
+        Assert.That(_specialCharactersConstraint.Validate(password), Is.False);
+    }
 
-        [Test]
-        public void PasswordUnderMinimumSpecialCharsFailsValidation()
-        {
-            var password = "hello!".ConvertToSecureString();
-            _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint(2);
-            Assert.That(_specialCharactersConstraint.Validate(password), Is.False);
-        }
+    [Test]
+    public void PasswordMatchingCustomCharsPassesValidation()
+    {
+        var password = "hello(".ConvertToSecureString();
+        _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint(CustomCharsOpenParen);
+        Assert.That(_specialCharactersConstraint.Validate(password), Is.True);
+    }
 
-        [Test]
-        public void PasswordWithoutSpecialCharsFailsValidation()
-        {
-            var password = "hello".ConvertToSecureString();
-            _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint();
-            Assert.That(_specialCharactersConstraint.Validate(password), Is.False);
-        }
+    [Test]
+    public void PasswordWithoutCustomCharsFailsValidation()
+    {
+        var password = "hello!".ConvertToSecureString();
+        _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint(CustomCharsOpenParen);
+        Assert.That(_specialCharactersConstraint.Validate(password), Is.False);
+    }
 
-        [Test]
-        public void PasswordMatchingCustomCharsPassesValidation()
-        {
-            var password = "hello(".ConvertToSecureString();
-            _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint(CustomCharsOpenParen);
-            Assert.That(_specialCharactersConstraint.Validate(password), Is.True);
-        }
+    [Test]
+    public void CantProvideNullListOfCharacters()
+    {
+        Assert.Throws<ArgumentNullException>(() => new PasswordIncludesSpecialCharactersConstraint(null));
+    }
 
-        [Test]
-        public void PasswordWithoutCustomCharsFailsValidation()
-        {
-            var password = "hello!".ConvertToSecureString();
-            _specialCharactersConstraint = new PasswordIncludesSpecialCharactersConstraint(CustomCharsOpenParen);
-            Assert.That(_specialCharactersConstraint.Validate(password), Is.False);
-        }
-
-        [Test]
-        public void CantProvideNullListOfCharacters()
-        {
-            Assert.Throws<ArgumentNullException>(() => new PasswordIncludesSpecialCharactersConstraint(null));
-        }
-
-        [Test]
-        public void MinimumCountMustBeAPositiveValue()
-        {
-            Assert.Throws<ArgumentException>(() => new PasswordIncludesSpecialCharactersConstraint(-1));
-        }
+    [Test]
+    public void MinimumCountMustBeAPositiveValue()
+    {
+        Assert.Throws<ArgumentException>(() => new PasswordIncludesSpecialCharactersConstraint(-1));
     }
 }

@@ -1,218 +1,217 @@
 ﻿using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
+using System.Runtime.Versioning;
 using System.Windows.Forms;
 using BrightIdeasSoftware;
 using mRemoteNG.Connection;
 using mRemoteNG.Container;
-using mRemoteNG.Tree.Root;
 using mRemoteNG.Resources.Language;
-using System.Runtime.Versioning;
+using mRemoteNG.Tree.Root;
 
-namespace mRemoteNG.Tree
+namespace mRemoteNG.Tree;
+
+[SupportedOSPlatform("windows")]
+public class ConnectionTreeDragAndDropHandler
 {
-    [SupportedOSPlatform("windows")]
-    public class ConnectionTreeDragAndDropHandler
+    private readonly Color DropAllowedFeedbackColor = Color.Green;
+    private readonly Color DropDeniedFeedbackColor = Color.Red;
+    private string? _infoMessage;
+    private Color _currentFeedbackColor;
+    private bool _enableFeedback;
+
+
+    public void OnModelDropped(object sender, ModelDropEventArgs e)
     {
-        private readonly Color DropAllowedFeedbackColor = Color.Green;
-        private readonly Color DropDeniedFeedbackColor = Color.Red;
-        private string? _infoMessage;
-        private Color _currentFeedbackColor;
-        private bool _enableFeedback;
+        if (Properties.Settings.Default.DisableTreeDragAndDrop || Properties.OptionsDBsPage.Default.SQLReadOnly) return;
+        if (e.TargetModel is not ConnectionInfo dropTarget) return;
 
-
-        public void OnModelDropped(object sender, ModelDropEventArgs e)
+        IEnumerable<ConnectionInfo> dropSources = e.SourceModels?.OfType<ConnectionInfo>() ?? [];
+        foreach (ConnectionInfo dropSource in dropSources)
         {
-            if (Properties.Settings.Default.DisableTreeDragAndDrop || Properties.OptionsDBsPage.Default.SQLReadOnly) return;
-            if (e.TargetModel is not ConnectionInfo dropTarget) return;
-
-            IEnumerable<ConnectionInfo> dropSources = e.SourceModels?.OfType<ConnectionInfo>() ?? [];
-            foreach (ConnectionInfo dropSource in dropSources)
-            {
-                DropModel(dropSource, dropTarget, e.DropTargetLocation);
-            }
-
-            e.Handled = true;
+            DropModel(dropSource, dropTarget, e.DropTargetLocation);
         }
 
-        public static void DropModel(ConnectionInfo dropSource,
-                              ConnectionInfo dropTarget,
-                              DropTargetLocation dropTargetLocation)
+        e.Handled = true;
+    }
+
+    public static void DropModel(ConnectionInfo dropSource,
+        ConnectionInfo dropTarget,
+        DropTargetLocation dropTargetLocation)
+    {
+        switch (dropTargetLocation)
         {
+            case DropTargetLocation.Item:
+                DropModelOntoTarget(dropSource, dropTarget);
+                break;
+            case DropTargetLocation.AboveItem:
+                DropModelAboveTarget(dropSource, dropTarget);
+                break;
+            case DropTargetLocation.BelowItem:
+                DropModelBelowTarget(dropSource, dropTarget);
+                break;
+        }
+    }
+
+    private static void DropModelOntoTarget(ConnectionInfo dropSource, ConnectionInfo dropTarget)
+    {
+        if (!(dropTarget is ContainerInfo dropTargetAsContainer)) return;
+        dropSource.SetParent(dropTargetAsContainer);
+    }
+
+    private static void DropModelAboveTarget(ConnectionInfo dropSource, ConnectionInfo dropTarget)
+    {
+        if (dropSource.Parent is null || dropTarget.Parent is null) return;
+        if (!dropSource.Parent.Equals(dropTarget.Parent))
+            dropTarget.Parent.AddChildAbove(dropSource, dropTarget);
+        else
+            dropTarget.Parent.SetChildAbove(dropSource, dropTarget);
+    }
+
+    private static void DropModelBelowTarget(ConnectionInfo dropSource, ConnectionInfo dropTarget)
+    {
+        if (dropSource.Parent is null || dropTarget.Parent is null) return;
+        if (!dropSource.Parent.Equals(dropTarget.Parent))
+            dropTarget.Parent.AddChildBelow(dropSource, dropTarget);
+        else
+            dropTarget.Parent.SetChildBelow(dropSource, dropTarget);
+    }
+
+    public void OnModelCanDrop(object sender, ModelDropEventArgs e)
+    {
+        if (Properties.Settings.Default.DisableTreeDragAndDrop || Properties.OptionsDBsPage.Default.SQLReadOnly)
+        {
+            e.Effect = DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
+        _enableFeedback = true;
+        _currentFeedbackColor = DropDeniedFeedbackColor;
+        _infoMessage = null;
+
+        if (e.TargetModel is not ConnectionInfo dropTarget)
+        {
+            e.Effect = DragDropEffects.None;
+        }
+        else
+        {
+            IEnumerable<ConnectionInfo> dropSources = e.SourceModels?.OfType<ConnectionInfo>() ?? [];
+            e.Effect = CanModelsDrop(dropSources, dropTarget, e.DropTargetLocation);
+        }
+
+        e.InfoMessage = _infoMessage;
+        e.DropSink.EnableFeedback = _enableFeedback;
+        e.DropSink.FeedbackColor = _currentFeedbackColor;
+        e.Handled = true;
+    }
+
+    public DragDropEffects CanModelsDrop(IEnumerable<ConnectionInfo> dropSources,
+        ConnectionInfo dropTarget,
+        DropTargetLocation dropTargetLocation)
+    {
+        bool hadDropSource = false;
+        foreach (ConnectionInfo dropSource in dropSources)
+        {
+            hadDropSource = true;
+            DragDropEffects dragDropEffect = CanModelDrop(dropSource, dropTarget, dropTargetLocation);
+            if (dragDropEffect == DragDropEffects.None)
+                return DragDropEffects.None;
+        }
+
+        return hadDropSource ? DragDropEffects.Move : DragDropEffects.None;
+    }
+
+    public DragDropEffects CanModelDrop(ConnectionInfo dropSource,
+        ConnectionInfo dropTarget,
+        DropTargetLocation dropTargetLocation)
+    {
+        DragDropEffects dragDropEffect = DragDropEffects.None;
+        if (!NodeIsDraggable(dropSource))
+        {
+            _infoMessage = Language.NodeNotDraggable;
+            _enableFeedback = false;
+        }
+        else
             switch (dropTargetLocation)
             {
                 case DropTargetLocation.Item:
-                    DropModelOntoTarget(dropSource, dropTarget);
+                    dragDropEffect = HandleCanDropOnItem(dropSource, dropTarget);
                     break;
                 case DropTargetLocation.AboveItem:
-                    DropModelAboveTarget(dropSource, dropTarget);
-                    break;
                 case DropTargetLocation.BelowItem:
-                    DropModelBelowTarget(dropSource, dropTarget);
+                    dragDropEffect = HandleCanDropBetweenItems(dropSource, dropTarget);
                     break;
             }
-        }
 
-        private static void DropModelOntoTarget(ConnectionInfo dropSource, ConnectionInfo dropTarget)
+        return dragDropEffect;
+    }
+
+    private DragDropEffects HandleCanDropOnItem(ConnectionInfo dropSource, ConnectionInfo dropTarget)
+    {
+        DragDropEffects dragDropEffect = DragDropEffects.None;
+        if (dropTarget is ContainerInfo && !(dropTarget is RootPuttySessionsNodeInfo))
         {
-            if (!(dropTarget is ContainerInfo dropTargetAsContainer)) return;
-            dropSource.SetParent(dropTargetAsContainer);
+            if (!IsValidDrag(dropSource, dropTarget)) return dragDropEffect;
+            dragDropEffect = DragDropEffects.Move;
+            _currentFeedbackColor = DropAllowedFeedbackColor;
         }
-
-        private static void DropModelAboveTarget(ConnectionInfo dropSource, ConnectionInfo dropTarget)
+        else
         {
-            if (dropSource.Parent is null || dropTarget.Parent is null) return;
-            if (!dropSource.Parent.Equals(dropTarget.Parent))
-                dropTarget.Parent.AddChildAbove(dropSource, dropTarget);
-            else
-                dropTarget.Parent.SetChildAbove(dropSource, dropTarget);
+            _enableFeedback = false;
         }
 
-        private static void DropModelBelowTarget(ConnectionInfo dropSource, ConnectionInfo dropTarget)
+        return dragDropEffect;
+    }
+
+    private DragDropEffects HandleCanDropBetweenItems(ConnectionInfo dropSource, ConnectionInfo dropTarget)
+    {
+        DragDropEffects dragDropEffect = DragDropEffects.None;
+        if (AncestorDraggingOntoChild(dropSource, dropTarget))
+            _infoMessage = Language.NodeCannotDragParentOnChild;
+        else if (dropTarget is PuttySessionInfo || dropTarget is RootNodeInfo)
+            _enableFeedback = false;
+        else
         {
-            if (dropSource.Parent is null || dropTarget.Parent is null) return;
-            if (!dropSource.Parent.Equals(dropTarget.Parent))
-                dropTarget.Parent.AddChildBelow(dropSource, dropTarget);
-            else
-                dropTarget.Parent.SetChildBelow(dropSource, dropTarget);
+            dragDropEffect = DragDropEffects.Move;
+            _currentFeedbackColor = DropAllowedFeedbackColor;
         }
 
-        public void OnModelCanDrop(object sender, ModelDropEventArgs e)
-        {
-            if (Properties.Settings.Default.DisableTreeDragAndDrop || Properties.OptionsDBsPage.Default.SQLReadOnly)
-            {
-                e.Effect = DragDropEffects.None;
-                e.Handled = true;
-                return;
-            }
+        return dragDropEffect;
+    }
 
-            _enableFeedback = true;
-            _currentFeedbackColor = DropDeniedFeedbackColor;
-            _infoMessage = null;
+    private bool IsValidDrag(ConnectionInfo dropSource, ConnectionInfo dropTarget)
+    {
+        bool validDrag = false;
+        if (NodeDraggingOntoSelf(dropSource, dropTarget))
+            _infoMessage = Language.NodeCannotDragOnSelf;
+        else if (AncestorDraggingOntoChild(dropSource, dropTarget))
+            _infoMessage = Language.NodeCannotDragParentOnChild;
+        else if (DraggingOntoCurrentParent(dropSource, dropTarget))
+            _infoMessage = Language.NodeAlreadyInFolder;
+        else
+            validDrag = true;
+        return validDrag;
+    }
 
-            if (e.TargetModel is not ConnectionInfo dropTarget)
-            {
-                e.Effect = DragDropEffects.None;
-            }
-            else
-            {
-                IEnumerable<ConnectionInfo> dropSources = e.SourceModels?.OfType<ConnectionInfo>() ?? [];
-                e.Effect = CanModelsDrop(dropSources, dropTarget, e.DropTargetLocation);
-            }
+    private static bool NodeIsDraggable(ConnectionInfo node)
+    {
+        return node != null && !(node is RootNodeInfo) && !(node is PuttySessionInfo);
+    }
 
-            e.InfoMessage = _infoMessage;
-            e.DropSink.EnableFeedback = _enableFeedback;
-            e.DropSink.FeedbackColor = _currentFeedbackColor;
-            e.Handled = true;
-        }
+    private static bool NodeDraggingOntoSelf(ConnectionInfo source, ConnectionInfo target)
+    {
+        return source.Equals(target);
+    }
 
-        public DragDropEffects CanModelsDrop(IEnumerable<ConnectionInfo> dropSources,
-                                             ConnectionInfo dropTarget,
-                                             DropTargetLocation dropTargetLocation)
-        {
-            bool hadDropSource = false;
-            foreach (ConnectionInfo dropSource in dropSources)
-            {
-                hadDropSource = true;
-                DragDropEffects dragDropEffect = CanModelDrop(dropSource, dropTarget, dropTargetLocation);
-                if (dragDropEffect == DragDropEffects.None)
-                    return DragDropEffects.None;
-            }
+    private static bool AncestorDraggingOntoChild(ConnectionInfo source, ConnectionInfo target)
+    {
+        return source is ContainerInfo sourceAsContainer &&
+               sourceAsContainer.GetRecursiveChildList().Contains(target);
+    }
 
-            return hadDropSource ? DragDropEffects.Move : DragDropEffects.None;
-        }
-
-        public DragDropEffects CanModelDrop(ConnectionInfo dropSource,
-                                            ConnectionInfo dropTarget,
-                                            DropTargetLocation dropTargetLocation)
-        {
-            DragDropEffects dragDropEffect = DragDropEffects.None;
-            if (!NodeIsDraggable(dropSource))
-            {
-                _infoMessage = Language.NodeNotDraggable;
-                _enableFeedback = false;
-            }
-            else
-                switch (dropTargetLocation)
-                {
-                    case DropTargetLocation.Item:
-                        dragDropEffect = HandleCanDropOnItem(dropSource, dropTarget);
-                        break;
-                    case DropTargetLocation.AboveItem:
-                    case DropTargetLocation.BelowItem:
-                        dragDropEffect = HandleCanDropBetweenItems(dropSource, dropTarget);
-                        break;
-                }
-
-            return dragDropEffect;
-        }
-
-        private DragDropEffects HandleCanDropOnItem(ConnectionInfo dropSource, ConnectionInfo dropTarget)
-        {
-            DragDropEffects dragDropEffect = DragDropEffects.None;
-            if (dropTarget is ContainerInfo && !(dropTarget is RootPuttySessionsNodeInfo))
-            {
-                if (!IsValidDrag(dropSource, dropTarget)) return dragDropEffect;
-                dragDropEffect = DragDropEffects.Move;
-                _currentFeedbackColor = DropAllowedFeedbackColor;
-            }
-            else
-            {
-                _enableFeedback = false;
-            }
-
-            return dragDropEffect;
-        }
-
-        private DragDropEffects HandleCanDropBetweenItems(ConnectionInfo dropSource, ConnectionInfo dropTarget)
-        {
-            DragDropEffects dragDropEffect = DragDropEffects.None;
-            if (AncestorDraggingOntoChild(dropSource, dropTarget))
-                _infoMessage = Language.NodeCannotDragParentOnChild;
-            else if (dropTarget is PuttySessionInfo || dropTarget is RootNodeInfo)
-                _enableFeedback = false;
-            else
-            {
-                dragDropEffect = DragDropEffects.Move;
-                _currentFeedbackColor = DropAllowedFeedbackColor;
-            }
-
-            return dragDropEffect;
-        }
-
-        private bool IsValidDrag(ConnectionInfo dropSource, ConnectionInfo dropTarget)
-        {
-            bool validDrag = false;
-            if (NodeDraggingOntoSelf(dropSource, dropTarget))
-                _infoMessage = Language.NodeCannotDragOnSelf;
-            else if (AncestorDraggingOntoChild(dropSource, dropTarget))
-                _infoMessage = Language.NodeCannotDragParentOnChild;
-            else if (DraggingOntoCurrentParent(dropSource, dropTarget))
-                _infoMessage = Language.NodeAlreadyInFolder;
-            else
-                validDrag = true;
-            return validDrag;
-        }
-
-        private static bool NodeIsDraggable(ConnectionInfo node)
-        {
-            return node != null && !(node is RootNodeInfo) && !(node is PuttySessionInfo);
-        }
-
-        private static bool NodeDraggingOntoSelf(ConnectionInfo source, ConnectionInfo target)
-        {
-            return source.Equals(target);
-        }
-
-        private static bool AncestorDraggingOntoChild(ConnectionInfo source, ConnectionInfo target)
-        {
-            return source is ContainerInfo sourceAsContainer &&
-                   sourceAsContainer.GetRecursiveChildList().Contains(target);
-        }
-
-        private static bool DraggingOntoCurrentParent(ConnectionInfo source, ConnectionInfo target)
-        {
-            return target is ContainerInfo targetAsContainer && targetAsContainer.Children.Contains(source);
-        }
+    private static bool DraggingOntoCurrentParent(ConnectionInfo source, ConnectionInfo target)
+    {
+        return target is ContainerInfo targetAsContainer && targetAsContainer.Children.Contains(source);
     }
 }

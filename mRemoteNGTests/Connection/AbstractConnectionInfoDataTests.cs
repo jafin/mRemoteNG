@@ -4,7 +4,6 @@ using mRemoteNG.Connection.Protocol;
 using mRemoteNG.Connection.Protocol.Http;
 using mRemoteNG.Connection.Protocol.RDP;
 using mRemoteNG.Connection.Protocol.VNC;
-using mRemoteNG.Security;
 using NUnit.Framework;
 
 

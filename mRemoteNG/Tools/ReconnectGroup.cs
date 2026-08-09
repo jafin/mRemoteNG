@@ -1,141 +1,139 @@
 ﻿using System;
 using System.Drawing;
-using Google.Protobuf;
-using mRemoteNG.Resources.Language;
-using System.Runtime.Versioning; // Added for SupportedOSPlatform attribute
+using System.Runtime.Versioning;
+using mRemoteNG.Resources.Language; // Added for SupportedOSPlatform attribute
 
-namespace mRemoteNG.Tools
+namespace mRemoteNG.Tools;
+
+[SupportedOSPlatform("windows")] // Suppress CA1416 warnings for this Windows-only class
+public partial class ReconnectGroup
 {
-    [SupportedOSPlatform("windows")] // Suppress CA1416 warnings for this Windows-only class
-    public partial class ReconnectGroup
+    public ReconnectGroup()
     {
-        public ReconnectGroup()
+        InitializeComponent();
+        chkReconnectWhenReady.Checked = !Properties.OptionsAdvancedPage.Default.NoReconnect;
+    }
+
+    private bool _serverReady;
+
+    public bool ServerReady
+    {
+        get => _serverReady;
+        set
         {
-            InitializeComponent();
-            chkReconnectWhenReady.Checked = !Properties.OptionsAdvancedPage.Default.NoReconnect;
+            SetStatusImage(value ? Properties.Resources.HostStatus_On : Properties.Resources.HostStatus_Off);
+
+            _serverReady = value;
         }
+    }
 
-        private bool _ServerReady;
+    private delegate void SetStatusImageCb(Image img);
 
-        public bool ServerReady
+    private void SetStatusImage(Image img)
+    {
+        if (pbServerStatus.InvokeRequired)
         {
-            get => _ServerReady;
-            set
-            {
-                SetStatusImage(value ? Properties.Resources.HostStatus_On : Properties.Resources.HostStatus_Off);
-
-                _ServerReady = value;
-            }
+            SetStatusImageCb d = new(SetStatusImage);
+            ParentForm?.Invoke(d, new object[] {img});
         }
-
-        private delegate void SetStatusImageCB(Image Img);
-
-        private void SetStatusImage(Image Img)
+        else
         {
-            if (pbServerStatus.InvokeRequired)
-            {
-                SetStatusImageCB d = new(SetStatusImage);
-                ParentForm?.Invoke(d, new object[] {Img});
-            }
-            else
-            {
-                pbServerStatus.Image = Img;
-            }
+            pbServerStatus.Image = img;
         }
+    }
 
-        private void chkReconnectWhenReady_CheckedChanged(object sender, EventArgs e)
+    private void chkReconnectWhenReady_CheckedChanged(object sender, EventArgs e)
+    {
+        _reconnectWhenReady = chkReconnectWhenReady.Checked;
+    }
+
+    private bool _reconnectWhenReady;
+
+    public bool ReconnectWhenReady
+    {
+        get => _reconnectWhenReady;
+        set
         {
-            _ReconnectWhenReady = chkReconnectWhenReady.Checked;
+            _reconnectWhenReady = value;
+            SetCheckbox(value);
         }
+    }
 
-        private bool _ReconnectWhenReady;
+    private delegate void SetCheckboxCb(bool val);
 
-        public bool ReconnectWhenReady
+    private void SetCheckbox(bool val)
+    {
+        if (chkReconnectWhenReady.InvokeRequired)
         {
-            get => _ReconnectWhenReady;
-            set
-            {
-                _ReconnectWhenReady = value;
-                SetCheckbox(value);
-            }
+            SetCheckboxCb d = new(SetCheckbox);
+            ParentForm?.Invoke(d, new object[] {val});
         }
-
-        private delegate void SetCheckboxCB(bool Val);
-
-        private void SetCheckbox(bool Val)
+        else
         {
-            if (chkReconnectWhenReady.InvokeRequired)
-            {
-                SetCheckboxCB d = new(SetCheckbox);
-                ParentForm?.Invoke(d, new object[] {Val});
-            }
-            else
-            {
-                chkReconnectWhenReady.Checked = Val;
-            }
+            chkReconnectWhenReady.Checked = val;
         }
+    }
 
-        public delegate void CloseClickedEventHandler();
+    public delegate void CloseClickedEventHandler();
 
-        private CloseClickedEventHandler? CloseClickedEvent;
+    private CloseClickedEventHandler? _closeClickedEvent;
 
-        public event CloseClickedEventHandler CloseClicked
+    public event CloseClickedEventHandler CloseClicked
+    {
+        add => _closeClickedEvent = (CloseClickedEventHandler)Delegate.Combine(_closeClickedEvent, value);
+        remove => _closeClickedEvent = (CloseClickedEventHandler?)Delegate.Remove(_closeClickedEvent, value);
+    }
+
+
+    private void btnClose_Click(object sender, EventArgs e)
+    {
+        _closeClickedEvent?.Invoke();
+    }
+
+    private void tmrAnimation_Tick(object sender, EventArgs e)
+    {
+        switch (lblAnimation.Text)
         {
-            add => CloseClickedEvent = (CloseClickedEventHandler)Delegate.Combine(CloseClickedEvent, value);
-            remove => CloseClickedEvent = (CloseClickedEventHandler?)Delegate.Remove(CloseClickedEvent, value);
+            case "":
+                lblAnimation.Text = "»";
+                break;
+            case "»":
+                lblAnimation.Text = "»»";
+                break;
+            case "»»":
+                lblAnimation.Text = "»»»";
+                break;
+            case "»»»":
+                lblAnimation.Text = "";
+                break;
         }
+    }
 
+    private delegate void DisposeReconnectGroupCb();
 
-        private void btnClose_Click(object sender, EventArgs e)
+    public void DisposeReconnectGroup()
+    {
+        if (InvokeRequired)
         {
-            CloseClickedEvent?.Invoke();
+            DisposeReconnectGroupCb d = new(DisposeReconnectGroup);
+            ParentForm?.Invoke(d);
         }
-
-        private void tmrAnimation_Tick(object sender, EventArgs e)
+        else
         {
-            switch (lblAnimation.Text)
-            {
-                case "":
-                    lblAnimation.Text = "»";
-                    break;
-                case "»":
-                    lblAnimation.Text = "»»";
-                    break;
-                case "»»":
-                    lblAnimation.Text = "»»»";
-                    break;
-                case "»»»":
-                    lblAnimation.Text = "";
-                    break;
-            }
+            Dispose();
         }
+    }
 
-        private delegate void DisposeReconnectGroupCB();
+    public void OnLoad(object sender, EventArgs e)
+    {
+        ApplyLanguage();
+    }
 
-        public void DisposeReconnectGroup()
-        {
-            if (InvokeRequired)
-            {
-                DisposeReconnectGroupCB d = new(DisposeReconnectGroup);
-                ParentForm?.Invoke(d);
-            }
-            else
-            {
-                Dispose();
-            }
-        }
-
-        public void OnLoad(object sender, EventArgs e)
-        {
-            ApplyLanguage();
-        }
-
-        private void ApplyLanguage()
-        {
-            grpAutomaticReconnect.Text = Language.GroupboxAutomaticReconnect;
-            btnClose.Text = Language._Close;
-            lblServerStatus.Text = Language.ServerStatus;
-            chkReconnectWhenReady.Text = Language.CheckboxReconnectWhenReady;
-        }
+    private void ApplyLanguage()
+    {
+        grpAutomaticReconnect.Text = Language.GroupboxAutomaticReconnect;
+        btnClose.Text = Language._Close;
+        lblServerStatus.Text = Language.ServerStatus;
+        chkReconnectWhenReady.Text = Language.CheckboxReconnectWhenReady;
     }
 }

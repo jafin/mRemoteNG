@@ -1,10 +1,9 @@
 ﻿using System;
 
-namespace mRemoteNG.Config.Serializers.Versioning
+namespace mRemoteNG.Config.Serializers.Versioning;
+
+public interface IVersionUpgrader
 {
-    public interface IVersionUpgrader
-    {
-        bool CanUpgrade(Version currentVersion);
-        Version Upgrade();
-    }
+    bool CanUpgrade(Version currentVersion);
+    Version Upgrade();
 }

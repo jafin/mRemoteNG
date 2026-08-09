@@ -73,13 +73,13 @@ public class MiscToolsTests
     [Test]
     public void PrepareValueForDB_EscapesSingleQuotes()
     {
-        Assert.That(MiscTools.PrepareValueForDB("O'Reilly"), Is.EqualTo("O''Reilly"));
+        Assert.That(MiscTools.PrepareValueForDb("O'Reilly"), Is.EqualTo("O''Reilly"));
     }
 
     [Test]
     public void PrepareValueForDB_NoQuotes_Unchanged()
     {
-        Assert.That(MiscTools.PrepareValueForDB("simple"), Is.EqualTo("simple"));
+        Assert.That(MiscTools.PrepareValueForDb("simple"), Is.EqualTo("simple"));
     }
 
     #endregion

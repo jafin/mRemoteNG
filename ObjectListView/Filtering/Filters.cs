@@ -34,448 +34,444 @@
 using System;
 using System.Collections;
 using System.Collections.Generic;
-using System.Data;
-using System.Reflection;
-using System.Drawing;
 
-namespace BrightIdeasSoftware
+namespace BrightIdeasSoftware;
+
+/// <summary>
+/// Interface for model-by-model filtering
+/// </summary>
+public interface IModelFilter
 {
     /// <summary>
-    /// Interface for model-by-model filtering
+    /// Should the given model be included when this filter is installed
     /// </summary>
-    public interface IModelFilter
-    {
-        /// <summary>
-        /// Should the given model be included when this filter is installed
-        /// </summary>
-        /// <param name="modelObject">The model object to consider</param>
-        /// <returns>Returns true if the model will be included by the filter</returns>
-        bool Filter(object modelObject);
+    /// <param name="modelObject">The model object to consider</param>
+    /// <returns>Returns true if the model will be included by the filter</returns>
+    bool Filter(object modelObject);
+}
+
+/// <summary>
+/// Interface for whole list filtering
+/// </summary>
+public interface IListFilter
+{
+    /// <summary>
+    /// Return a subset of the given list of model objects as the new
+    /// contents of the ObjectListView
+    /// </summary>
+    /// <param name="modelObjects">The collection of model objects that the list will possibly display</param>
+    /// <returns>The filtered collection that holds the model objects that will be displayed.</returns>
+    IEnumerable Filter(IEnumerable modelObjects);
+}
+
+/// <summary>
+/// Base class for model-by-model filters
+/// </summary>
+public class AbstractModelFilter : IModelFilter
+{
+    /// <summary>
+    /// Should the given model be included when this filter is installed
+    /// </summary>
+    /// <param name="modelObject">The model object to consider</param>
+    /// <returns>Returns true if the model will be included by the filter</returns>
+    virtual public bool Filter(object modelObject) {
+        return true;
+    }
+}
+
+/// <summary>
+/// This filter calls a given Predicate to decide if a model object should be included
+/// </summary>
+public class ModelFilter : IModelFilter
+{
+    /// <summary>
+    /// Create a filter based on the given predicate
+    /// </summary>
+    /// <param name="predicate">The function that will filter objects</param>
+    public ModelFilter(Predicate<object> predicate) {
+        this.Predicate = predicate;
     }
 
     /// <summary>
-    /// Interface for whole list filtering
+    /// Gets or sets the predicate used to filter model objects
     /// </summary>
-    public interface IListFilter
-    {
-        /// <summary>
-        /// Return a subset of the given list of model objects as the new
-        /// contents of the ObjectListView
-        /// </summary>
-        /// <param name="modelObjects">The collection of model objects that the list will possibly display</param>
-        /// <returns>The filtered collection that holds the model objects that will be displayed.</returns>
-        IEnumerable Filter(IEnumerable modelObjects);
+    protected Predicate<object> Predicate {
+        get { return predicate; }
+        set { predicate = value; }
+    }
+    private Predicate<object> predicate;
+
+    /// <summary>
+    /// Should the given model object be included?
+    /// </summary>
+    /// <param name="modelObject"></param>
+    /// <returns></returns>
+    virtual public bool Filter(object modelObject) {
+        return this.Predicate == null ? true : this.Predicate(modelObject);
+    }
+}
+
+/// <summary>
+/// A CompositeFilter joins several other filters together.
+/// If there are no filters, all model objects are included
+/// </summary>
+abstract public class CompositeFilter : IModelFilter {
+
+    /// <summary>
+    /// Create an empty filter
+    /// </summary>
+    protected CompositeFilter() {
     }
 
     /// <summary>
-    /// Base class for model-by-model filters
+    /// Create a composite filter from the given list of filters
     /// </summary>
-    public class AbstractModelFilter : IModelFilter
-    {
-        /// <summary>
-        /// Should the given model be included when this filter is installed
-        /// </summary>
-        /// <param name="modelObject">The model object to consider</param>
-        /// <returns>Returns true if the model will be included by the filter</returns>
-        virtual public bool Filter(object modelObject) {
+    /// <param name="filters">A list of filters</param>
+    protected CompositeFilter(IEnumerable<IModelFilter> filters) {
+        foreach (IModelFilter filter in filters) {
+            if (filter != null)
+                Filters.Add(filter);
+        }
+    }
+
+    /// <summary>
+    /// Gets or sets the filters used by this composite
+    /// </summary>
+    public IList<IModelFilter> Filters {
+        get { return filters; }
+        set { filters = value; }
+    }
+    private IList<IModelFilter> filters = new List<IModelFilter>();
+
+    /// <summary>
+    /// Get the sub filters that are text match filters
+    /// </summary>
+    public IEnumerable<TextMatchFilter> TextFilters {
+        get {
+            foreach (IModelFilter filter in this.Filters) {
+                TextMatchFilter textFilter = filter as TextMatchFilter;
+                if (textFilter != null)
+                    yield return textFilter;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Decide whether or not the given model should be included by the filter
+    /// </summary>
+    /// <param name="modelObject"></param>
+    /// <returns>True if the object is included by the filter</returns>
+    virtual public bool Filter(object modelObject) {
+        if (this.Filters == null || this.Filters.Count == 0)
             return true;
-        }
+
+        return this.FilterObject(modelObject);
     }
 
     /// <summary>
-    /// This filter calls a given Predicate to decide if a model object should be included
+    /// Decide whether or not the given model should be included by the filter
     /// </summary>
-    public class ModelFilter : IModelFilter
-    {
-        /// <summary>
-        /// Create a filter based on the given predicate
-        /// </summary>
-        /// <param name="predicate">The function that will filter objects</param>
-        public ModelFilter(Predicate<object> predicate) {
-            this.Predicate = predicate;
-        }
+    /// <remarks>Filters is guaranteed to be non-empty when this method is called</remarks>
+    /// <param name="modelObject">The model object under consideration</param>
+    /// <returns>True if the object is included by the filter</returns>
+    abstract public bool FilterObject(object modelObject);
+}
 
-        /// <summary>
-        /// Gets or sets the predicate used to filter model objects
-        /// </summary>
-        protected Predicate<object> Predicate {
-            get { return predicate; }
-            set { predicate = value; }
-        }
-        private Predicate<object> predicate;
-
-        /// <summary>
-        /// Should the given model object be included?
-        /// </summary>
-        /// <param name="modelObject"></param>
-        /// <returns></returns>
-        virtual public bool Filter(object modelObject) {
-            return this.Predicate == null ? true : this.Predicate(modelObject);
-        }
-    }
+/// <summary>
+/// A CompositeAllFilter joins several other filters together.
+/// A model object must satisfy all filters to be included.
+/// If there are no filters, all model objects are included
+/// </summary>
+/// <remarks>
+/// Create a filter
+/// </remarks>
+/// <param name="filters"></param>
+public class CompositeAllFilter(IList<IModelFilter> filters) : CompositeFilter(filters) {
 
     /// <summary>
-    /// A CompositeFilter joins several other filters together.
-    /// If there are no filters, all model objects are included
+    /// Decide whether or not the given model should be included by the filter
     /// </summary>
-    abstract public class CompositeFilter : IModelFilter {
+    /// <remarks>Filters is guaranteed to be non-empty when this method is called</remarks>
+    /// <param name="modelObject">The model object under consideration</param>
+    /// <returns>True if the object is included by the filter</returns>
+    override public bool FilterObject(object modelObject) {
+        foreach (IModelFilter filter in this.Filters)
+            if (!filter.Filter(modelObject))
+                return false;
 
-        /// <summary>
-        /// Create an empty filter
-        /// </summary>
-        protected CompositeFilter() {
-        }
+        return true;
+    }
+}
 
-        /// <summary>
-        /// Create a composite filter from the given list of filters
-        /// </summary>
-        /// <param name="filters">A list of filters</param>
-        protected CompositeFilter(IEnumerable<IModelFilter> filters) {
-            foreach (IModelFilter filter in filters) {
-                if (filter != null)
-                    Filters.Add(filter);
-            }
-        }
+/// <summary>
+/// A CompositeAllFilter joins several other filters together.
+/// A model object must only satisfy one of the filters to be included.
+/// If there are no filters, all model objects are included
+/// </summary>
+/// <remarks>
+/// Create a filter from the given filters
+/// </remarks>
+/// <param name="filters"></param>
+public class CompositeAnyFilter(IList<IModelFilter> filters) : CompositeFilter(filters) {
 
-        /// <summary>
-        /// Gets or sets the filters used by this composite
-        /// </summary>
-        public IList<IModelFilter> Filters {
-            get { return filters; }
-            set { filters = value; }
-        }
-        private IList<IModelFilter> filters = new List<IModelFilter>();
-
-        /// <summary>
-        /// Get the sub filters that are text match filters
-        /// </summary>
-        public IEnumerable<TextMatchFilter> TextFilters {
-            get {
-                foreach (IModelFilter filter in this.Filters) {
-                    TextMatchFilter textFilter = filter as TextMatchFilter;
-                    if (textFilter != null)
-                        yield return textFilter;
-                }
-            }
-        }
-
-        /// <summary>
-        /// Decide whether or not the given model should be included by the filter
-        /// </summary>
-        /// <param name="modelObject"></param>
-        /// <returns>True if the object is included by the filter</returns>
-        virtual public bool Filter(object modelObject) {
-            if (this.Filters == null || this.Filters.Count == 0)
+    /// <summary>
+    /// Decide whether or not the given model should be included by the filter
+    /// </summary>
+    /// <remarks>Filters is guaranteed to be non-empty when this method is called</remarks>
+    /// <param name="modelObject">The model object under consideration</param>
+    /// <returns>True if the object is included by the filter</returns>
+    override public bool FilterObject(object modelObject) {
+        foreach (IModelFilter filter in this.Filters)
+            if (filter.Filter(modelObject))
                 return true;
 
-            return this.FilterObject(modelObject);
-        }
+        return false;
+    }
+}
 
-        /// <summary>
-        /// Decide whether or not the given model should be included by the filter
-        /// </summary>
-        /// <remarks>Filters is guaranteed to be non-empty when this method is called</remarks>
-        /// <param name="modelObject">The model object under consideration</param>
-        /// <returns>True if the object is included by the filter</returns>
-        abstract public bool FilterObject(object modelObject);
+/// <summary>
+/// Instances of this class extract a value from the model object
+/// and compare that value to a list of fixed values. The model
+/// object is included if the extracted value is in the list
+/// </summary>
+/// <remarks>If there is no delegate installed or there are
+/// no values to match, no model objects will be matched</remarks>
+public class OneOfFilter : IModelFilter {
+
+    /// <summary>
+    /// Create a filter that will use the given delegate to extract values
+    /// </summary>
+    /// <param name="valueGetter"></param>
+    public OneOfFilter(AspectGetterDelegate valueGetter) :
+        this(valueGetter, new ArrayList()) {
     }
 
     /// <summary>
-    /// A CompositeAllFilter joins several other filters together.
-    /// A model object must satisfy all filters to be included.
-    /// If there are no filters, all model objects are included
+    /// Create a filter that will extract values using the given delegate
+    /// and compare them to the values in the given list.
     /// </summary>
-    /// <remarks>
-    /// Create a filter
-    /// </remarks>
-    /// <param name="filters"></param>
-    public class CompositeAllFilter(IList<IModelFilter> filters) : CompositeFilter(filters) {
-
-        /// <summary>
-        /// Decide whether or not the given model should be included by the filter
-        /// </summary>
-        /// <remarks>Filters is guaranteed to be non-empty when this method is called</remarks>
-        /// <param name="modelObject">The model object under consideration</param>
-        /// <returns>True if the object is included by the filter</returns>
-        override public bool FilterObject(object modelObject) {
-            foreach (IModelFilter filter in this.Filters)
-                if (!filter.Filter(modelObject))
-                    return false;
-
-            return true;
-        }
+    /// <param name="valueGetter"></param>
+    /// <param name="possibleValues"></param>
+    public OneOfFilter(AspectGetterDelegate valueGetter, ICollection possibleValues) {
+        this.ValueGetter = valueGetter;
+        this.PossibleValues = new ArrayList(possibleValues);
     }
 
     /// <summary>
-    /// A CompositeAllFilter joins several other filters together.
-    /// A model object must only satisfy one of the filters to be included.
-    /// If there are no filters, all model objects are included
+    /// Gets or sets the delegate that will be used to extract values
+    /// from model objects
     /// </summary>
-    /// <remarks>
-    /// Create a filter from the given filters
-    /// </remarks>
-    /// <param name="filters"></param>
-    public class CompositeAnyFilter(IList<IModelFilter> filters) : CompositeFilter(filters) {
+    virtual public AspectGetterDelegate ValueGetter {
+        get { return valueGetter; }
+        set { valueGetter = value; }
+    }
+    private AspectGetterDelegate valueGetter;
 
-        /// <summary>
-        /// Decide whether or not the given model should be included by the filter
-        /// </summary>
-        /// <remarks>Filters is guaranteed to be non-empty when this method is called</remarks>
-        /// <param name="modelObject">The model object under consideration</param>
-        /// <returns>True if the object is included by the filter</returns>
-        override public bool FilterObject(object modelObject) {
-            foreach (IModelFilter filter in this.Filters)
-                if (filter.Filter(modelObject))
-                    return true;
+    /// <summary>
+    /// Gets or sets the list of values that the value extracted from
+    /// the model object must match in order to be included.
+    /// </summary>
+    virtual public IList PossibleValues {
+        get { return possibleValues; }
+        set { possibleValues = value; }
+    }
+    private IList possibleValues;
 
+    /// <summary>
+    /// Should the given model object be included?
+    /// </summary>
+    /// <param name="modelObject"></param>
+    /// <returns></returns>
+    public virtual bool Filter(object modelObject) {
+        if (this.ValueGetter == null || this.PossibleValues == null || this.PossibleValues.Count == 0)
             return false;
+
+        object result = this.ValueGetter(modelObject);
+        IEnumerable enumerable = result as IEnumerable;
+        if (result is string || enumerable == null)
+            return this.DoesValueMatch(result);
+
+        foreach (object x in enumerable) {
+            if (this.DoesValueMatch(x))
+                return true;
         }
+        return false;
     }
 
     /// <summary>
-    /// Instances of this class extract a value from the model object
-    /// and compare that value to a list of fixed values. The model
-    /// object is included if the extracted value is in the list
+    /// Decides if the given property is a match for the values in the PossibleValues collection
     /// </summary>
-    /// <remarks>If there is no delegate installed or there are
-    /// no values to match, no model objects will be matched</remarks>
-    public class OneOfFilter : IModelFilter {
+    /// <param name="result"></param>
+    /// <returns></returns>
+    protected virtual bool DoesValueMatch(object result) {
+        return this.PossibleValues.Contains(result);
+    }
+}
 
-        /// <summary>
-        /// Create a filter that will use the given delegate to extract values
-        /// </summary>
-        /// <param name="valueGetter"></param>
-        public OneOfFilter(AspectGetterDelegate valueGetter) :
-            this(valueGetter, new ArrayList()) {
-        }
+/// <summary>
+/// Instances of this class match a property of a model objects against
+/// a list of bit flags. The property should be an xor-ed collection
+/// of bits flags.
+/// </summary>
+/// <remarks>Both the property compared and the list of possible values
+/// must be convertible to ulongs.</remarks>
+public class FlagBitSetFilter : OneOfFilter {
 
-        /// <summary>
-        /// Create a filter that will extract values using the given delegate
-        /// and compare them to the values in the given list.
-        /// </summary>
-        /// <param name="valueGetter"></param>
-        /// <param name="possibleValues"></param>
-        public OneOfFilter(AspectGetterDelegate valueGetter, ICollection possibleValues) {
-            this.ValueGetter = valueGetter;
-            this.PossibleValues = new ArrayList(possibleValues);
-        }
-
-        /// <summary>
-        /// Gets or sets the delegate that will be used to extract values
-        /// from model objects
-        /// </summary>
-        virtual public AspectGetterDelegate ValueGetter {
-            get { return valueGetter; }
-            set { valueGetter = value; }
-        }
-        private AspectGetterDelegate valueGetter;
-
-        /// <summary>
-        /// Gets or sets the list of values that the value extracted from
-        /// the model object must match in order to be included.
-        /// </summary>
-        virtual public IList PossibleValues {
-            get { return possibleValues; }
-            set { possibleValues = value; }
-        }
-        private IList possibleValues;
-
-        /// <summary>
-        /// Should the given model object be included?
-        /// </summary>
-        /// <param name="modelObject"></param>
-        /// <returns></returns>
-        public virtual bool Filter(object modelObject) {
-            if (this.ValueGetter == null || this.PossibleValues == null || this.PossibleValues.Count == 0)
-                return false;
-
-            object result = this.ValueGetter(modelObject);
-            IEnumerable enumerable = result as IEnumerable;
-            if (result is string || enumerable == null)
-                return this.DoesValueMatch(result);
-
-            foreach (object x in enumerable) {
-                if (this.DoesValueMatch(x))
-                    return true;
-            }
-            return false;
-        }
-
-        /// <summary>
-        /// Decides if the given property is a match for the values in the PossibleValues collection
-        /// </summary>
-        /// <param name="result"></param>
-        /// <returns></returns>
-        protected virtual bool DoesValueMatch(object result) {
-            return this.PossibleValues.Contains(result);
-        }
+    /// <summary>
+    /// Create an instance
+    /// </summary>
+    /// <param name="valueGetter"></param>
+    /// <param name="possibleValues"></param>
+    public FlagBitSetFilter(AspectGetterDelegate valueGetter, ICollection possibleValues) : base(valueGetter, possibleValues) {
+        this.ConvertPossibleValues();
     }
 
     /// <summary>
-    /// Instances of this class match a property of a model objects against
-    /// a list of bit flags. The property should be an xor-ed collection
-    /// of bits flags.
+    /// Gets or sets the collection of values that will be matched.
+    /// These must be ulongs (or convertible to ulongs).
     /// </summary>
-    /// <remarks>Both the property compared and the list of possible values 
-    /// must be convertible to ulongs.</remarks>
-    public class FlagBitSetFilter : OneOfFilter {
-
-        /// <summary>
-        /// Create an instance
-        /// </summary>
-        /// <param name="valueGetter"></param>
-        /// <param name="possibleValues"></param>
-        public FlagBitSetFilter(AspectGetterDelegate valueGetter, ICollection possibleValues) : base(valueGetter, possibleValues) {
+    public override IList PossibleValues {
+        get { return base.PossibleValues; }
+        set {
+            base.PossibleValues = value;
             this.ConvertPossibleValues();
         }
+    }
 
-        /// <summary>
-        /// Gets or sets the collection of values that will be matched.
-        /// These must be ulongs (or convertible to ulongs).
-        /// </summary>
-        public override IList PossibleValues {
-            get { return base.PossibleValues; }
-            set {
-                base.PossibleValues = value;
-                this.ConvertPossibleValues();
-            }
-        }
-
-        private void ConvertPossibleValues() {
-            this.possibleValuesAsUlongs = new List<UInt64>();
-            foreach (object x in this.PossibleValues)
-                this.possibleValuesAsUlongs.Add(Convert.ToUInt64(x));
-        }
-
-        /// <summary>
-        /// Decides if the given property is a match for the values in the PossibleValues collection
-        /// </summary>
-        /// <param name="result"></param>
-        /// <returns></returns>
-        protected override bool DoesValueMatch(object result) {
-            try {
-                UInt64 value = Convert.ToUInt64(result);
-                foreach (ulong flag in this.possibleValuesAsUlongs) {
-                    if ((value & flag) == flag)
-                        return true;
-                }
-                return false;
-            }
-            catch (InvalidCastException) {
-                return false;
-            }
-            catch (FormatException) {
-                return false;
-            }
-        }
-
-        private List<UInt64> possibleValuesAsUlongs = new List<UInt64>();
+    private void ConvertPossibleValues() {
+        this.possibleValuesAsUlongs = new List<UInt64>();
+        foreach (object x in this.PossibleValues)
+            this.possibleValuesAsUlongs.Add(Convert.ToUInt64(x));
     }
 
     /// <summary>
-    /// Base class for whole list filters
+    /// Decides if the given property is a match for the values in the PossibleValues collection
     /// </summary>
-    public class AbstractListFilter : IListFilter
-    {
-        /// <summary>
-        /// Return a subset of the given list of model objects as the new
-        /// contents of the ObjectListView
-        /// </summary>
-        /// <param name="modelObjects">The collection of model objects that the list will possibly display</param>
-        /// <returns>The filtered collection that holds the model objects that will be displayed.</returns>
-        virtual public IEnumerable Filter(IEnumerable modelObjects) {
+    /// <param name="result"></param>
+    /// <returns></returns>
+    protected override bool DoesValueMatch(object result) {
+        try {
+            UInt64 value = Convert.ToUInt64(result);
+            foreach (ulong flag in this.possibleValuesAsUlongs) {
+                if ((value & flag) == flag)
+                    return true;
+            }
+            return false;
+        }
+        catch (InvalidCastException) {
+            return false;
+        }
+        catch (FormatException) {
+            return false;
+        }
+    }
+
+    private List<UInt64> possibleValuesAsUlongs = new List<UInt64>();
+}
+
+/// <summary>
+/// Base class for whole list filters
+/// </summary>
+public class AbstractListFilter : IListFilter
+{
+    /// <summary>
+    /// Return a subset of the given list of model objects as the new
+    /// contents of the ObjectListView
+    /// </summary>
+    /// <param name="modelObjects">The collection of model objects that the list will possibly display</param>
+    /// <returns>The filtered collection that holds the model objects that will be displayed.</returns>
+    virtual public IEnumerable Filter(IEnumerable modelObjects) {
+        return modelObjects;
+    }
+}
+
+/// <summary>
+/// Instance of this class implement delegate based whole list filtering
+/// </summary>
+public class ListFilter : AbstractListFilter
+{
+    /// <summary>
+    /// A delegate that filters on a whole list
+    /// </summary>
+    /// <param name="rowObjects"></param>
+    /// <returns></returns>
+    public delegate IEnumerable ListFilterDelegate(IEnumerable rowObjects);
+
+    /// <summary>
+    /// Create a ListFilter
+    /// </summary>
+    /// <param name="function"></param>
+    public ListFilter(ListFilterDelegate function) {
+        this.Function = function;
+    }
+
+    /// <summary>
+    /// Gets or sets the delegate that will filter the list
+    /// </summary>
+    public ListFilterDelegate Function {
+        get { return function; }
+        set { function = value; }
+    }
+    private ListFilterDelegate function;
+
+    /// <summary>
+    /// Do the actual work of filtering
+    /// </summary>
+    /// <param name="modelObjects"></param>
+    /// <returns></returns>
+    public override IEnumerable Filter(IEnumerable modelObjects) {
+        if (this.Function == null)
             return modelObjects;
-        }
+
+        return this.Function(modelObjects);
+    }
+}
+
+/// <summary>
+/// Filter the list so only the last N entries are displayed
+/// </summary>
+public class TailFilter : AbstractListFilter
+{
+    /// <summary>
+    /// Create a no-op tail filter
+    /// </summary>
+    public TailFilter() {
     }
 
     /// <summary>
-    /// Instance of this class implement delegate based whole list filtering
+    /// Create a filter that includes on the last N model objects
     /// </summary>
-    public class ListFilter : AbstractListFilter
-    {
-        /// <summary>
-        /// A delegate that filters on a whole list
-        /// </summary>
-        /// <param name="rowObjects"></param>
-        /// <returns></returns>
-        public delegate IEnumerable ListFilterDelegate(IEnumerable rowObjects);
-
-        /// <summary>
-        /// Create a ListFilter
-        /// </summary>
-        /// <param name="function"></param>
-        public ListFilter(ListFilterDelegate function) {
-            this.Function = function;
-        }
-
-        /// <summary>
-        /// Gets or sets the delegate that will filter the list
-        /// </summary>
-        public ListFilterDelegate Function {
-            get { return function; }
-            set { function = value; }
-        }
-        private ListFilterDelegate function;
-
-        /// <summary>
-        /// Do the actual work of filtering
-        /// </summary>
-        /// <param name="modelObjects"></param>
-        /// <returns></returns>
-        public override IEnumerable Filter(IEnumerable modelObjects) {
-            if (this.Function == null)
-                return modelObjects;
-
-            return this.Function(modelObjects);
-        }
+    /// <param name="numberOfObjects"></param>
+    public TailFilter(int numberOfObjects) {
+        this.Count = numberOfObjects;
     }
 
     /// <summary>
-    /// Filter the list so only the last N entries are displayed
+    /// Gets or sets the number of model objects that will be
+    /// returned from the tail of the list
     /// </summary>
-    public class TailFilter : AbstractListFilter
-    {
-        /// <summary>
-        /// Create a no-op tail filter
-        /// </summary>
-        public TailFilter() {
-        }
+    public int Count {
+        get { return count; }
+        set { count = value; }
+    }
+    private int count;
 
-        /// <summary>
-        /// Create a filter that includes on the last N model objects
-        /// </summary>
-        /// <param name="numberOfObjects"></param>
-        public TailFilter(int numberOfObjects) {
-            this.Count = numberOfObjects;
-        }
+    /// <summary>
+    /// Return the last N subset of the model objects
+    /// </summary>
+    /// <param name="modelObjects"></param>
+    /// <returns></returns>
+    public override IEnumerable Filter(IEnumerable modelObjects) {
+        if (this.Count <= 0)
+            return modelObjects;
 
-        /// <summary>
-        /// Gets or sets the number of model objects that will be 
-        /// returned from the tail of the list
-        /// </summary>
-        public int Count {
-            get { return count; }
-            set { count = value; }
-        }
-        private int count;
+        ArrayList list = ObjectListView.EnumerableToArray(modelObjects, false);
 
-        /// <summary>
-        /// Return the last N subset of the model objects
-        /// </summary>
-        /// <param name="modelObjects"></param>
-        /// <returns></returns>
-        public override IEnumerable Filter(IEnumerable modelObjects) {
-            if (this.Count <= 0)
-                return modelObjects;
+        if (this.Count > list.Count)
+            return list;
 
-            ArrayList list = ObjectListView.EnumerableToArray(modelObjects, false);
-
-            if (this.Count > list.Count)
-                return list;
-
-            object[] tail = new object[this.Count];
-            list.CopyTo(list.Count - this.Count, tail, 0, this.Count);
-            return new ArrayList(tail);
-        }
+        object[] tail = new object[this.Count];
+        list.CopyTo(list.Count - this.Count, tail, 0, this.Count);
+        return new ArrayList(tail);
     }
 }

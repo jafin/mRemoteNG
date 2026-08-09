@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Linq;
+using System.Runtime.Versioning;
 using mRemoteNG.App;
 using mRemoteNG.Config.DataProviders;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
@@ -7,47 +8,44 @@ using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
-using mRemoteNG.Properties;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.Config.Connections
+namespace mRemoteNG.Config.Connections;
+
+[SupportedOSPlatform("windows")]
+public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
 {
-    [SupportedOSPlatform("windows")]
-    public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
+    private readonly string _connectionFileName;
+    private readonly SaveFilter _saveFilter;
+
+    public XmlConnectionsSaver(string connectionFileName, SaveFilter saveFilter)
     {
-        private readonly string _connectionFileName;
-        private readonly SaveFilter _saveFilter;
+        if (string.IsNullOrEmpty(connectionFileName))
+            throw new ArgumentException($"Argument '{nameof(connectionFileName)}' cannot be null or empty", nameof(connectionFileName));
+        _connectionFileName = connectionFileName;
+        _saveFilter = saveFilter ?? throw new ArgumentNullException(nameof(saveFilter));
+    }
 
-        public XmlConnectionsSaver(string connectionFileName, SaveFilter saveFilter)
+    public void Save(ConnectionTreeModel connectionTreeModel, string propertyNameTrigger = "")
+    {
+        try
         {
-            if (string.IsNullOrEmpty(connectionFileName))
-                throw new ArgumentException($"Argument '{nameof(connectionFileName)}' cannot be null or empty", nameof(connectionFileName));
-            _connectionFileName = connectionFileName;
-            _saveFilter = saveFilter ?? throw new ArgumentNullException(nameof(saveFilter));
+            ICryptographyProvider cryptographyProvider = new CryptoProviderFactoryFromSettings().Build();
+            Serializers.ISerializer<Connection.ConnectionInfo, string> xmlConnectionsSerializer = XmlConnectionSerializerFactory.Build(cryptographyProvider, connectionTreeModel, _saveFilter, Properties.OptionsSecurityPage.Default.EncryptCompleteConnectionsFile);
+
+            RootNodeInfo? rootNode = connectionTreeModel.RootNodes.OfType<RootNodeInfo>().FirstOrDefault();
+            if (rootNode == null)
+                throw new InvalidOperationException("Connection tree has no root node");
+            string xml = xmlConnectionsSerializer.Serialize(rootNode);
+
+            if (string.IsNullOrEmpty(xml))
+                throw new InvalidOperationException("Serialized XML is empty");
+
+            FileDataProviderWithRollingBackup fileDataProvider = new(_connectionFileName);
+            fileDataProvider.Save(xml);
         }
-
-        public void Save(ConnectionTreeModel connectionTreeModel, string propertyNameTrigger = "")
+        catch (Exception ex)
         {
-            try
-            {
-                ICryptographyProvider cryptographyProvider = new CryptoProviderFactoryFromSettings().Build();
-                Serializers.ISerializer<Connection.ConnectionInfo, string> xmlConnectionsSerializer = XmlConnectionSerializerFactory.Build(cryptographyProvider, connectionTreeModel, _saveFilter, Properties.OptionsSecurityPage.Default.EncryptCompleteConnectionsFile);
-
-                RootNodeInfo? rootNode = connectionTreeModel.RootNodes.OfType<RootNodeInfo>().FirstOrDefault();
-                if (rootNode == null)
-                    throw new InvalidOperationException("Connection tree has no root node");
-                string xml = xmlConnectionsSerializer.Serialize(rootNode);
-
-                if (string.IsNullOrEmpty(xml))
-                    throw new InvalidOperationException("Serialized XML is empty");
-
-                FileDataProviderWithRollingBackup fileDataProvider = new(_connectionFileName);
-                fileDataProvider.Save(xml);
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector?.AddExceptionStackTrace("SaveToXml failed", ex);
-            }
+            Runtime.MessageCollector?.AddExceptionStackTrace("SaveToXml failed", ex);
         }
     }
 }

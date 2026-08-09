@@ -1,15 +1,12 @@
-﻿using mRemoteNG.Properties;
+﻿namespace mRemoteNG.Security.Factories;
 
-namespace mRemoteNG.Security.Factories
+public class CryptoProviderFactoryFromSettings : ICryptoProviderFactory
 {
-    public class CryptoProviderFactoryFromSettings : ICryptoProviderFactory
+    public ICryptographyProvider Build()
     {
-        public ICryptographyProvider Build()
-        {
-            ICryptographyProvider provider =
-                new CryptoProviderFactory(Properties.OptionsSecurityPage.Default.EncryptionEngine, Properties.OptionsSecurityPage.Default.EncryptionBlockCipherMode).Build();
-            provider.KeyDerivationIterations = Properties.OptionsSecurityPage.Default.EncryptionKeyDerivationIterations;
-            return provider;
-        }
+        ICryptographyProvider provider =
+            new CryptoProviderFactory(Properties.OptionsSecurityPage.Default.EncryptionEngine, Properties.OptionsSecurityPage.Default.EncryptionBlockCipherMode).Build();
+        provider.KeyDerivationIterations = Properties.OptionsSecurityPage.Default.EncryptionKeyDerivationIterations;
+        return provider;
     }
 }

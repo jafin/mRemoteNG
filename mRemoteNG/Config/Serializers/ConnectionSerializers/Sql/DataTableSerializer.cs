@@ -11,1001 +11,1000 @@ using mRemoteNG.Tools;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
 
-namespace mRemoteNG.Config.Serializers.ConnectionSerializers.Sql
+namespace mRemoteNG.Config.Serializers.ConnectionSerializers.Sql;
+
+[SupportedOSPlatform("windows")]
+public class DataTableSerializer(SaveFilter saveFilter, ICryptographyProvider cryptographyProvider, SecureString encryptionKey) : ISerializer<ConnectionInfo, DataTable>
 {
-    [SupportedOSPlatform("windows")]
-    public class DataTableSerializer(SaveFilter saveFilter, ICryptographyProvider cryptographyProvider, SecureString encryptionKey) : ISerializer<ConnectionInfo, DataTable>
+    private const int DELETE = 0;
+    private readonly ICryptographyProvider _cryptographyProvider = cryptographyProvider.ThrowIfNull(nameof(cryptographyProvider));
+    private readonly SecureString _encryptionKey = encryptionKey.ThrowIfNull(nameof(encryptionKey));
+    private DataTable _dataTable = null!;
+    private DataTable? _sourceDataTable;
+    private readonly Dictionary<string, int> _sourcePrimaryKeyDict = [];
+    private const string TABLE_NAME = "tblCons";
+    private readonly SaveFilter _saveFilter = saveFilter.ThrowIfNull(nameof(saveFilter));
+    private int _currentNodeIndex;
+    private IReadOnlyCollection<string>? _loadedConnectionIds;
+
+    public Version Version { get; } = new Version(3, 0);
+
+    public void SetSourceDataTable(DataTable sourceDataTable)
     {
-        private const int DELETE = 0;
-        private readonly ICryptographyProvider _cryptographyProvider = cryptographyProvider.ThrowIfNull(nameof(cryptographyProvider));
-        private readonly SecureString _encryptionKey = encryptionKey.ThrowIfNull(nameof(encryptionKey));
-        private DataTable _dataTable = null!;
-        private DataTable? _sourceDataTable;
-        private readonly Dictionary<string, int> _sourcePrimaryKeyDict = [];
-        private const string TABLE_NAME = "tblCons";
-        private readonly SaveFilter _saveFilter = saveFilter.ThrowIfNull(nameof(saveFilter));
-        private int _currentNodeIndex;
-        private IReadOnlyCollection<string>? _loadedConnectionIds;
+        _sourceDataTable = sourceDataTable;
+    }
 
-        public Version Version { get; } = new Version(3, 0);
+    /// <summary>
+    /// Sets the connection IDs that were loaded from the database at load time.
+    /// When set, only connections that were in this set but are no longer in the
+    /// tree will be deleted from the database. Connections added by other users
+    /// (not in this set) will be preserved. (#1424 — SQL multiuser support)
+    /// </summary>
+    public void SetLoadedConnectionIds(IReadOnlyCollection<string> loadedConnectionIds)
+    {
+        _loadedConnectionIds = loadedConnectionIds;
+    }
 
-        public void SetSourceDataTable(DataTable sourceDataTable)
-        {
-            _sourceDataTable = sourceDataTable;
-        }
-
-        /// <summary>
-        /// Sets the connection IDs that were loaded from the database at load time.
-        /// When set, only connections that were in this set but are no longer in the
-        /// tree will be deleted from the database. Connections added by other users
-        /// (not in this set) will be preserved. (#1424 — SQL multiuser support)
-        /// </summary>
-        public void SetLoadedConnectionIds(IReadOnlyCollection<string> loadedConnectionIds)
-        {
-            _loadedConnectionIds = loadedConnectionIds;
-        }
-
-        public DataTable Serialize(ConnectionTreeModel connectionTreeModel)
-        {
-            try
-            {
-                _dataTable = BuildTable();
-
-                _currentNodeIndex = 0;
-
-                ContainerInfo rootNode = connectionTreeModel.RootNodes.First(node => node is RootNodeInfo);
-
-                return Serialize(rootNode);
-            }
-            catch (Exception)
-            {
-                return _dataTable;
-            }
-        }
-
-        internal static DataTable GetExpectedSchema()
-        {
-            DataTable dataTable = new(TABLE_NAME);
-            CreateSchema(dataTable);
-            return dataTable;
-        }
-
-        public DataTable Serialize(ConnectionInfo serializationTarget)
+    public DataTable Serialize(ConnectionTreeModel connectionTreeModel)
+    {
+        try
         {
             _dataTable = BuildTable();
 
             _currentNodeIndex = 0;
 
-            // Register add or update row
-            SerializeNodesRecursive(serializationTarget);
+            ContainerInfo rootNode = connectionTreeModel.RootNodes.First(node => node is RootNodeInfo);
 
-            // Only delete connections that we knew about at load time but are no
-            // longer in the tree (user explicitly deleted them). Connections in the
-            // DB that we never loaded (added by other users) are preserved. (#1424)
-            List<string> entryToDelete = _sourcePrimaryKeyDict.Keys.ToList();
-
-            foreach (string entry in entryToDelete)
-            {
-                if (_loadedConnectionIds != null && !_loadedConnectionIds.Contains(entry, StringComparer.Ordinal))
-                    continue; // Unknown to us — added by another user, don't delete
-
-                _dataTable.Rows.Find(entry)?.Delete();
-            }
-
+            return Serialize(rootNode);
+        }
+        catch (Exception)
+        {
             return _dataTable;
         }
+    }
 
-        private DataTable BuildTable()
+    internal static DataTable GetExpectedSchema()
+    {
+        DataTable dataTable = new(TABLE_NAME);
+        CreateSchema(dataTable);
+        return dataTable;
+    }
+
+    public DataTable Serialize(ConnectionInfo serializationTarget)
+    {
+        _dataTable = BuildTable();
+
+        _currentNodeIndex = 0;
+
+        // Register add or update row
+        SerializeNodesRecursive(serializationTarget);
+
+        // Only delete connections that we knew about at load time but are no
+        // longer in the tree (user explicitly deleted them). Connections in the
+        // DB that we never loaded (added by other users) are preserved. (#1424)
+        List<string> entryToDelete = _sourcePrimaryKeyDict.Keys.ToList();
+
+        foreach (string entry in entryToDelete)
         {
-            DataTable dataTable = _sourceDataTable ?? new DataTable(TABLE_NAME);
+            if (_loadedConnectionIds != null && !_loadedConnectionIds.Contains(entry, StringComparer.Ordinal))
+                continue; // Unknown to us — added by another user, don't delete
 
-            EnsureSchemaCompatibility(dataTable);
-
-            // Always key the table by ConstantID (a GUID string). DataTable.Load infers the primary
-            // key from the provider's schema metadata, and on legacy schemas that still carry the
-            // old auto-increment `ID` column (UNIQUE) alongside PRIMARY KEY(ConstantID),
-            // MySql.Data/MariaDB can mark the int `ID` as the DataTable primary key. Rows.Find with a
-            // ConstantID GUID would then convert it to Int32 and throw a FormatException (#145). Force
-            // ConstantID whenever the inferred key isn't already exactly that (skips a needless index
-            // rebuild when it is, e.g. the MSSQL path).
-            if (dataTable.PrimaryKey.Length != 1 || dataTable.PrimaryKey[0].ColumnName != "ConstantID")
-                SetPrimaryKey(dataTable);
-
-            foreach (DataRow row in dataTable.Rows)
-            {
-                _sourcePrimaryKeyDict.Add((string)row["ConstantID"], DELETE);
-            }
-
-            return dataTable;
+            _dataTable.Rows.Find(entry)?.Delete();
         }
 
-        private static void EnsureSchemaCompatibility(DataTable dataTable)
+        return _dataTable;
+    }
+
+    private DataTable BuildTable()
+    {
+        DataTable dataTable = _sourceDataTable ?? new DataTable(TABLE_NAME);
+
+        EnsureSchemaCompatibility(dataTable);
+
+        // Always key the table by ConstantID (a GUID string). DataTable.Load infers the primary
+        // key from the provider's schema metadata, and on legacy schemas that still carry the
+        // old auto-increment `ID` column (UNIQUE) alongside PRIMARY KEY(ConstantID),
+        // MySql.Data/MariaDB can mark the int `ID` as the DataTable primary key. Rows.Find with a
+        // ConstantID GUID would then convert it to Int32 and throw a FormatException (#145). Force
+        // ConstantID whenever the inferred key isn't already exactly that (skips a needless index
+        // rebuild when it is, e.g. the MSSQL path).
+        if (dataTable.PrimaryKey.Length != 1 || dataTable.PrimaryKey[0].ColumnName != "ConstantID")
+            SetPrimaryKey(dataTable);
+
+        foreach (DataRow row in dataTable.Rows)
         {
-            if (dataTable.Columns.Count == 0)
-            {
-                CreateSchema(dataTable);
-                return;
-            }
-
-            DataTable expectedSchemaTable = new(TABLE_NAME);
-            CreateSchema(expectedSchemaTable);
-
-            foreach (DataColumn expectedColumn in expectedSchemaTable.Columns)
-            {
-                if (dataTable.Columns.Contains(expectedColumn.ColumnName))
-                    continue;
-
-                DataColumn missingColumn = new(expectedColumn.ColumnName, expectedColumn.DataType);
-                dataTable.Columns.Add(missingColumn);
-            }
+            _sourcePrimaryKeyDict.Add((string)row["ConstantID"], DELETE);
         }
 
-        private static void CreateSchema(DataTable dataTable)
+        return dataTable;
+    }
+
+    private static void EnsureSchemaCompatibility(DataTable dataTable)
+    {
+        if (dataTable.Columns.Count == 0)
         {
-            dataTable.Columns.Add("AutomaticResize", typeof(bool));
-            dataTable.Columns.Add("CacheBitmaps", typeof(bool));
-            dataTable.Columns.Add("Colors", typeof(string));
-            dataTable.Columns.Add("ConnectionFrameColor", typeof(string));
-            dataTable.Columns.Add("ConnectToConsole", typeof(bool));
-            dataTable.Columns.Add("Connected", typeof(bool));
-            dataTable.Columns.Add("ConstantID", typeof(string));
-            dataTable.Columns.Add("Description", typeof(string));
-            dataTable.Columns.Add("DisableCursorBlinking", typeof(bool));
-            dataTable.Columns.Add("DisableCursorShadow", typeof(bool));
-            dataTable.Columns.Add("DisableFullWindowDrag", typeof(bool));
-            dataTable.Columns.Add("DisableMenuAnimations", typeof(bool));
-            dataTable.Columns.Add("DisplayThemes", typeof(bool));
-            dataTable.Columns.Add("DisplayWallpaper", typeof(bool));
-            dataTable.Columns.Add("Domain", typeof(string));
-            dataTable.Columns.Add("EC2InstanceId", typeof(string));
-            dataTable.Columns.Add("EC2Region", typeof(string));
-            dataTable.Columns.Add("EnableDesktopComposition", typeof(bool));
-            dataTable.Columns.Add("EnableFontSmoothing", typeof(bool));
-            dataTable.Columns.Add("EnhancedMode", typeof(bool));
-            dataTable.Columns.Add("Expanded", typeof(bool));
-            dataTable.Columns.Add("ExtApp", typeof(string));
-            dataTable.Columns.Add("ExternalAddressProvider", typeof(string));
-            dataTable.Columns.Add("ExternalCredentialProvider", typeof(string));
-            dataTable.Columns.Add("Favorite", typeof(bool));
-            dataTable.Columns.Add("Hostname", typeof(string));
-            dataTable.Columns.Add("ICAEncryptionStrength", typeof(string));
-            dataTable.Columns.Add("Icon", typeof(string));
-            dataTable.Columns.Add("IsTemplate", typeof(bool));
-            dataTable.Columns.Add("InheritAutomaticResize", typeof(bool));
-            dataTable.Columns.Add("InheritCacheBitmaps", typeof(bool));
-            dataTable.Columns.Add("InheritColors", typeof(bool));
-            dataTable.Columns.Add("InheritConnectionFrameColor", typeof(bool));
-            dataTable.Columns.Add("InheritDescription", typeof(bool));
-            dataTable.Columns.Add("InheritDisableCursorBlinking", typeof(bool));
-            dataTable.Columns.Add("InheritDisableCursorShadow", typeof(bool));
-            dataTable.Columns.Add("InheritDisableFullWindowDrag", typeof(bool));
-            dataTable.Columns.Add("InheritDisableMenuAnimations", typeof(bool));
-            dataTable.Columns.Add("InheritDisplayThemes", typeof(bool));
-            dataTable.Columns.Add("InheritDisplayWallpaper", typeof(bool));
-            dataTable.Columns.Add("InheritDomain", typeof(bool));
-            dataTable.Columns.Add("InheritEnableDesktopComposition", typeof(bool));
-            dataTable.Columns.Add("InheritEnableFontSmoothing", typeof(bool));
-            dataTable.Columns.Add("InheritEnhancedMode", typeof(bool));
-            dataTable.Columns.Add("InheritExtApp", typeof(bool));
-            dataTable.Columns.Add("InheritExternalCredentialProvider", typeof(bool));
-            dataTable.Columns.Add("InheritFavorite", typeof(bool));
-            dataTable.Columns.Add("InheritICAEncryptionStrength", typeof(bool));
-            dataTable.Columns.Add("InheritIcon", typeof(bool));
-            dataTable.Columns.Add("InheritLoadBalanceInfo", typeof(bool));
-            dataTable.Columns.Add("InheritRDPSignScope", typeof(bool));
-            dataTable.Columns.Add("InheritRDPSignature", typeof(bool));
-            dataTable.Columns.Add("InheritMacAddress", typeof(bool));
-            dataTable.Columns.Add("InheritOpeningCommand", typeof(bool));
-            dataTable.Columns.Add("InheritPanel", typeof(bool));
-            dataTable.Columns.Add("InheritPassword", typeof(bool));
-            dataTable.Columns.Add("InheritPort", typeof(bool));
-            dataTable.Columns.Add("InheritPostExtApp", typeof(bool));
-            dataTable.Columns.Add("InheritPreExtApp", typeof(bool));
-            dataTable.Columns.Add("InheritProtocol", typeof(bool));
-            dataTable.Columns.Add("InheritPuttySession", typeof(bool));
-            dataTable.Columns.Add("InheritRDGatewayDomain", typeof(bool));
-            dataTable.Columns.Add("InheritRDGatewayExternalCredentialProvider", typeof(bool));
-            dataTable.Columns.Add("InheritRDGatewayHostname", typeof(bool));
-            dataTable.Columns.Add("InheritRDGatewayPassword", typeof(bool));
-            dataTable.Columns.Add("InheritRDGatewayUsageMethod", typeof(bool));
-            dataTable.Columns.Add("InheritRDGatewayUseConnectionCredentials", typeof(bool));
-            dataTable.Columns.Add("InheritRDGatewayUserViaAPI", typeof(bool));
-            dataTable.Columns.Add("InheritRDGatewayUsername", typeof(bool));
-            dataTable.Columns.Add("InheritRDPAlertIdleTimeout", typeof(bool));
-            dataTable.Columns.Add("InheritRDPAuthenticationLevel", typeof(bool));
-            dataTable.Columns.Add("InheritRDPMinutesToIdleTimeout", typeof(bool));
-            dataTable.Columns.Add("InheritRdpVersion", typeof(bool));
-            dataTable.Columns.Add("InheritRedirectAudioCapture", typeof(bool));
-            dataTable.Columns.Add("InheritRedirectWebAuthn", typeof(bool));
-            dataTable.Columns.Add("InheritEnableRdsAadAuth", typeof(bool));
-            dataTable.Columns.Add("InheritRedirectClipboard", typeof(bool));
-            dataTable.Columns.Add("InheritRedirectDiskDrives", typeof(bool));
-            dataTable.Columns.Add("InheritRedirectDiskDrivesCustom", typeof(bool));
-            dataTable.Columns.Add("InheritRedirectKeys", typeof(bool));
-            dataTable.Columns.Add("InheritRedirectPorts", typeof(bool));
-            dataTable.Columns.Add("InheritRedirectPrinters", typeof(bool));
-            dataTable.Columns.Add("InheritRedirectSmartCards", typeof(bool));
-            dataTable.Columns.Add("InheritRedirectSound", typeof(bool));
-            dataTable.Columns.Add("InheritRenderingEngine", typeof(bool));
-            dataTable.Columns.Add("InheritResolution", typeof(bool));
-            dataTable.Columns.Add("InheritSSHOptions", typeof(bool));
-            dataTable.Columns.Add("InheritSSHTunnelConnectionName", typeof(bool));
-            dataTable.Columns.Add("InheritSoundQuality", typeof(bool));
-            dataTable.Columns.Add("InheritUseConsoleSession", typeof(bool));
-            dataTable.Columns.Add("InheritUseCredSsp", typeof(bool));
-            dataTable.Columns.Add("InheritUseEnhancedMode", typeof(bool));
-            dataTable.Columns.Add("InheritUseRCG", typeof(bool));
-            dataTable.Columns.Add("InheritUseRedirectionServerName", typeof(bool));
-            dataTable.Columns.Add("InheritUseRestrictedAdmin", typeof(bool));
-            dataTable.Columns.Add("InheritUseVmId", typeof(bool));
-            dataTable.Columns.Add("InheritUserField", typeof(bool));
-            dataTable.Columns.Add("InheritUserField1", typeof(bool));
-            dataTable.Columns.Add("InheritUserField2", typeof(bool));
-            dataTable.Columns.Add("InheritUserField3", typeof(bool));
-            dataTable.Columns.Add("InheritUserField4", typeof(bool));
-            dataTable.Columns.Add("InheritUserField5", typeof(bool));
-            dataTable.Columns.Add("InheritUserField6", typeof(bool));
-            dataTable.Columns.Add("InheritUserField7", typeof(bool));
-            dataTable.Columns.Add("InheritUserField8", typeof(bool));
-            dataTable.Columns.Add("InheritUserField9", typeof(bool));
-            dataTable.Columns.Add("InheritUserField10", typeof(bool));
-            dataTable.Columns.Add("InheritEnvironmentTags", typeof(bool));
-            dataTable.Columns.Add("InheritUserViaAPI", typeof(bool));
-            dataTable.Columns.Add("InheritUsername", typeof(bool));
-            dataTable.Columns.Add("InheritVNCAuthMode", typeof(bool));
-            dataTable.Columns.Add("InheritVNCColors", typeof(bool));
-            dataTable.Columns.Add("InheritVNCCompression", typeof(bool));
-            dataTable.Columns.Add("InheritVNCEncoding", typeof(bool));
-            dataTable.Columns.Add("InheritVNCProxyIP", typeof(bool));
-            dataTable.Columns.Add("InheritVNCProxyPassword", typeof(bool));
-            dataTable.Columns.Add("InheritVNCProxyPort", typeof(bool));
-            dataTable.Columns.Add("InheritVNCProxyType", typeof(bool));
-            dataTable.Columns.Add("InheritVNCProxyUsername", typeof(bool));
-            dataTable.Columns.Add("InheritVNCSmartSizeMode", typeof(bool));
-            dataTable.Columns.Add("InheritVNCViewOnly", typeof(bool));
-            dataTable.Columns.Add("InheritVNCClipboardRedirect", typeof(bool));
-            dataTable.Columns.Add("InheritVmId", typeof(bool));
-            dataTable.Columns.Add("LastChange", MiscTools.DBTimeStampType());
-            dataTable.Columns.Add("LoadBalanceInfo", typeof(string));
-            dataTable.Columns.Add("RDPSignScope", typeof(string));
-            dataTable.Columns.Add("RDPSignature", typeof(string));
-            dataTable.Columns.Add("MacAddress", typeof(string));
-            dataTable.Columns.Add("Name", typeof(string));
-            dataTable.Columns.Add("OpeningCommand", typeof(string));
-            dataTable.Columns.Add("Panel", typeof(string));
-            dataTable.Columns.Add("ParentID", typeof(string));
-            dataTable.Columns.Add("Password", typeof(string));
-            dataTable.Columns.Add("Port", typeof(int));
-            dataTable.Columns.Add("PositionID", typeof(int));
-            dataTable.Columns.Add("PostExtApp", typeof(string));
-            dataTable.Columns.Add("PreExtApp", typeof(string));
-            dataTable.Columns.Add("Protocol", typeof(string));
-            dataTable.Columns.Add("PuttySession", typeof(string));
-            dataTable.Columns.Add("RDGatewayDomain", typeof(string));
-            dataTable.Columns.Add("RDGatewayExternalCredentialProvider", typeof(string));
-            dataTable.Columns.Add("RDGatewayHostname", typeof(string));
-            dataTable.Columns.Add("RDGatewayPassword", typeof(string));
-            dataTable.Columns.Add("RDGatewayUsageMethod", typeof(string));
-            dataTable.Columns.Add("RDGatewayUseConnectionCredentials", typeof(string));
-            dataTable.Columns.Add("RDGatewayUserViaAPI", typeof(string));
-            dataTable.Columns.Add("RDGatewayUsername", typeof(string));
-            dataTable.Columns.Add("RDPAlertIdleTimeout", typeof(bool));
-            dataTable.Columns.Add("RDPAuthenticationLevel", typeof(string));
-            dataTable.Columns.Add("RDPMinutesToIdleTimeout", typeof(int));
-            dataTable.Columns.Add("RdpVersion", typeof(string));
-            dataTable.Columns.Add("RedirectAudioCapture", typeof(bool));
-            dataTable.Columns.Add("RedirectWebAuthn", typeof(bool));
-            dataTable.Columns.Add("EnableRdsAadAuth", typeof(bool));
-            dataTable.Columns.Add("RedirectClipboard", typeof(bool));
-            dataTable.Columns.Add("RedirectDiskDrives", typeof(string));
-            dataTable.Columns.Add("RedirectDiskDrivesCustom", typeof(string));
-            dataTable.Columns.Add("RedirectKeys", typeof(bool));
-            dataTable.Columns.Add("RedirectPorts", typeof(bool));
-            dataTable.Columns.Add("RedirectPrinters", typeof(bool));
-            dataTable.Columns.Add("RedirectSmartCards", typeof(bool));
-            dataTable.Columns.Add("RedirectSound", typeof(string));
-            dataTable.Columns.Add("RenderingEngine", typeof(string));
-            dataTable.Columns.Add("Resolution", typeof(string));
-            dataTable.Columns.Add("SSHOptions", typeof(string));
-            dataTable.Columns.Add("SSHTunnelConnectionName", typeof(string));
-            dataTable.Columns.Add("SoundQuality", typeof(string));
-            dataTable.Columns.Add("StartProgram", typeof(string));
-            dataTable.Columns.Add("StartProgramWorkDir", typeof(string));
-            dataTable.Columns.Add("Type", typeof(string));
-            dataTable.Columns.Add("UseCredSsp", typeof(bool));
-            dataTable.Columns.Add("UseEnhancedMode", typeof(bool));
-            dataTable.Columns.Add("UseRCG", typeof(bool));
-            dataTable.Columns.Add("UseRedirectionServerName", typeof(bool));
-            dataTable.Columns.Add("UseRestrictedAdmin", typeof(bool));
-            dataTable.Columns.Add("UseVmId", typeof(bool));
-            dataTable.Columns.Add("UserField", typeof(string));
-            dataTable.Columns.Add("UserField1", typeof(string));
-            dataTable.Columns.Add("UserField2", typeof(string));
-            dataTable.Columns.Add("UserField3", typeof(string));
-            dataTable.Columns.Add("UserField4", typeof(string));
-            dataTable.Columns.Add("UserField5", typeof(string));
-            dataTable.Columns.Add("UserField6", typeof(string));
-            dataTable.Columns.Add("UserField7", typeof(string));
-            dataTable.Columns.Add("UserField8", typeof(string));
-            dataTable.Columns.Add("UserField9", typeof(string));
-            dataTable.Columns.Add("UserField10", typeof(string));
-            dataTable.Columns.Add("EnvironmentTags", typeof(string));
-            dataTable.Columns.Add("UserViaAPI", typeof(string));
-            dataTable.Columns.Add("User", typeof(string));
-            dataTable.Columns.Add("Role", typeof(string));
-            dataTable.Columns.Add("Username", typeof(string));
-            dataTable.Columns.Add("VNCAuthMode", typeof(string));
-            dataTable.Columns.Add("VNCColors", typeof(string));
-            dataTable.Columns.Add("VNCCompression", typeof(string));
-            dataTable.Columns.Add("VNCEncoding", typeof(string));
-            dataTable.Columns.Add("VNCProxyIP", typeof(string));
-            dataTable.Columns.Add("VNCProxyPassword", typeof(string));
-            dataTable.Columns.Add("VNCProxyPort", typeof(int));
-            dataTable.Columns.Add("VNCProxyType", typeof(string));
-            dataTable.Columns.Add("VNCProxyUsername", typeof(string));
-            dataTable.Columns.Add("VNCSmartSizeMode", typeof(string));
-            dataTable.Columns.Add("VNCViewOnly", typeof(bool));
-            dataTable.Columns.Add("VNCClipboardRedirect", typeof(bool));
-            dataTable.Columns.Add("VmId", typeof(string));
-            // The legacy `ID` column is deliberately NOT part of the expected schema. It is a
-            // server-generated compatibility column (AUTO_INCREMENT / IDENTITY in the shipped DDL)
-            // that the application never writes; ConstantID is the application key. Listing it here
-            // made the schema upgraders re-create a dropped ID as a plain NOT NULL DEFAULT 0 column
-            // with no auto-increment and no index, after which the command builder included it in
-            // INSERTs with a DBNull value and every save failed with "ID cannot be null" (#145).
-            // The AutoIncrement flag that used to be set on the first column belonged to ID back
-            // when ID was declared first; it has been applying to an unrelated column since.
-            SetColumnDefaults(dataTable);
+            CreateSchema(dataTable);
+            return;
         }
 
-        /// <summary>
-        /// Sets DefaultValue on every DataTable column so that NewRow() never produces
-        /// DBNull for value-type columns.  This prevents "Cannot insert the value NULL
-        /// into column … column does not allow nulls" errors when the DataAdapter
-        /// generates INSERT commands for new rows.  (#1796)
-        /// </summary>
-        private static void SetColumnDefaults(DataTable dataTable)
-        {
-            foreach (DataColumn col in dataTable.Columns)
-            {
-                if (col.AutoIncrement || col.DefaultValue != DBNull.Value)
-                    continue;
+        DataTable expectedSchemaTable = new(TABLE_NAME);
+        CreateSchema(expectedSchemaTable);
 
-                col.DefaultValue = col.DataType switch
-                {
-                    Type t when t == typeof(bool) => false,
-                    Type t when t == typeof(int) => 0,
-                    Type t when t == typeof(string) => "",
-                    _ => DBNull.Value
-                };
-            }
+        foreach (DataColumn expectedColumn in expectedSchemaTable.Columns)
+        {
+            if (dataTable.Columns.Contains(expectedColumn.ColumnName))
+                continue;
+
+            DataColumn missingColumn = new(expectedColumn.ColumnName, expectedColumn.DataType);
+            dataTable.Columns.Add(missingColumn);
+        }
+    }
+
+    private static void CreateSchema(DataTable dataTable)
+    {
+        dataTable.Columns.Add("AutomaticResize", typeof(bool));
+        dataTable.Columns.Add("CacheBitmaps", typeof(bool));
+        dataTable.Columns.Add("Colors", typeof(string));
+        dataTable.Columns.Add("ConnectionFrameColor", typeof(string));
+        dataTable.Columns.Add("ConnectToConsole", typeof(bool));
+        dataTable.Columns.Add("Connected", typeof(bool));
+        dataTable.Columns.Add("ConstantID", typeof(string));
+        dataTable.Columns.Add("Description", typeof(string));
+        dataTable.Columns.Add("DisableCursorBlinking", typeof(bool));
+        dataTable.Columns.Add("DisableCursorShadow", typeof(bool));
+        dataTable.Columns.Add("DisableFullWindowDrag", typeof(bool));
+        dataTable.Columns.Add("DisableMenuAnimations", typeof(bool));
+        dataTable.Columns.Add("DisplayThemes", typeof(bool));
+        dataTable.Columns.Add("DisplayWallpaper", typeof(bool));
+        dataTable.Columns.Add("Domain", typeof(string));
+        dataTable.Columns.Add("EC2InstanceId", typeof(string));
+        dataTable.Columns.Add("EC2Region", typeof(string));
+        dataTable.Columns.Add("EnableDesktopComposition", typeof(bool));
+        dataTable.Columns.Add("EnableFontSmoothing", typeof(bool));
+        dataTable.Columns.Add("EnhancedMode", typeof(bool));
+        dataTable.Columns.Add("Expanded", typeof(bool));
+        dataTable.Columns.Add("ExtApp", typeof(string));
+        dataTable.Columns.Add("ExternalAddressProvider", typeof(string));
+        dataTable.Columns.Add("ExternalCredentialProvider", typeof(string));
+        dataTable.Columns.Add("Favorite", typeof(bool));
+        dataTable.Columns.Add("Hostname", typeof(string));
+        dataTable.Columns.Add("ICAEncryptionStrength", typeof(string));
+        dataTable.Columns.Add("Icon", typeof(string));
+        dataTable.Columns.Add("IsTemplate", typeof(bool));
+        dataTable.Columns.Add("InheritAutomaticResize", typeof(bool));
+        dataTable.Columns.Add("InheritCacheBitmaps", typeof(bool));
+        dataTable.Columns.Add("InheritColors", typeof(bool));
+        dataTable.Columns.Add("InheritConnectionFrameColor", typeof(bool));
+        dataTable.Columns.Add("InheritDescription", typeof(bool));
+        dataTable.Columns.Add("InheritDisableCursorBlinking", typeof(bool));
+        dataTable.Columns.Add("InheritDisableCursorShadow", typeof(bool));
+        dataTable.Columns.Add("InheritDisableFullWindowDrag", typeof(bool));
+        dataTable.Columns.Add("InheritDisableMenuAnimations", typeof(bool));
+        dataTable.Columns.Add("InheritDisplayThemes", typeof(bool));
+        dataTable.Columns.Add("InheritDisplayWallpaper", typeof(bool));
+        dataTable.Columns.Add("InheritDomain", typeof(bool));
+        dataTable.Columns.Add("InheritEnableDesktopComposition", typeof(bool));
+        dataTable.Columns.Add("InheritEnableFontSmoothing", typeof(bool));
+        dataTable.Columns.Add("InheritEnhancedMode", typeof(bool));
+        dataTable.Columns.Add("InheritExtApp", typeof(bool));
+        dataTable.Columns.Add("InheritExternalCredentialProvider", typeof(bool));
+        dataTable.Columns.Add("InheritFavorite", typeof(bool));
+        dataTable.Columns.Add("InheritICAEncryptionStrength", typeof(bool));
+        dataTable.Columns.Add("InheritIcon", typeof(bool));
+        dataTable.Columns.Add("InheritLoadBalanceInfo", typeof(bool));
+        dataTable.Columns.Add("InheritRDPSignScope", typeof(bool));
+        dataTable.Columns.Add("InheritRDPSignature", typeof(bool));
+        dataTable.Columns.Add("InheritMacAddress", typeof(bool));
+        dataTable.Columns.Add("InheritOpeningCommand", typeof(bool));
+        dataTable.Columns.Add("InheritPanel", typeof(bool));
+        dataTable.Columns.Add("InheritPassword", typeof(bool));
+        dataTable.Columns.Add("InheritPort", typeof(bool));
+        dataTable.Columns.Add("InheritPostExtApp", typeof(bool));
+        dataTable.Columns.Add("InheritPreExtApp", typeof(bool));
+        dataTable.Columns.Add("InheritProtocol", typeof(bool));
+        dataTable.Columns.Add("InheritPuttySession", typeof(bool));
+        dataTable.Columns.Add("InheritRDGatewayDomain", typeof(bool));
+        dataTable.Columns.Add("InheritRDGatewayExternalCredentialProvider", typeof(bool));
+        dataTable.Columns.Add("InheritRDGatewayHostname", typeof(bool));
+        dataTable.Columns.Add("InheritRDGatewayPassword", typeof(bool));
+        dataTable.Columns.Add("InheritRDGatewayUsageMethod", typeof(bool));
+        dataTable.Columns.Add("InheritRDGatewayUseConnectionCredentials", typeof(bool));
+        dataTable.Columns.Add("InheritRDGatewayUserViaAPI", typeof(bool));
+        dataTable.Columns.Add("InheritRDGatewayUsername", typeof(bool));
+        dataTable.Columns.Add("InheritRDPAlertIdleTimeout", typeof(bool));
+        dataTable.Columns.Add("InheritRDPAuthenticationLevel", typeof(bool));
+        dataTable.Columns.Add("InheritRDPMinutesToIdleTimeout", typeof(bool));
+        dataTable.Columns.Add("InheritRdpVersion", typeof(bool));
+        dataTable.Columns.Add("InheritRedirectAudioCapture", typeof(bool));
+        dataTable.Columns.Add("InheritRedirectWebAuthn", typeof(bool));
+        dataTable.Columns.Add("InheritEnableRdsAadAuth", typeof(bool));
+        dataTable.Columns.Add("InheritRedirectClipboard", typeof(bool));
+        dataTable.Columns.Add("InheritRedirectDiskDrives", typeof(bool));
+        dataTable.Columns.Add("InheritRedirectDiskDrivesCustom", typeof(bool));
+        dataTable.Columns.Add("InheritRedirectKeys", typeof(bool));
+        dataTable.Columns.Add("InheritRedirectPorts", typeof(bool));
+        dataTable.Columns.Add("InheritRedirectPrinters", typeof(bool));
+        dataTable.Columns.Add("InheritRedirectSmartCards", typeof(bool));
+        dataTable.Columns.Add("InheritRedirectSound", typeof(bool));
+        dataTable.Columns.Add("InheritRenderingEngine", typeof(bool));
+        dataTable.Columns.Add("InheritResolution", typeof(bool));
+        dataTable.Columns.Add("InheritSSHOptions", typeof(bool));
+        dataTable.Columns.Add("InheritSSHTunnelConnectionName", typeof(bool));
+        dataTable.Columns.Add("InheritSoundQuality", typeof(bool));
+        dataTable.Columns.Add("InheritUseConsoleSession", typeof(bool));
+        dataTable.Columns.Add("InheritUseCredSsp", typeof(bool));
+        dataTable.Columns.Add("InheritUseEnhancedMode", typeof(bool));
+        dataTable.Columns.Add("InheritUseRCG", typeof(bool));
+        dataTable.Columns.Add("InheritUseRedirectionServerName", typeof(bool));
+        dataTable.Columns.Add("InheritUseRestrictedAdmin", typeof(bool));
+        dataTable.Columns.Add("InheritUseVmId", typeof(bool));
+        dataTable.Columns.Add("InheritUserField", typeof(bool));
+        dataTable.Columns.Add("InheritUserField1", typeof(bool));
+        dataTable.Columns.Add("InheritUserField2", typeof(bool));
+        dataTable.Columns.Add("InheritUserField3", typeof(bool));
+        dataTable.Columns.Add("InheritUserField4", typeof(bool));
+        dataTable.Columns.Add("InheritUserField5", typeof(bool));
+        dataTable.Columns.Add("InheritUserField6", typeof(bool));
+        dataTable.Columns.Add("InheritUserField7", typeof(bool));
+        dataTable.Columns.Add("InheritUserField8", typeof(bool));
+        dataTable.Columns.Add("InheritUserField9", typeof(bool));
+        dataTable.Columns.Add("InheritUserField10", typeof(bool));
+        dataTable.Columns.Add("InheritEnvironmentTags", typeof(bool));
+        dataTable.Columns.Add("InheritUserViaAPI", typeof(bool));
+        dataTable.Columns.Add("InheritUsername", typeof(bool));
+        dataTable.Columns.Add("InheritVNCAuthMode", typeof(bool));
+        dataTable.Columns.Add("InheritVNCColors", typeof(bool));
+        dataTable.Columns.Add("InheritVNCCompression", typeof(bool));
+        dataTable.Columns.Add("InheritVNCEncoding", typeof(bool));
+        dataTable.Columns.Add("InheritVNCProxyIP", typeof(bool));
+        dataTable.Columns.Add("InheritVNCProxyPassword", typeof(bool));
+        dataTable.Columns.Add("InheritVNCProxyPort", typeof(bool));
+        dataTable.Columns.Add("InheritVNCProxyType", typeof(bool));
+        dataTable.Columns.Add("InheritVNCProxyUsername", typeof(bool));
+        dataTable.Columns.Add("InheritVNCSmartSizeMode", typeof(bool));
+        dataTable.Columns.Add("InheritVNCViewOnly", typeof(bool));
+        dataTable.Columns.Add("InheritVNCClipboardRedirect", typeof(bool));
+        dataTable.Columns.Add("InheritVmId", typeof(bool));
+        dataTable.Columns.Add("LastChange", MiscTools.DbTimeStampType());
+        dataTable.Columns.Add("LoadBalanceInfo", typeof(string));
+        dataTable.Columns.Add("RDPSignScope", typeof(string));
+        dataTable.Columns.Add("RDPSignature", typeof(string));
+        dataTable.Columns.Add("MacAddress", typeof(string));
+        dataTable.Columns.Add("Name", typeof(string));
+        dataTable.Columns.Add("OpeningCommand", typeof(string));
+        dataTable.Columns.Add("Panel", typeof(string));
+        dataTable.Columns.Add("ParentID", typeof(string));
+        dataTable.Columns.Add("Password", typeof(string));
+        dataTable.Columns.Add("Port", typeof(int));
+        dataTable.Columns.Add("PositionID", typeof(int));
+        dataTable.Columns.Add("PostExtApp", typeof(string));
+        dataTable.Columns.Add("PreExtApp", typeof(string));
+        dataTable.Columns.Add("Protocol", typeof(string));
+        dataTable.Columns.Add("PuttySession", typeof(string));
+        dataTable.Columns.Add("RDGatewayDomain", typeof(string));
+        dataTable.Columns.Add("RDGatewayExternalCredentialProvider", typeof(string));
+        dataTable.Columns.Add("RDGatewayHostname", typeof(string));
+        dataTable.Columns.Add("RDGatewayPassword", typeof(string));
+        dataTable.Columns.Add("RDGatewayUsageMethod", typeof(string));
+        dataTable.Columns.Add("RDGatewayUseConnectionCredentials", typeof(string));
+        dataTable.Columns.Add("RDGatewayUserViaAPI", typeof(string));
+        dataTable.Columns.Add("RDGatewayUsername", typeof(string));
+        dataTable.Columns.Add("RDPAlertIdleTimeout", typeof(bool));
+        dataTable.Columns.Add("RDPAuthenticationLevel", typeof(string));
+        dataTable.Columns.Add("RDPMinutesToIdleTimeout", typeof(int));
+        dataTable.Columns.Add("RdpVersion", typeof(string));
+        dataTable.Columns.Add("RedirectAudioCapture", typeof(bool));
+        dataTable.Columns.Add("RedirectWebAuthn", typeof(bool));
+        dataTable.Columns.Add("EnableRdsAadAuth", typeof(bool));
+        dataTable.Columns.Add("RedirectClipboard", typeof(bool));
+        dataTable.Columns.Add("RedirectDiskDrives", typeof(string));
+        dataTable.Columns.Add("RedirectDiskDrivesCustom", typeof(string));
+        dataTable.Columns.Add("RedirectKeys", typeof(bool));
+        dataTable.Columns.Add("RedirectPorts", typeof(bool));
+        dataTable.Columns.Add("RedirectPrinters", typeof(bool));
+        dataTable.Columns.Add("RedirectSmartCards", typeof(bool));
+        dataTable.Columns.Add("RedirectSound", typeof(string));
+        dataTable.Columns.Add("RenderingEngine", typeof(string));
+        dataTable.Columns.Add("Resolution", typeof(string));
+        dataTable.Columns.Add("SSHOptions", typeof(string));
+        dataTable.Columns.Add("SSHTunnelConnectionName", typeof(string));
+        dataTable.Columns.Add("SoundQuality", typeof(string));
+        dataTable.Columns.Add("StartProgram", typeof(string));
+        dataTable.Columns.Add("StartProgramWorkDir", typeof(string));
+        dataTable.Columns.Add("Type", typeof(string));
+        dataTable.Columns.Add("UseCredSsp", typeof(bool));
+        dataTable.Columns.Add("UseEnhancedMode", typeof(bool));
+        dataTable.Columns.Add("UseRCG", typeof(bool));
+        dataTable.Columns.Add("UseRedirectionServerName", typeof(bool));
+        dataTable.Columns.Add("UseRestrictedAdmin", typeof(bool));
+        dataTable.Columns.Add("UseVmId", typeof(bool));
+        dataTable.Columns.Add("UserField", typeof(string));
+        dataTable.Columns.Add("UserField1", typeof(string));
+        dataTable.Columns.Add("UserField2", typeof(string));
+        dataTable.Columns.Add("UserField3", typeof(string));
+        dataTable.Columns.Add("UserField4", typeof(string));
+        dataTable.Columns.Add("UserField5", typeof(string));
+        dataTable.Columns.Add("UserField6", typeof(string));
+        dataTable.Columns.Add("UserField7", typeof(string));
+        dataTable.Columns.Add("UserField8", typeof(string));
+        dataTable.Columns.Add("UserField9", typeof(string));
+        dataTable.Columns.Add("UserField10", typeof(string));
+        dataTable.Columns.Add("EnvironmentTags", typeof(string));
+        dataTable.Columns.Add("UserViaAPI", typeof(string));
+        dataTable.Columns.Add("User", typeof(string));
+        dataTable.Columns.Add("Role", typeof(string));
+        dataTable.Columns.Add("Username", typeof(string));
+        dataTable.Columns.Add("VNCAuthMode", typeof(string));
+        dataTable.Columns.Add("VNCColors", typeof(string));
+        dataTable.Columns.Add("VNCCompression", typeof(string));
+        dataTable.Columns.Add("VNCEncoding", typeof(string));
+        dataTable.Columns.Add("VNCProxyIP", typeof(string));
+        dataTable.Columns.Add("VNCProxyPassword", typeof(string));
+        dataTable.Columns.Add("VNCProxyPort", typeof(int));
+        dataTable.Columns.Add("VNCProxyType", typeof(string));
+        dataTable.Columns.Add("VNCProxyUsername", typeof(string));
+        dataTable.Columns.Add("VNCSmartSizeMode", typeof(string));
+        dataTable.Columns.Add("VNCViewOnly", typeof(bool));
+        dataTable.Columns.Add("VNCClipboardRedirect", typeof(bool));
+        dataTable.Columns.Add("VmId", typeof(string));
+        // The legacy `ID` column is deliberately NOT part of the expected schema. It is a
+        // server-generated compatibility column (AUTO_INCREMENT / IDENTITY in the shipped DDL)
+        // that the application never writes; ConstantID is the application key. Listing it here
+        // made the schema upgraders re-create a dropped ID as a plain NOT NULL DEFAULT 0 column
+        // with no auto-increment and no index, after which the command builder included it in
+        // INSERTs with a DBNull value and every save failed with "ID cannot be null" (#145).
+        // The AutoIncrement flag that used to be set on the first column belonged to ID back
+        // when ID was declared first; it has been applying to an unrelated column since.
+        SetColumnDefaults(dataTable);
+    }
+
+    /// <summary>
+    /// Sets DefaultValue on every DataTable column so that NewRow() never produces
+    /// DBNull for value-type columns.  This prevents "Cannot insert the value NULL
+    /// into column … column does not allow nulls" errors when the DataAdapter
+    /// generates INSERT commands for new rows.  (#1796)
+    /// </summary>
+    private static void SetColumnDefaults(DataTable dataTable)
+    {
+        foreach (DataColumn col in dataTable.Columns)
+        {
+            if (col.AutoIncrement || col.DefaultValue != DBNull.Value)
+                continue;
+
+            col.DefaultValue = col.DataType switch
+            {
+                Type t when t == typeof(bool) => false,
+                Type t when t == typeof(int) => 0,
+                Type t when t == typeof(string) => "",
+                _ => DBNull.Value
+            };
+        }
+    }
+
+    private static void SetPrimaryKey(DataTable dataTable)
+    {
+        DataColumn constantIdColumn = dataTable.Columns["ConstantID"]
+                                      ?? throw new InvalidOperationException("The 'ConstantID' column is missing from the connections table.");
+        dataTable.PrimaryKey = [constantIdColumn];
+    }
+
+    private void SerializeNodesRecursive(ConnectionInfo connectionInfo)
+    {
+        if (connectionInfo is not RootNodeInfo)
+        {
+            SerializeConnectionInfo(connectionInfo);
         }
 
-        private static void SetPrimaryKey(DataTable dataTable)
+        ContainerInfo? containerInfo = connectionInfo as ContainerInfo;
+        if (containerInfo == null) return;
+
+        foreach (ConnectionInfo child in containerInfo.Children)
         {
-            DataColumn constantIdColumn = dataTable.Columns["ConstantID"]
-                                          ?? throw new InvalidOperationException("The 'ConstantID' column is missing from the connections table.");
-            dataTable.PrimaryKey = [constantIdColumn];
+            SerializeNodesRecursive(child);
+        }
+    }
+
+    private bool IsRowUpdated(ConnectionInfo connectionInfo, DataRow dataRow)
+    {
+        bool isFieldNotChange = dataRow["Name"].Equals(connectionInfo.Name) &&
+                                dataRow["Type"].Equals(connectionInfo.GetTreeNodeType().ToString()) &&
+                                dataRow["ParentID"].Equals(connectionInfo.Parent?.ConstantID ?? "") &&
+                                dataRow["PositionID"].Equals(_currentNodeIndex) &&
+                                dataRow["Expanded"].Equals(false) &&
+                                dataRow["Description"].Equals(connectionInfo.Description) &&
+                                dataRow["Icon"].Equals(connectionInfo.Icon) &&
+                                dataRow["Panel"].Equals(connectionInfo.Panel) &&
+                                dataRow["Username"].Equals(_saveFilter.SaveUsername ? connectionInfo.Username : "") &&
+                                dataRow["Domain"].Equals(_saveFilter.SaveDomain ? connectionInfo.Domain : "");
+
+        isFieldNotChange = isFieldNotChange && dataRow["AutomaticResize"].Equals(connectionInfo.AutomaticResize);
+        isFieldNotChange = isFieldNotChange && dataRow["CacheBitmaps"].Equals(connectionInfo.CacheBitmaps);
+        isFieldNotChange = isFieldNotChange && dataRow["Colors"].Equals(connectionInfo.Colors.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["ConnectionFrameColor"].Equals(connectionInfo.ConnectionFrameColor.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["ConnectToConsole"].Equals(connectionInfo.UseConsoleSession);
+        isFieldNotChange = isFieldNotChange && dataRow["Connected"].Equals(false); // TODO: this column can eventually be removed. we now save this property locally
+        isFieldNotChange = isFieldNotChange && dataRow["DisableCursorBlinking"].Equals(connectionInfo.DisableCursorBlinking);
+        isFieldNotChange = isFieldNotChange && dataRow["DisableCursorShadow"].Equals(connectionInfo.DisableCursorShadow);
+        isFieldNotChange = isFieldNotChange && dataRow["DisableFullWindowDrag"].Equals(connectionInfo.DisableFullWindowDrag);
+        isFieldNotChange = isFieldNotChange && dataRow["DisableMenuAnimations"].Equals(connectionInfo.DisableMenuAnimations);
+        isFieldNotChange = isFieldNotChange && dataRow["DisplayThemes"].Equals(connectionInfo.DisplayThemes);
+        isFieldNotChange = isFieldNotChange && dataRow["DisplayWallpaper"].Equals(connectionInfo.DisplayWallpaper);
+        isFieldNotChange = isFieldNotChange && dataRow["EC2InstanceId"].Equals(connectionInfo.EC2InstanceId);
+        isFieldNotChange = isFieldNotChange && dataRow["EC2Region"].Equals(connectionInfo.EC2Region);
+        isFieldNotChange = isFieldNotChange && dataRow["EnableDesktopComposition"].Equals(connectionInfo.EnableDesktopComposition);
+        isFieldNotChange = isFieldNotChange && dataRow["EnableFontSmoothing"].Equals(connectionInfo.EnableFontSmoothing);
+        isFieldNotChange = isFieldNotChange && dataRow["ExtApp"].Equals(connectionInfo.ExtApp);
+        isFieldNotChange = isFieldNotChange && dataRow["ExternalAddressProvider"].Equals(connectionInfo.ExternalAddressProvider);
+        isFieldNotChange = isFieldNotChange && dataRow["ExternalCredentialProvider"].Equals(connectionInfo.ExternalCredentialProvider);
+        isFieldNotChange = isFieldNotChange && dataRow["Hostname"].Equals(connectionInfo.Hostname);
+        isFieldNotChange = isFieldNotChange && dataRow["IsTemplate"].Equals(connectionInfo.IsTemplate);
+        isFieldNotChange = isFieldNotChange && dataRow["LoadBalanceInfo"].Equals(connectionInfo.LoadBalanceInfo);
+        isFieldNotChange = isFieldNotChange && dataRow["RDPSignScope"].Equals(connectionInfo.RDPSignScope);
+        isFieldNotChange = isFieldNotChange && dataRow["RDPSignature"].Equals(connectionInfo.RDPSignature);
+        isFieldNotChange = isFieldNotChange && dataRow["MacAddress"].Equals(connectionInfo.MacAddress);
+        isFieldNotChange = isFieldNotChange && dataRow["OpeningCommand"].Equals(connectionInfo.OpeningCommand);
+        isFieldNotChange = isFieldNotChange && dataRow["Port"].Equals(connectionInfo.Port);
+        isFieldNotChange = isFieldNotChange && dataRow["PostExtApp"].Equals(connectionInfo.PostExtApp);
+        isFieldNotChange = isFieldNotChange && dataRow["PreExtApp"].Equals(connectionInfo.PreExtApp);
+        isFieldNotChange = isFieldNotChange && dataRow["Protocol"].Equals(connectionInfo.Protocol.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["PuttySession"].Equals(connectionInfo.PuttySession);
+        isFieldNotChange = isFieldNotChange && dataRow["RDGatewayDomain"].Equals(connectionInfo.RDGatewayDomain);
+        isFieldNotChange = isFieldNotChange && dataRow["RDGatewayExternalCredentialProvider"].Equals(connectionInfo.RDGatewayExternalCredentialProvider);
+        isFieldNotChange = isFieldNotChange && dataRow["RDGatewayHostname"].Equals(connectionInfo.RDGatewayHostname);
+        isFieldNotChange = isFieldNotChange && dataRow["RDGatewayUsageMethod"].Equals(connectionInfo.RDGatewayUsageMethod.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["RDGatewayUseConnectionCredentials"].Equals(connectionInfo.RDGatewayUseConnectionCredentials.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["RDGatewayUserViaAPI"].Equals(connectionInfo.RDGatewayUserViaAPI);
+        isFieldNotChange = isFieldNotChange && dataRow["RDGatewayUsername"].Equals(connectionInfo.RDGatewayUsername);
+        isFieldNotChange = isFieldNotChange && dataRow["RDPAlertIdleTimeout"].Equals(connectionInfo.RDPAlertIdleTimeout);
+        isFieldNotChange = isFieldNotChange && dataRow["RDPAuthenticationLevel"].Equals(connectionInfo.RDPAuthenticationLevel.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["RDPMinutesToIdleTimeout"].Equals(connectionInfo.RDPMinutesToIdleTimeout);
+        isFieldNotChange = isFieldNotChange && dataRow["RdpVersion"].Equals(connectionInfo.RdpVersion.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["RedirectAudioCapture"].Equals(connectionInfo.RedirectAudioCapture);
+        isFieldNotChange = isFieldNotChange && dataRow["RedirectWebAuthn"].Equals(connectionInfo.RedirectWebAuthn);
+        isFieldNotChange = isFieldNotChange && dataRow["EnableRdsAadAuth"].Equals(connectionInfo.EnableRdsAadAuth);
+        isFieldNotChange = isFieldNotChange && dataRow["RedirectClipboard"].Equals(connectionInfo.RedirectClipboard);
+        isFieldNotChange = isFieldNotChange && dataRow["RedirectDiskDrives"].Equals(connectionInfo.RedirectDiskDrives.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["RedirectDiskDrivesCustom"].Equals(connectionInfo.RedirectDiskDrivesCustom);
+        isFieldNotChange = isFieldNotChange && dataRow["RedirectKeys"].Equals(connectionInfo.RedirectKeys);
+        isFieldNotChange = isFieldNotChange && dataRow["RedirectPorts"].Equals(connectionInfo.RedirectPorts);
+        isFieldNotChange = isFieldNotChange && dataRow["RedirectPrinters"].Equals(connectionInfo.RedirectPrinters);
+        isFieldNotChange = isFieldNotChange && dataRow["RedirectSmartCards"].Equals(connectionInfo.RedirectSmartCards);
+        isFieldNotChange = isFieldNotChange && dataRow["RedirectSound"].Equals(connectionInfo.RedirectSound.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["RenderingEngine"].Equals(connectionInfo.RenderingEngine.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["Resolution"].Equals(connectionInfo.Resolution.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["SoundQuality"].Equals(connectionInfo.SoundQuality.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["StartProgram"].Equals(connectionInfo.RDPStartProgram);
+        isFieldNotChange = isFieldNotChange && dataRow["StartProgramWorkDir"].Equals(connectionInfo.RDPStartProgramWorkDir);
+        isFieldNotChange = isFieldNotChange && dataRow["UseCredSsp"].Equals(connectionInfo.UseCredSsp);
+        isFieldNotChange = isFieldNotChange && dataRow["UseEnhancedMode"].Equals(connectionInfo.UseEnhancedMode);
+        isFieldNotChange = isFieldNotChange && dataRow["UseRCG"].Equals(connectionInfo.UseRCG);
+        isFieldNotChange = isFieldNotChange && dataRow["UseRedirectionServerName"].Equals(connectionInfo.UseRedirectionServerName);
+        isFieldNotChange = isFieldNotChange && dataRow["UseRestrictedAdmin"].Equals(connectionInfo.UseRestrictedAdmin);
+        isFieldNotChange = isFieldNotChange && dataRow["UseVmId"].Equals(connectionInfo.UseVmId);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField"].Equals(connectionInfo.UserField);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField1"].Equals(connectionInfo.UserField1);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField2"].Equals(connectionInfo.UserField2);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField3"].Equals(connectionInfo.UserField3);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField4"].Equals(connectionInfo.UserField4);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField5"].Equals(connectionInfo.UserField5);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField6"].Equals(connectionInfo.UserField6);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField7"].Equals(connectionInfo.UserField7);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField8"].Equals(connectionInfo.UserField8);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField9"].Equals(connectionInfo.UserField9);
+        isFieldNotChange = isFieldNotChange && dataRow["UserField10"].Equals(connectionInfo.UserField10);
+        isFieldNotChange = isFieldNotChange && dataRow["UserViaAPI"].Equals(connectionInfo.UserViaAPI);
+        isFieldNotChange = isFieldNotChange && dataRow["VNCAuthMode"].Equals(connectionInfo.VNCAuthMode.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["VNCColors"].Equals(connectionInfo.VNCColors.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["VNCCompression"].Equals(connectionInfo.VNCCompression.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["VNCEncoding"].Equals(connectionInfo.VNCEncoding.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["VNCProxyIP"].Equals(connectionInfo.VNCProxyIP);
+        isFieldNotChange = isFieldNotChange && dataRow["VNCProxyPort"].Equals(connectionInfo.VNCProxyPort);
+        isFieldNotChange = isFieldNotChange && dataRow["VNCProxyType"].Equals(connectionInfo.VNCProxyType.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["VNCProxyUsername"].Equals(connectionInfo.VNCProxyUsername);
+        isFieldNotChange = isFieldNotChange && dataRow["VNCSmartSizeMode"].Equals(connectionInfo.VNCSmartSizeMode.ToString());
+        isFieldNotChange = isFieldNotChange && dataRow["VNCViewOnly"].Equals(connectionInfo.VNCViewOnly);
+        isFieldNotChange = isFieldNotChange && dataRow["VNCClipboardRedirect"].Equals(connectionInfo.VNCClipboardRedirect);
+        isFieldNotChange = isFieldNotChange && dataRow["VmId"].Equals(connectionInfo.VmId);
+        isFieldNotChange = isFieldNotChange && dataRow["User"].Equals(connectionInfo.User);
+        isFieldNotChange = isFieldNotChange && dataRow["Role"].Equals(connectionInfo.Role);
+
+        bool isInheritanceFieldNotChange = false;
+        if (_saveFilter.SaveInheritance)
+        {
+            isInheritanceFieldNotChange =
+                dataRow["InheritAutomaticResize"].Equals(connectionInfo.Inheritance.AutomaticResize) &&
+                dataRow["InheritCacheBitmaps"].Equals(connectionInfo.Inheritance.CacheBitmaps) &&
+                dataRow["InheritColors"].Equals(connectionInfo.Inheritance.Colors) &&
+                dataRow["InheritConnectionFrameColor"].Equals(connectionInfo.Inheritance.ConnectionFrameColor) &&
+                dataRow["InheritDescription"].Equals(connectionInfo.Inheritance.Description) &&
+                dataRow["InheritDisableCursorBlinking"].Equals(connectionInfo.Inheritance.DisableCursorBlinking) &&
+                dataRow["InheritDisableCursorShadow"].Equals(connectionInfo.Inheritance.DisableCursorShadow) &&
+                dataRow["InheritDisableFullWindowDrag"].Equals(connectionInfo.Inheritance.DisableFullWindowDrag) &&
+                dataRow["InheritDisableMenuAnimations"].Equals(connectionInfo.Inheritance.DisableMenuAnimations) &&
+                dataRow["InheritDisplayThemes"].Equals(connectionInfo.Inheritance.DisplayThemes) &&
+                dataRow["InheritDisplayWallpaper"].Equals(connectionInfo.Inheritance.DisplayWallpaper) &&
+                dataRow["InheritDomain"].Equals(connectionInfo.Inheritance.Domain) &&
+                dataRow["InheritEnableDesktopComposition"].Equals(connectionInfo.Inheritance.EnableDesktopComposition) &&
+                dataRow["InheritEnableFontSmoothing"].Equals(connectionInfo.Inheritance.EnableFontSmoothing) &&
+                dataRow["InheritExtApp"].Equals(connectionInfo.Inheritance.ExtApp) &&
+                dataRow["InheritExternalCredentialProvider"].Equals(connectionInfo.Inheritance.ExternalCredentialProvider) &&
+                dataRow["InheritIcon"].Equals(connectionInfo.Inheritance.Icon) &&
+                dataRow["InheritLoadBalanceInfo"].Equals(connectionInfo.Inheritance.LoadBalanceInfo) &&
+                dataRow["InheritMacAddress"].Equals(connectionInfo.Inheritance.MacAddress) &&
+                dataRow["InheritOpeningCommand"].Equals(connectionInfo.Inheritance.OpeningCommand) &&
+                dataRow["InheritPanel"].Equals(connectionInfo.Inheritance.Panel) &&
+                dataRow["InheritPassword"].Equals(connectionInfo.Inheritance.Password) &&
+                dataRow["InheritPort"].Equals(connectionInfo.Inheritance.Port) &&
+                dataRow["InheritPostExtApp"].Equals(connectionInfo.Inheritance.PostExtApp) &&
+                dataRow["InheritPreExtApp"].Equals(connectionInfo.Inheritance.PreExtApp) &&
+                dataRow["InheritProtocol"].Equals(connectionInfo.Inheritance.Protocol) &&
+                dataRow["InheritPuttySession"].Equals(connectionInfo.Inheritance.PuttySession) &&
+                dataRow["InheritRDGatewayDomain"].Equals(connectionInfo.Inheritance.RDGatewayDomain) &&
+                dataRow["InheritRDGatewayExternalCredentialProvider"].Equals(connectionInfo.Inheritance.RDGatewayExternalCredentialProvider) &&
+                dataRow["InheritRDGatewayHostname"].Equals(connectionInfo.Inheritance.RDGatewayHostname) &&
+                dataRow["InheritRDGatewayPassword"].Equals(connectionInfo.Inheritance.RDGatewayPassword) &&
+                dataRow["InheritRDGatewayUsageMethod"].Equals(connectionInfo.Inheritance.RDGatewayUsageMethod) &&
+                dataRow["InheritRDGatewayUseConnectionCredentials"].Equals(connectionInfo.Inheritance.RDGatewayUseConnectionCredentials) &&
+                dataRow["InheritRDGatewayUsername"].Equals(connectionInfo.Inheritance.RDGatewayUsername) &&
+                dataRow["InheritRDGatewayUserViaAPI"].Equals(connectionInfo.Inheritance.RDGatewayUserViaAPI) &&
+                dataRow["InheritRDPAlertIdleTimeout"].Equals(connectionInfo.Inheritance.RDPAlertIdleTimeout) &&
+                dataRow["InheritRDPAuthenticationLevel"].Equals(connectionInfo.Inheritance.RDPAuthenticationLevel) &&
+                dataRow["InheritRDPMinutesToIdleTimeout"].Equals(connectionInfo.Inheritance.RDPMinutesToIdleTimeout) &&
+                dataRow["InheritRdpVersion"].Equals(connectionInfo.Inheritance.RdpVersion) &&
+                dataRow["InheritRedirectAudioCapture"].Equals(connectionInfo.Inheritance.RedirectAudioCapture) &&
+                dataRow["InheritRedirectWebAuthn"].Equals(connectionInfo.Inheritance.RedirectWebAuthn) &&
+                dataRow["InheritEnableRdsAadAuth"].Equals(connectionInfo.Inheritance.EnableRdsAadAuth) &&
+                dataRow["InheritRedirectClipboard"].Equals(connectionInfo.Inheritance.RedirectClipboard) &&
+                dataRow["InheritRedirectDiskDrives"].Equals(connectionInfo.Inheritance.RedirectDiskDrives) &&
+                dataRow["InheritRedirectDiskDrivesCustom"].Equals(connectionInfo.Inheritance.RedirectDiskDrivesCustom) &&
+                dataRow["InheritRedirectKeys"].Equals(connectionInfo.Inheritance.RedirectKeys) &&
+                dataRow["InheritRedirectPorts"].Equals(connectionInfo.Inheritance.RedirectPorts) &&
+                dataRow["InheritRedirectPrinters"].Equals(connectionInfo.Inheritance.RedirectPrinters) &&
+                dataRow["InheritRedirectSmartCards"].Equals(connectionInfo.Inheritance.RedirectSmartCards) &&
+                dataRow["InheritRedirectSound"].Equals(connectionInfo.Inheritance.RedirectSound) &&
+                dataRow["InheritRenderingEngine"].Equals(connectionInfo.Inheritance.RenderingEngine) &&
+                dataRow["InheritResolution"].Equals(connectionInfo.Inheritance.Resolution) &&
+                dataRow["InheritSoundQuality"].Equals(connectionInfo.Inheritance.SoundQuality) &&
+                dataRow["InheritUseConsoleSession"].Equals(connectionInfo.Inheritance.UseConsoleSession) &&
+                dataRow["InheritUseCredSsp"].Equals(connectionInfo.Inheritance.UseCredSsp) &&
+                dataRow["InheritUseEnhancedMode"].Equals(connectionInfo.Inheritance.UseEnhancedMode) &&
+                dataRow["InheritUseRCG"].Equals(connectionInfo.Inheritance.UseRCG) &&
+                dataRow["InheritUseRedirectionServerName"].Equals(connectionInfo.Inheritance.UseRedirectionServerName) &&
+                dataRow["InheritUseRestrictedAdmin"].Equals(connectionInfo.Inheritance.UseRestrictedAdmin) &&
+                dataRow["InheritUserField"].Equals(connectionInfo.Inheritance.UserField) &&
+                dataRow["InheritUsername"].Equals(connectionInfo.Inheritance.Username) &&
+                dataRow["InheritUserViaAPI"].Equals(connectionInfo.Inheritance.UserViaAPI) &&
+                dataRow["InheritUseVmId"].Equals(connectionInfo.Inheritance.UseVmId) &&
+                dataRow["InheritVmId"].Equals(connectionInfo.Inheritance.VmId) &&
+                dataRow["InheritVNCAuthMode"].Equals(connectionInfo.Inheritance.VNCAuthMode) &&
+                dataRow["InheritVNCColors"].Equals(connectionInfo.Inheritance.VNCColors) &&
+                dataRow["InheritVNCCompression"].Equals(connectionInfo.Inheritance.VNCCompression) &&
+                dataRow["InheritVNCEncoding"].Equals(connectionInfo.Inheritance.VNCEncoding) &&
+                dataRow["InheritVNCProxyIP"].Equals(connectionInfo.Inheritance.VNCProxyIP) &&
+                dataRow["InheritVNCProxyPassword"].Equals(connectionInfo.Inheritance.VNCProxyPassword) &&
+                dataRow["InheritVNCProxyPort"].Equals(connectionInfo.Inheritance.VNCProxyPort) &&
+                dataRow["InheritVNCProxyType"].Equals(connectionInfo.Inheritance.VNCProxyType) &&
+                dataRow["InheritVNCProxyUsername"].Equals(connectionInfo.Inheritance.VNCProxyUsername) &&
+                dataRow["InheritVNCSmartSizeMode"].Equals(connectionInfo.Inheritance.VNCSmartSizeMode) &&
+                dataRow["InheritVNCViewOnly"].Equals(connectionInfo.Inheritance.VNCViewOnly) &&
+                dataRow["InheritVNCClipboardRedirect"].Equals(connectionInfo.Inheritance.VNCClipboardRedirect);
+        }
+        else
+        {
+            isInheritanceFieldNotChange =
+                dataRow["InheritAutomaticResize"].Equals(false) &&
+                dataRow["InheritCacheBitmaps"].Equals(false) &&
+                dataRow["InheritColors"].Equals(false) &&
+                dataRow["InheritConnectionFrameColor"].Equals(false) &&
+                dataRow["InheritDescription"].Equals(false) &&
+                dataRow["InheritDisableCursorBlinking"].Equals(false) &&
+                dataRow["InheritDisableCursorShadow"].Equals(false) &&
+                dataRow["InheritDisableFullWindowDrag"].Equals(false) &&
+                dataRow["InheritDisableMenuAnimations"].Equals(false) &&
+                dataRow["InheritDisplayThemes"].Equals(false) &&
+                dataRow["InheritDisplayWallpaper"].Equals(false) &&
+                dataRow["InheritDomain"].Equals(false) &&
+                dataRow["InheritEnableDesktopComposition"].Equals(false) &&
+                dataRow["InheritEnableFontSmoothing"].Equals(false) &&
+                dataRow["InheritExtApp"].Equals(false) &&
+                dataRow["InheritExternalCredentialProvider"].Equals(false) &&
+                dataRow["InheritIcon"].Equals(false) &&
+                dataRow["InheritLoadBalanceInfo"].Equals(false) &&
+                dataRow["InheritMacAddress"].Equals(false) &&
+                dataRow["InheritOpeningCommand"].Equals(false) &&
+                dataRow["InheritPanel"].Equals(false) &&
+                dataRow["InheritPassword"].Equals(false) &&
+                dataRow["InheritPort"].Equals(false) &&
+                dataRow["InheritPostExtApp"].Equals(false) &&
+                dataRow["InheritPreExtApp"].Equals(false) &&
+                dataRow["InheritProtocol"].Equals(false) &&
+                dataRow["InheritPuttySession"].Equals(false) &&
+                dataRow["InheritRDGatewayDomain"].Equals(false) &&
+                dataRow["InheritRDGatewayExternalCredentialProvider"].Equals(connectionInfo.Inheritance.RDGatewayExternalCredentialProvider) &&
+                dataRow["InheritRDGatewayHostname"].Equals(false) &&
+                dataRow["InheritRDGatewayPassword"].Equals(false) &&
+                dataRow["InheritRDGatewayUsageMethod"].Equals(false) &&
+                dataRow["InheritRDGatewayUseConnectionCredentials"].Equals(false) &&
+                dataRow["InheritRDGatewayUsername"].Equals(false) &&
+                dataRow["InheritRDGatewayUserViaAPI"].Equals(false) &&
+                dataRow["InheritRDPAlertIdleTimeout"].Equals(false) &&
+                dataRow["InheritRDPAuthenticationLevel"].Equals(false) &&
+                dataRow["InheritRDPMinutesToIdleTimeout"].Equals(false) &&
+                dataRow["InheritRdpVersion"].Equals(false) &&
+                dataRow["InheritRedirectAudioCapture"].Equals(false) &&
+                dataRow["InheritRedirectWebAuthn"].Equals(false) &&
+                dataRow["InheritEnableRdsAadAuth"].Equals(false) &&
+                dataRow["InheritRedirectClipboard"].Equals(false) &&
+                dataRow["InheritRedirectDiskDrives"].Equals(false) &&
+                dataRow["InheritRedirectDiskDrivesCustom"].Equals(false) &&
+                dataRow["InheritRedirectKeys"].Equals(false) &&
+                dataRow["InheritRedirectPorts"].Equals(false) &&
+                dataRow["InheritRedirectPrinters"].Equals(false) &&
+                dataRow["InheritRedirectSmartCards"].Equals(false) &&
+                dataRow["InheritRedirectSound"].Equals(false) &&
+                dataRow["InheritRenderingEngine"].Equals(false) &&
+                dataRow["InheritResolution"].Equals(false) &&
+                dataRow["InheritSoundQuality"].Equals(false) &&
+                dataRow["InheritUseConsoleSession"].Equals(false) &&
+                dataRow["InheritUseCredSsp"].Equals(false) &&
+                dataRow["InheritUseRCG"].Equals(false) &&
+                dataRow["InheritUseRedirectionServerName"].Equals(false) &&
+                dataRow["InheritUseRestrictedAdmin"].Equals(false) &&
+                dataRow["InheritUserField"].Equals(false) &&
+                dataRow["InheritUsername"].Equals(false) &&
+                dataRow["InheritUserViaAPI"].Equals(false) &&
+                dataRow["InheritVNCAuthMode"].Equals(false) &&
+                dataRow["InheritVNCColors"].Equals(false) &&
+                dataRow["InheritVNCCompression"].Equals(false) &&
+                dataRow["InheritVNCEncoding"].Equals(false) &&
+                dataRow["InheritVNCProxyIP"].Equals(false) &&
+                dataRow["InheritVNCProxyPassword"].Equals(false) &&
+                dataRow["InheritVNCProxyPort"].Equals(false) &&
+                dataRow["InheritVNCProxyType"].Equals(false) &&
+                dataRow["InheritVNCProxyUsername"].Equals(false) &&
+                dataRow["InheritVNCSmartSizeMode"].Equals(false) &&
+                dataRow["InheritVNCViewOnly"].Equals(false) &&
+                dataRow["InheritVNCClipboardRedirect"].Equals(false);
         }
 
-        private void SerializeNodesRecursive(ConnectionInfo connectionInfo)
+        //bool pwd = dataRow["Password"].Equals(_saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password?.ConvertToUnsecureString(), _encryptionKey) : "") &&
+        //          dataRow["VNCProxyPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.VNCProxyPassword, _encryptionKey)) &&
+        //          dataRow["RDGatewayPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.RDGatewayPassword, _encryptionKey));
+        bool pwd = dataRow["Password"].Equals(_saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password, _encryptionKey) : "") &&
+                   dataRow["VNCProxyPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.VNCProxyPassword, _encryptionKey)) &&
+                   dataRow["RDGatewayPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.RDGatewayPassword, _encryptionKey));
+        return !(pwd && isFieldNotChange && isInheritanceFieldNotChange);
+    }
+
+    private void SerializeConnectionInfo(ConnectionInfo connectionInfo)
+    {
+        _currentNodeIndex++;
+        bool isNewRow = false;
+        DataRow? dataRow = _dataTable.Rows.Find(connectionInfo.ConstantID);
+        if (dataRow == null)
         {
-            if (connectionInfo is not RootNodeInfo)
-            {
-                SerializeConnectionInfo(connectionInfo);
-            }
-
-            ContainerInfo? containerInfo = connectionInfo as ContainerInfo;
-            if (containerInfo == null) return;
-
-            foreach (ConnectionInfo child in containerInfo.Children)
-            {
-                SerializeNodesRecursive(child);
-            }
+            dataRow = _dataTable.NewRow();
+            dataRow["ConstantID"] = connectionInfo.ConstantID;
+            isNewRow = true;
+        }
+        else
+        {
+            _sourcePrimaryKeyDict.Remove(connectionInfo.ConstantID);
+        }
+        bool tmp = IsRowUpdated(connectionInfo, dataRow);
+        if (!tmp)
+        {
+            return;
         }
 
-        private bool IsRowUpdated(ConnectionInfo connectionInfo, DataRow dataRow)
+        dataRow["AutomaticResize"] = connectionInfo.AutomaticResize;
+        dataRow["CacheBitmaps"] = connectionInfo.CacheBitmaps;
+        dataRow["Colors"] = connectionInfo.Colors;
+        dataRow["ConnectionFrameColor"] = connectionInfo.ConnectionFrameColor.ToString();
+        dataRow["ConnectToConsole"] = connectionInfo.UseConsoleSession;
+        dataRow["Connected"] = false;
+        dataRow["Description"] = connectionInfo.Description; // TODO: this column can eventually be removed. we now save this property locally
+        dataRow["DisableCursorBlinking"] = connectionInfo.DisableCursorBlinking;
+        dataRow["DisableCursorShadow"] = connectionInfo.DisableCursorShadow;
+        dataRow["DisableFullWindowDrag"] = connectionInfo.DisableFullWindowDrag;
+        dataRow["DisableMenuAnimations"] = connectionInfo.DisableMenuAnimations;
+        dataRow["DisplayThemes"] = connectionInfo.DisplayThemes;
+        dataRow["DisplayWallpaper"] = connectionInfo.DisplayWallpaper;
+        dataRow["Domain"] = _saveFilter.SaveDomain ? connectionInfo.Domain : "";
+        dataRow["EC2InstanceId"] = connectionInfo.EC2InstanceId;
+        dataRow["EC2Region"] = connectionInfo.EC2Region;
+        dataRow["EnableDesktopComposition"] = connectionInfo.EnableDesktopComposition;
+        dataRow["EnableFontSmoothing"] = connectionInfo.EnableFontSmoothing;
+        dataRow["EnhancedMode"] = connectionInfo.UseEnhancedMode;
+        dataRow["Expanded"] = false;
+        dataRow["ExtApp"] = connectionInfo.ExtApp;
+        dataRow["ExternalAddressProvider"] = connectionInfo.ExternalAddressProvider.ToString();
+        dataRow["ExternalCredentialProvider"] = connectionInfo.ExternalCredentialProvider.ToString();
+        dataRow["Favorite"] = connectionInfo.Favorite;
+        dataRow["Hostname"] = connectionInfo.Hostname;
+        dataRow["ICAEncryptionStrength"] = string.Empty;
+        dataRow["Icon"] = connectionInfo.Icon;
+        dataRow["IsTemplate"] = connectionInfo.IsTemplate;
+        dataRow["LastChange"] = MiscTools.DbTimeStampNow();
+        dataRow["LoadBalanceInfo"] = connectionInfo.LoadBalanceInfo;
+        dataRow["MacAddress"] = connectionInfo.MacAddress;
+        dataRow["Name"] = connectionInfo.Name;
+        dataRow["OpeningCommand"] = connectionInfo.OpeningCommand;
+        dataRow["Panel"] = connectionInfo.Panel;
+        dataRow["ParentID"] = connectionInfo.Parent?.ConstantID ?? "";
+        //dataRow["Password"] = _saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password?.ConvertToUnsecureString(), _encryptionKey) : "";
+        dataRow["Password"] = _saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password, _encryptionKey) : "";
+        dataRow["Port"] = connectionInfo.Port;
+        dataRow["PositionID"] = _currentNodeIndex;
+        dataRow["PostExtApp"] = connectionInfo.PostExtApp;
+        dataRow["PreExtApp"] = connectionInfo.PreExtApp;
+        dataRow["Protocol"] = connectionInfo.Protocol;
+        dataRow["PuttySession"] = connectionInfo.PuttySession;
+        dataRow["RDGatewayDomain"] = connectionInfo.RDGatewayDomain;
+        dataRow["RDGatewayExternalCredentialProvider"] = connectionInfo.RDGatewayExternalCredentialProvider.ToString();
+        dataRow["RDGatewayHostname"] = connectionInfo.RDGatewayHostname;
+        dataRow["RDGatewayPassword"] = _cryptographyProvider.Encrypt(connectionInfo.RDGatewayPassword, _encryptionKey);
+        dataRow["RDGatewayUsageMethod"] = connectionInfo.RDGatewayUsageMethod;
+        dataRow["RDGatewayUseConnectionCredentials"] = connectionInfo.RDGatewayUseConnectionCredentials;
+        dataRow["RDGatewayUserViaAPI"] = connectionInfo.RDGatewayUserViaAPI;
+        dataRow["RDGatewayUsername"] = connectionInfo.RDGatewayUsername;
+        dataRow["RDPAlertIdleTimeout"] = connectionInfo.RDPAlertIdleTimeout;
+        dataRow["RDPAuthenticationLevel"] = connectionInfo.RDPAuthenticationLevel;
+        dataRow["RDPMinutesToIdleTimeout"] = connectionInfo.RDPMinutesToIdleTimeout;
+        dataRow["RDPSignScope"] = connectionInfo.RDPSignScope;
+        dataRow["RDPSignature"] = connectionInfo.RDPSignature;
+        dataRow["RdpVersion"] = connectionInfo.RdpVersion;
+        dataRow["RedirectAudioCapture"] = connectionInfo.RedirectAudioCapture;
+        dataRow["RedirectWebAuthn"] = connectionInfo.RedirectWebAuthn;
+        dataRow["EnableRdsAadAuth"] = connectionInfo.EnableRdsAadAuth;
+        dataRow["RedirectClipboard"] = connectionInfo.RedirectClipboard;
+        dataRow["RedirectDiskDrives"] = connectionInfo.RedirectDiskDrives;
+        dataRow["RedirectDiskDrivesCustom"] = connectionInfo.RedirectDiskDrivesCustom;
+        dataRow["RedirectKeys"] = connectionInfo.RedirectKeys;
+        dataRow["RedirectPorts"] = connectionInfo.RedirectPorts;
+        dataRow["RedirectPrinters"] = connectionInfo.RedirectPrinters;
+        dataRow["RedirectSmartCards"] = connectionInfo.RedirectSmartCards;
+        dataRow["RedirectSound"] = connectionInfo.RedirectSound;
+        dataRow["RenderingEngine"] = connectionInfo.RenderingEngine;
+        dataRow["Resolution"] = connectionInfo.Resolution;
+        dataRow["SSHOptions"] = connectionInfo.SSHOptions;
+        dataRow["SSHTunnelConnectionName"] = connectionInfo.SSHTunnelConnectionName;
+        dataRow["SoundQuality"] = connectionInfo.SoundQuality;
+        dataRow["StartProgram"] = connectionInfo.RDPStartProgram;
+        dataRow["StartProgramWorkDir"] = connectionInfo.RDPStartProgramWorkDir;
+        dataRow["Type"] = connectionInfo.GetTreeNodeType().ToString();
+        dataRow["UseCredSsp"] = connectionInfo.UseCredSsp;
+        dataRow["UseEnhancedMode"] = connectionInfo.UseEnhancedMode;
+        dataRow["UseRCG"] = connectionInfo.UseRCG;
+        dataRow["UseRedirectionServerName"] = connectionInfo.UseRedirectionServerName;
+        dataRow["UseRestrictedAdmin"] = connectionInfo.UseRestrictedAdmin;
+        dataRow["UseVmId"] = connectionInfo.UseVmId;
+        dataRow["UserField"] = connectionInfo.UserField;
+        dataRow["UserField1"] = connectionInfo.UserField1;
+        dataRow["UserField2"] = connectionInfo.UserField2;
+        dataRow["UserField3"] = connectionInfo.UserField3;
+        dataRow["UserField4"] = connectionInfo.UserField4;
+        dataRow["UserField5"] = connectionInfo.UserField5;
+        dataRow["UserField6"] = connectionInfo.UserField6;
+        dataRow["UserField7"] = connectionInfo.UserField7;
+        dataRow["UserField8"] = connectionInfo.UserField8;
+        dataRow["UserField9"] = connectionInfo.UserField9;
+        dataRow["UserField10"] = connectionInfo.UserField10;
+        dataRow["EnvironmentTags"] = connectionInfo.EnvironmentTags;
+        dataRow["Username"] = _saveFilter.SaveUsername ? connectionInfo.Username : "";
+        dataRow["VNCAuthMode"] = connectionInfo.VNCAuthMode;
+        dataRow["VNCColors"] = connectionInfo.VNCColors;
+        dataRow["VNCCompression"] = connectionInfo.VNCCompression;
+        dataRow["VNCEncoding"] = connectionInfo.VNCEncoding;
+        dataRow["VNCProxyIP"] = connectionInfo.VNCProxyIP;
+        dataRow["VNCProxyPassword"] = _cryptographyProvider.Encrypt(connectionInfo.VNCProxyPassword, _encryptionKey);
+        dataRow["VNCProxyPort"] = connectionInfo.VNCProxyPort;
+        dataRow["VNCProxyType"] = connectionInfo.VNCProxyType;
+        dataRow["VNCProxyUsername"] = connectionInfo.VNCProxyUsername;
+        dataRow["VNCSmartSizeMode"] = connectionInfo.VNCSmartSizeMode;
+        dataRow["VNCViewOnly"] = connectionInfo.VNCViewOnly; // TODO: this column can eventually be removed. we now save this property locally
+        dataRow["VNCClipboardRedirect"] = connectionInfo.VNCClipboardRedirect;
+        dataRow["VmId"] = connectionInfo.VmId;
+        dataRow["UserViaAPI"] = connectionInfo.UserViaAPI;
+        dataRow["User"] = connectionInfo.User;
+        dataRow["Role"] = connectionInfo.Role;
+
+        if (_saveFilter.SaveInheritance)
         {
-            bool isFieldNotChange = dataRow["Name"].Equals(connectionInfo.Name) &&
-            dataRow["Type"].Equals(connectionInfo.GetTreeNodeType().ToString()) &&
-            dataRow["ParentID"].Equals(connectionInfo.Parent?.ConstantID ?? "") &&
-            dataRow["PositionID"].Equals(_currentNodeIndex) &&
-            dataRow["Expanded"].Equals(false) &&
-            dataRow["Description"].Equals(connectionInfo.Description) &&
-            dataRow["Icon"].Equals(connectionInfo.Icon) &&
-            dataRow["Panel"].Equals(connectionInfo.Panel) &&
-            dataRow["Username"].Equals(_saveFilter.SaveUsername ? connectionInfo.Username : "") &&
-            dataRow["Domain"].Equals(_saveFilter.SaveDomain ? connectionInfo.Domain : "");
-
-            isFieldNotChange = isFieldNotChange && dataRow["AutomaticResize"].Equals(connectionInfo.AutomaticResize);
-            isFieldNotChange = isFieldNotChange && dataRow["CacheBitmaps"].Equals(connectionInfo.CacheBitmaps);
-            isFieldNotChange = isFieldNotChange && dataRow["Colors"].Equals(connectionInfo.Colors.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["ConnectionFrameColor"].Equals(connectionInfo.ConnectionFrameColor.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["ConnectToConsole"].Equals(connectionInfo.UseConsoleSession);
-            isFieldNotChange = isFieldNotChange && dataRow["Connected"].Equals(false); // TODO: this column can eventually be removed. we now save this property locally
-            isFieldNotChange = isFieldNotChange && dataRow["DisableCursorBlinking"].Equals(connectionInfo.DisableCursorBlinking);
-            isFieldNotChange = isFieldNotChange && dataRow["DisableCursorShadow"].Equals(connectionInfo.DisableCursorShadow);
-            isFieldNotChange = isFieldNotChange && dataRow["DisableFullWindowDrag"].Equals(connectionInfo.DisableFullWindowDrag);
-            isFieldNotChange = isFieldNotChange && dataRow["DisableMenuAnimations"].Equals(connectionInfo.DisableMenuAnimations);
-            isFieldNotChange = isFieldNotChange && dataRow["DisplayThemes"].Equals(connectionInfo.DisplayThemes);
-            isFieldNotChange = isFieldNotChange && dataRow["DisplayWallpaper"].Equals(connectionInfo.DisplayWallpaper);
-            isFieldNotChange = isFieldNotChange && dataRow["EC2InstanceId"].Equals(connectionInfo.EC2InstanceId);
-            isFieldNotChange = isFieldNotChange && dataRow["EC2Region"].Equals(connectionInfo.EC2Region);
-            isFieldNotChange = isFieldNotChange && dataRow["EnableDesktopComposition"].Equals(connectionInfo.EnableDesktopComposition);
-            isFieldNotChange = isFieldNotChange && dataRow["EnableFontSmoothing"].Equals(connectionInfo.EnableFontSmoothing);
-            isFieldNotChange = isFieldNotChange && dataRow["ExtApp"].Equals(connectionInfo.ExtApp);
-            isFieldNotChange = isFieldNotChange && dataRow["ExternalAddressProvider"].Equals(connectionInfo.ExternalAddressProvider);
-            isFieldNotChange = isFieldNotChange && dataRow["ExternalCredentialProvider"].Equals(connectionInfo.ExternalCredentialProvider);
-            isFieldNotChange = isFieldNotChange && dataRow["Hostname"].Equals(connectionInfo.Hostname);
-            isFieldNotChange = isFieldNotChange && dataRow["IsTemplate"].Equals(connectionInfo.IsTemplate);
-            isFieldNotChange = isFieldNotChange && dataRow["LoadBalanceInfo"].Equals(connectionInfo.LoadBalanceInfo);
-            isFieldNotChange = isFieldNotChange && dataRow["RDPSignScope"].Equals(connectionInfo.RDPSignScope);
-            isFieldNotChange = isFieldNotChange && dataRow["RDPSignature"].Equals(connectionInfo.RDPSignature);
-            isFieldNotChange = isFieldNotChange && dataRow["MacAddress"].Equals(connectionInfo.MacAddress);
-            isFieldNotChange = isFieldNotChange && dataRow["OpeningCommand"].Equals(connectionInfo.OpeningCommand);
-            isFieldNotChange = isFieldNotChange && dataRow["Port"].Equals(connectionInfo.Port);
-            isFieldNotChange = isFieldNotChange && dataRow["PostExtApp"].Equals(connectionInfo.PostExtApp);
-            isFieldNotChange = isFieldNotChange && dataRow["PreExtApp"].Equals(connectionInfo.PreExtApp);
-            isFieldNotChange = isFieldNotChange && dataRow["Protocol"].Equals(connectionInfo.Protocol.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["PuttySession"].Equals(connectionInfo.PuttySession);
-            isFieldNotChange = isFieldNotChange && dataRow["RDGatewayDomain"].Equals(connectionInfo.RDGatewayDomain);
-            isFieldNotChange = isFieldNotChange && dataRow["RDGatewayExternalCredentialProvider"].Equals(connectionInfo.RDGatewayExternalCredentialProvider);
-            isFieldNotChange = isFieldNotChange && dataRow["RDGatewayHostname"].Equals(connectionInfo.RDGatewayHostname);
-            isFieldNotChange = isFieldNotChange && dataRow["RDGatewayUsageMethod"].Equals(connectionInfo.RDGatewayUsageMethod.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["RDGatewayUseConnectionCredentials"].Equals(connectionInfo.RDGatewayUseConnectionCredentials.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["RDGatewayUserViaAPI"].Equals(connectionInfo.RDGatewayUserViaAPI);
-            isFieldNotChange = isFieldNotChange && dataRow["RDGatewayUsername"].Equals(connectionInfo.RDGatewayUsername);
-            isFieldNotChange = isFieldNotChange && dataRow["RDPAlertIdleTimeout"].Equals(connectionInfo.RDPAlertIdleTimeout);
-            isFieldNotChange = isFieldNotChange && dataRow["RDPAuthenticationLevel"].Equals(connectionInfo.RDPAuthenticationLevel.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["RDPMinutesToIdleTimeout"].Equals(connectionInfo.RDPMinutesToIdleTimeout);
-            isFieldNotChange = isFieldNotChange && dataRow["RdpVersion"].Equals(connectionInfo.RdpVersion.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["RedirectAudioCapture"].Equals(connectionInfo.RedirectAudioCapture);
-            isFieldNotChange = isFieldNotChange && dataRow["RedirectWebAuthn"].Equals(connectionInfo.RedirectWebAuthn);
-            isFieldNotChange = isFieldNotChange && dataRow["EnableRdsAadAuth"].Equals(connectionInfo.EnableRdsAadAuth);
-            isFieldNotChange = isFieldNotChange && dataRow["RedirectClipboard"].Equals(connectionInfo.RedirectClipboard);
-            isFieldNotChange = isFieldNotChange && dataRow["RedirectDiskDrives"].Equals(connectionInfo.RedirectDiskDrives.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["RedirectDiskDrivesCustom"].Equals(connectionInfo.RedirectDiskDrivesCustom);
-            isFieldNotChange = isFieldNotChange && dataRow["RedirectKeys"].Equals(connectionInfo.RedirectKeys);
-            isFieldNotChange = isFieldNotChange && dataRow["RedirectPorts"].Equals(connectionInfo.RedirectPorts);
-            isFieldNotChange = isFieldNotChange && dataRow["RedirectPrinters"].Equals(connectionInfo.RedirectPrinters);
-            isFieldNotChange = isFieldNotChange && dataRow["RedirectSmartCards"].Equals(connectionInfo.RedirectSmartCards);
-            isFieldNotChange = isFieldNotChange && dataRow["RedirectSound"].Equals(connectionInfo.RedirectSound.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["RenderingEngine"].Equals(connectionInfo.RenderingEngine.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["Resolution"].Equals(connectionInfo.Resolution.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["SoundQuality"].Equals(connectionInfo.SoundQuality.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["StartProgram"].Equals(connectionInfo.RDPStartProgram);
-            isFieldNotChange = isFieldNotChange && dataRow["StartProgramWorkDir"].Equals(connectionInfo.RDPStartProgramWorkDir);
-            isFieldNotChange = isFieldNotChange && dataRow["UseCredSsp"].Equals(connectionInfo.UseCredSsp);
-            isFieldNotChange = isFieldNotChange && dataRow["UseEnhancedMode"].Equals(connectionInfo.UseEnhancedMode);
-            isFieldNotChange = isFieldNotChange && dataRow["UseRCG"].Equals(connectionInfo.UseRCG);
-            isFieldNotChange = isFieldNotChange && dataRow["UseRedirectionServerName"].Equals(connectionInfo.UseRedirectionServerName);
-            isFieldNotChange = isFieldNotChange && dataRow["UseRestrictedAdmin"].Equals(connectionInfo.UseRestrictedAdmin);
-            isFieldNotChange = isFieldNotChange && dataRow["UseVmId"].Equals(connectionInfo.UseVmId);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField"].Equals(connectionInfo.UserField);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField1"].Equals(connectionInfo.UserField1);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField2"].Equals(connectionInfo.UserField2);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField3"].Equals(connectionInfo.UserField3);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField4"].Equals(connectionInfo.UserField4);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField5"].Equals(connectionInfo.UserField5);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField6"].Equals(connectionInfo.UserField6);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField7"].Equals(connectionInfo.UserField7);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField8"].Equals(connectionInfo.UserField8);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField9"].Equals(connectionInfo.UserField9);
-            isFieldNotChange = isFieldNotChange && dataRow["UserField10"].Equals(connectionInfo.UserField10);
-            isFieldNotChange = isFieldNotChange && dataRow["UserViaAPI"].Equals(connectionInfo.UserViaAPI);
-            isFieldNotChange = isFieldNotChange && dataRow["VNCAuthMode"].Equals(connectionInfo.VNCAuthMode.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["VNCColors"].Equals(connectionInfo.VNCColors.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["VNCCompression"].Equals(connectionInfo.VNCCompression.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["VNCEncoding"].Equals(connectionInfo.VNCEncoding.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["VNCProxyIP"].Equals(connectionInfo.VNCProxyIP);
-            isFieldNotChange = isFieldNotChange && dataRow["VNCProxyPort"].Equals(connectionInfo.VNCProxyPort);
-            isFieldNotChange = isFieldNotChange && dataRow["VNCProxyType"].Equals(connectionInfo.VNCProxyType.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["VNCProxyUsername"].Equals(connectionInfo.VNCProxyUsername);
-            isFieldNotChange = isFieldNotChange && dataRow["VNCSmartSizeMode"].Equals(connectionInfo.VNCSmartSizeMode.ToString());
-            isFieldNotChange = isFieldNotChange && dataRow["VNCViewOnly"].Equals(connectionInfo.VNCViewOnly);
-            isFieldNotChange = isFieldNotChange && dataRow["VNCClipboardRedirect"].Equals(connectionInfo.VNCClipboardRedirect);
-            isFieldNotChange = isFieldNotChange && dataRow["VmId"].Equals(connectionInfo.VmId);
-            isFieldNotChange = isFieldNotChange && dataRow["User"].Equals(connectionInfo.User);
-            isFieldNotChange = isFieldNotChange && dataRow["Role"].Equals(connectionInfo.Role);
-
-            bool isInheritanceFieldNotChange = false;
-            if (_saveFilter.SaveInheritance)
-            {
-                isInheritanceFieldNotChange =
-                    dataRow["InheritAutomaticResize"].Equals(connectionInfo.Inheritance.AutomaticResize) &&
-                    dataRow["InheritCacheBitmaps"].Equals(connectionInfo.Inheritance.CacheBitmaps) &&
-                    dataRow["InheritColors"].Equals(connectionInfo.Inheritance.Colors) &&
-                    dataRow["InheritConnectionFrameColor"].Equals(connectionInfo.Inheritance.ConnectionFrameColor) &&
-                    dataRow["InheritDescription"].Equals(connectionInfo.Inheritance.Description) &&
-                    dataRow["InheritDisableCursorBlinking"].Equals(connectionInfo.Inheritance.DisableCursorBlinking) &&
-                    dataRow["InheritDisableCursorShadow"].Equals(connectionInfo.Inheritance.DisableCursorShadow) &&
-                    dataRow["InheritDisableFullWindowDrag"].Equals(connectionInfo.Inheritance.DisableFullWindowDrag) &&
-                    dataRow["InheritDisableMenuAnimations"].Equals(connectionInfo.Inheritance.DisableMenuAnimations) &&
-                    dataRow["InheritDisplayThemes"].Equals(connectionInfo.Inheritance.DisplayThemes) &&
-                    dataRow["InheritDisplayWallpaper"].Equals(connectionInfo.Inheritance.DisplayWallpaper) &&
-                    dataRow["InheritDomain"].Equals(connectionInfo.Inheritance.Domain) &&
-                    dataRow["InheritEnableDesktopComposition"].Equals(connectionInfo.Inheritance.EnableDesktopComposition) &&
-                    dataRow["InheritEnableFontSmoothing"].Equals(connectionInfo.Inheritance.EnableFontSmoothing) &&
-                    dataRow["InheritExtApp"].Equals(connectionInfo.Inheritance.ExtApp) &&
-                    dataRow["InheritExternalCredentialProvider"].Equals(connectionInfo.Inheritance.ExternalCredentialProvider) &&
-                    dataRow["InheritIcon"].Equals(connectionInfo.Inheritance.Icon) &&
-                    dataRow["InheritLoadBalanceInfo"].Equals(connectionInfo.Inheritance.LoadBalanceInfo) &&
-                    dataRow["InheritMacAddress"].Equals(connectionInfo.Inheritance.MacAddress) &&
-                    dataRow["InheritOpeningCommand"].Equals(connectionInfo.Inheritance.OpeningCommand) &&
-                    dataRow["InheritPanel"].Equals(connectionInfo.Inheritance.Panel) &&
-                    dataRow["InheritPassword"].Equals(connectionInfo.Inheritance.Password) &&
-                    dataRow["InheritPort"].Equals(connectionInfo.Inheritance.Port) &&
-                    dataRow["InheritPostExtApp"].Equals(connectionInfo.Inheritance.PostExtApp) &&
-                    dataRow["InheritPreExtApp"].Equals(connectionInfo.Inheritance.PreExtApp) &&
-                    dataRow["InheritProtocol"].Equals(connectionInfo.Inheritance.Protocol) &&
-                    dataRow["InheritPuttySession"].Equals(connectionInfo.Inheritance.PuttySession) &&
-                    dataRow["InheritRDGatewayDomain"].Equals(connectionInfo.Inheritance.RDGatewayDomain) &&
-                    dataRow["InheritRDGatewayExternalCredentialProvider"].Equals(connectionInfo.Inheritance.RDGatewayExternalCredentialProvider) &&
-                    dataRow["InheritRDGatewayHostname"].Equals(connectionInfo.Inheritance.RDGatewayHostname) &&
-                    dataRow["InheritRDGatewayPassword"].Equals(connectionInfo.Inheritance.RDGatewayPassword) &&
-                    dataRow["InheritRDGatewayUsageMethod"].Equals(connectionInfo.Inheritance.RDGatewayUsageMethod) &&
-                    dataRow["InheritRDGatewayUseConnectionCredentials"].Equals(connectionInfo.Inheritance.RDGatewayUseConnectionCredentials) &&
-                    dataRow["InheritRDGatewayUsername"].Equals(connectionInfo.Inheritance.RDGatewayUsername) &&
-                    dataRow["InheritRDGatewayUserViaAPI"].Equals(connectionInfo.Inheritance.RDGatewayUserViaAPI) &&
-                    dataRow["InheritRDPAlertIdleTimeout"].Equals(connectionInfo.Inheritance.RDPAlertIdleTimeout) &&
-                    dataRow["InheritRDPAuthenticationLevel"].Equals(connectionInfo.Inheritance.RDPAuthenticationLevel) &&
-                    dataRow["InheritRDPMinutesToIdleTimeout"].Equals(connectionInfo.Inheritance.RDPMinutesToIdleTimeout) &&
-                    dataRow["InheritRdpVersion"].Equals(connectionInfo.Inheritance.RdpVersion) &&
-                    dataRow["InheritRedirectAudioCapture"].Equals(connectionInfo.Inheritance.RedirectAudioCapture) &&
-                    dataRow["InheritRedirectWebAuthn"].Equals(connectionInfo.Inheritance.RedirectWebAuthn) &&
-                    dataRow["InheritEnableRdsAadAuth"].Equals(connectionInfo.Inheritance.EnableRdsAadAuth) &&
-                    dataRow["InheritRedirectClipboard"].Equals(connectionInfo.Inheritance.RedirectClipboard) &&
-                    dataRow["InheritRedirectDiskDrives"].Equals(connectionInfo.Inheritance.RedirectDiskDrives) &&
-                    dataRow["InheritRedirectDiskDrivesCustom"].Equals(connectionInfo.Inheritance.RedirectDiskDrivesCustom) &&
-                    dataRow["InheritRedirectKeys"].Equals(connectionInfo.Inheritance.RedirectKeys) &&
-                    dataRow["InheritRedirectPorts"].Equals(connectionInfo.Inheritance.RedirectPorts) &&
-                    dataRow["InheritRedirectPrinters"].Equals(connectionInfo.Inheritance.RedirectPrinters) &&
-                    dataRow["InheritRedirectSmartCards"].Equals(connectionInfo.Inheritance.RedirectSmartCards) &&
-                    dataRow["InheritRedirectSound"].Equals(connectionInfo.Inheritance.RedirectSound) &&
-                    dataRow["InheritRenderingEngine"].Equals(connectionInfo.Inheritance.RenderingEngine) &&
-                    dataRow["InheritResolution"].Equals(connectionInfo.Inheritance.Resolution) &&
-                    dataRow["InheritSoundQuality"].Equals(connectionInfo.Inheritance.SoundQuality) &&
-                    dataRow["InheritUseConsoleSession"].Equals(connectionInfo.Inheritance.UseConsoleSession) &&
-                    dataRow["InheritUseCredSsp"].Equals(connectionInfo.Inheritance.UseCredSsp) &&
-                    dataRow["InheritUseEnhancedMode"].Equals(connectionInfo.Inheritance.UseEnhancedMode) &&
-                    dataRow["InheritUseRCG"].Equals(connectionInfo.Inheritance.UseRCG) &&
-                    dataRow["InheritUseRedirectionServerName"].Equals(connectionInfo.Inheritance.UseRedirectionServerName) &&
-                    dataRow["InheritUseRestrictedAdmin"].Equals(connectionInfo.Inheritance.UseRestrictedAdmin) &&
-                    dataRow["InheritUserField"].Equals(connectionInfo.Inheritance.UserField) &&
-                    dataRow["InheritUsername"].Equals(connectionInfo.Inheritance.Username) &&
-                    dataRow["InheritUserViaAPI"].Equals(connectionInfo.Inheritance.UserViaAPI) &&
-                    dataRow["InheritUseVmId"].Equals(connectionInfo.Inheritance.UseVmId) &&
-                    dataRow["InheritVmId"].Equals(connectionInfo.Inheritance.VmId) &&
-                    dataRow["InheritVNCAuthMode"].Equals(connectionInfo.Inheritance.VNCAuthMode) &&
-                    dataRow["InheritVNCColors"].Equals(connectionInfo.Inheritance.VNCColors) &&
-                    dataRow["InheritVNCCompression"].Equals(connectionInfo.Inheritance.VNCCompression) &&
-                    dataRow["InheritVNCEncoding"].Equals(connectionInfo.Inheritance.VNCEncoding) &&
-                    dataRow["InheritVNCProxyIP"].Equals(connectionInfo.Inheritance.VNCProxyIP) &&
-                    dataRow["InheritVNCProxyPassword"].Equals(connectionInfo.Inheritance.VNCProxyPassword) &&
-                    dataRow["InheritVNCProxyPort"].Equals(connectionInfo.Inheritance.VNCProxyPort) &&
-                    dataRow["InheritVNCProxyType"].Equals(connectionInfo.Inheritance.VNCProxyType) &&
-                    dataRow["InheritVNCProxyUsername"].Equals(connectionInfo.Inheritance.VNCProxyUsername) &&
-                    dataRow["InheritVNCSmartSizeMode"].Equals(connectionInfo.Inheritance.VNCSmartSizeMode) &&
-                    dataRow["InheritVNCViewOnly"].Equals(connectionInfo.Inheritance.VNCViewOnly) &&
-                    dataRow["InheritVNCClipboardRedirect"].Equals(connectionInfo.Inheritance.VNCClipboardRedirect);
-            }
-            else
-            {
-                isInheritanceFieldNotChange =
-                    dataRow["InheritAutomaticResize"].Equals(false) &&
-                    dataRow["InheritCacheBitmaps"].Equals(false) &&
-                    dataRow["InheritColors"].Equals(false) &&
-                    dataRow["InheritConnectionFrameColor"].Equals(false) &&
-                    dataRow["InheritDescription"].Equals(false) &&
-                    dataRow["InheritDisableCursorBlinking"].Equals(false) &&
-                    dataRow["InheritDisableCursorShadow"].Equals(false) &&
-                    dataRow["InheritDisableFullWindowDrag"].Equals(false) &&
-                    dataRow["InheritDisableMenuAnimations"].Equals(false) &&
-                    dataRow["InheritDisplayThemes"].Equals(false) &&
-                    dataRow["InheritDisplayWallpaper"].Equals(false) &&
-                    dataRow["InheritDomain"].Equals(false) &&
-                    dataRow["InheritEnableDesktopComposition"].Equals(false) &&
-                    dataRow["InheritEnableFontSmoothing"].Equals(false) &&
-                    dataRow["InheritExtApp"].Equals(false) &&
-                    dataRow["InheritExternalCredentialProvider"].Equals(false) &&
-                    dataRow["InheritIcon"].Equals(false) &&
-                    dataRow["InheritLoadBalanceInfo"].Equals(false) &&
-                    dataRow["InheritMacAddress"].Equals(false) &&
-                    dataRow["InheritOpeningCommand"].Equals(false) &&
-                    dataRow["InheritPanel"].Equals(false) &&
-                    dataRow["InheritPassword"].Equals(false) &&
-                    dataRow["InheritPort"].Equals(false) &&
-                    dataRow["InheritPostExtApp"].Equals(false) &&
-                    dataRow["InheritPreExtApp"].Equals(false) &&
-                    dataRow["InheritProtocol"].Equals(false) &&
-                    dataRow["InheritPuttySession"].Equals(false) &&
-                    dataRow["InheritRDGatewayDomain"].Equals(false) &&
-                    dataRow["InheritRDGatewayExternalCredentialProvider"].Equals(connectionInfo.Inheritance.RDGatewayExternalCredentialProvider) &&
-                    dataRow["InheritRDGatewayHostname"].Equals(false) &&
-                    dataRow["InheritRDGatewayPassword"].Equals(false) &&
-                    dataRow["InheritRDGatewayUsageMethod"].Equals(false) &&
-                    dataRow["InheritRDGatewayUseConnectionCredentials"].Equals(false) &&
-                    dataRow["InheritRDGatewayUsername"].Equals(false) &&
-                    dataRow["InheritRDGatewayUserViaAPI"].Equals(false) &&
-                    dataRow["InheritRDPAlertIdleTimeout"].Equals(false) &&
-                    dataRow["InheritRDPAuthenticationLevel"].Equals(false) &&
-                    dataRow["InheritRDPMinutesToIdleTimeout"].Equals(false) &&
-                    dataRow["InheritRdpVersion"].Equals(false) &&
-                    dataRow["InheritRedirectAudioCapture"].Equals(false) &&
-                    dataRow["InheritRedirectWebAuthn"].Equals(false) &&
-                    dataRow["InheritEnableRdsAadAuth"].Equals(false) &&
-                    dataRow["InheritRedirectClipboard"].Equals(false) &&
-                    dataRow["InheritRedirectDiskDrives"].Equals(false) &&
-                    dataRow["InheritRedirectDiskDrivesCustom"].Equals(false) &&
-                    dataRow["InheritRedirectKeys"].Equals(false) &&
-                    dataRow["InheritRedirectPorts"].Equals(false) &&
-                    dataRow["InheritRedirectPrinters"].Equals(false) &&
-                    dataRow["InheritRedirectSmartCards"].Equals(false) &&
-                    dataRow["InheritRedirectSound"].Equals(false) &&
-                    dataRow["InheritRenderingEngine"].Equals(false) &&
-                    dataRow["InheritResolution"].Equals(false) &&
-                    dataRow["InheritSoundQuality"].Equals(false) &&
-                    dataRow["InheritUseConsoleSession"].Equals(false) &&
-                    dataRow["InheritUseCredSsp"].Equals(false) &&
-                    dataRow["InheritUseRCG"].Equals(false) &&
-                    dataRow["InheritUseRedirectionServerName"].Equals(false) &&
-                    dataRow["InheritUseRestrictedAdmin"].Equals(false) &&
-                    dataRow["InheritUserField"].Equals(false) &&
-                    dataRow["InheritUsername"].Equals(false) &&
-                    dataRow["InheritUserViaAPI"].Equals(false) &&
-                    dataRow["InheritVNCAuthMode"].Equals(false) &&
-                    dataRow["InheritVNCColors"].Equals(false) &&
-                    dataRow["InheritVNCCompression"].Equals(false) &&
-                    dataRow["InheritVNCEncoding"].Equals(false) &&
-                    dataRow["InheritVNCProxyIP"].Equals(false) &&
-                    dataRow["InheritVNCProxyPassword"].Equals(false) &&
-                    dataRow["InheritVNCProxyPort"].Equals(false) &&
-                    dataRow["InheritVNCProxyType"].Equals(false) &&
-                    dataRow["InheritVNCProxyUsername"].Equals(false) &&
-                    dataRow["InheritVNCSmartSizeMode"].Equals(false) &&
-                    dataRow["InheritVNCViewOnly"].Equals(false) &&
-                    dataRow["InheritVNCClipboardRedirect"].Equals(false);
-            }
-
-            //bool pwd = dataRow["Password"].Equals(_saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password?.ConvertToUnsecureString(), _encryptionKey) : "") &&
-            //          dataRow["VNCProxyPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.VNCProxyPassword, _encryptionKey)) &&
-            //          dataRow["RDGatewayPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.RDGatewayPassword, _encryptionKey));
-            bool pwd = dataRow["Password"].Equals(_saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password, _encryptionKey) : "") &&
-                      dataRow["VNCProxyPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.VNCProxyPassword, _encryptionKey)) &&
-                      dataRow["RDGatewayPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.RDGatewayPassword, _encryptionKey));
-            return !(pwd && isFieldNotChange && isInheritanceFieldNotChange);
-        }
-
-        private void SerializeConnectionInfo(ConnectionInfo connectionInfo)
-        {
-            _currentNodeIndex++;
-            bool isNewRow = false;
-            DataRow? dataRow = _dataTable.Rows.Find(connectionInfo.ConstantID);
-            if (dataRow == null)
-            {
-                dataRow = _dataTable.NewRow();
-                dataRow["ConstantID"] = connectionInfo.ConstantID;
-                isNewRow = true;
-            }
-            else
-            {
-                _sourcePrimaryKeyDict.Remove(connectionInfo.ConstantID);
-            }
-            bool tmp = IsRowUpdated(connectionInfo, dataRow);
-            if (!tmp)
-            {
-                return;
-            }
-
-            dataRow["AutomaticResize"] = connectionInfo.AutomaticResize;
-            dataRow["CacheBitmaps"] = connectionInfo.CacheBitmaps;
-            dataRow["Colors"] = connectionInfo.Colors;
-            dataRow["ConnectionFrameColor"] = connectionInfo.ConnectionFrameColor.ToString();
-            dataRow["ConnectToConsole"] = connectionInfo.UseConsoleSession;
-            dataRow["Connected"] = false;
-            dataRow["Description"] = connectionInfo.Description; // TODO: this column can eventually be removed. we now save this property locally
-            dataRow["DisableCursorBlinking"] = connectionInfo.DisableCursorBlinking;
-            dataRow["DisableCursorShadow"] = connectionInfo.DisableCursorShadow;
-            dataRow["DisableFullWindowDrag"] = connectionInfo.DisableFullWindowDrag;
-            dataRow["DisableMenuAnimations"] = connectionInfo.DisableMenuAnimations;
-            dataRow["DisplayThemes"] = connectionInfo.DisplayThemes;
-            dataRow["DisplayWallpaper"] = connectionInfo.DisplayWallpaper;
-            dataRow["Domain"] = _saveFilter.SaveDomain ? connectionInfo.Domain : "";
-            dataRow["EC2InstanceId"] = connectionInfo.EC2InstanceId;
-            dataRow["EC2Region"] = connectionInfo.EC2Region;
-            dataRow["EnableDesktopComposition"] = connectionInfo.EnableDesktopComposition;
-            dataRow["EnableFontSmoothing"] = connectionInfo.EnableFontSmoothing;
-            dataRow["EnhancedMode"] = connectionInfo.UseEnhancedMode;
-            dataRow["Expanded"] = false;
-            dataRow["ExtApp"] = connectionInfo.ExtApp;
-            dataRow["ExternalAddressProvider"] = connectionInfo.ExternalAddressProvider.ToString();
-            dataRow["ExternalCredentialProvider"] = connectionInfo.ExternalCredentialProvider.ToString();
-            dataRow["Favorite"] = connectionInfo.Favorite;
-            dataRow["Hostname"] = connectionInfo.Hostname;
-            dataRow["ICAEncryptionStrength"] = string.Empty;
-            dataRow["Icon"] = connectionInfo.Icon;
-            dataRow["IsTemplate"] = connectionInfo.IsTemplate;
-            dataRow["LastChange"] = MiscTools.DBTimeStampNow();
-            dataRow["LoadBalanceInfo"] = connectionInfo.LoadBalanceInfo;
-            dataRow["MacAddress"] = connectionInfo.MacAddress;
-            dataRow["Name"] = connectionInfo.Name;
-            dataRow["OpeningCommand"] = connectionInfo.OpeningCommand;
-            dataRow["Panel"] = connectionInfo.Panel;
-            dataRow["ParentID"] = connectionInfo.Parent?.ConstantID ?? "";
-            //dataRow["Password"] = _saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password?.ConvertToUnsecureString(), _encryptionKey) : "";
-            dataRow["Password"] = _saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password, _encryptionKey) : "";
-            dataRow["Port"] = connectionInfo.Port;
-            dataRow["PositionID"] = _currentNodeIndex;
-            dataRow["PostExtApp"] = connectionInfo.PostExtApp;
-            dataRow["PreExtApp"] = connectionInfo.PreExtApp;
-            dataRow["Protocol"] = connectionInfo.Protocol;
-            dataRow["PuttySession"] = connectionInfo.PuttySession;
-            dataRow["RDGatewayDomain"] = connectionInfo.RDGatewayDomain;
-            dataRow["RDGatewayExternalCredentialProvider"] = connectionInfo.RDGatewayExternalCredentialProvider.ToString();
-            dataRow["RDGatewayHostname"] = connectionInfo.RDGatewayHostname;
-            dataRow["RDGatewayPassword"] = _cryptographyProvider.Encrypt(connectionInfo.RDGatewayPassword, _encryptionKey);
-            dataRow["RDGatewayUsageMethod"] = connectionInfo.RDGatewayUsageMethod;
-            dataRow["RDGatewayUseConnectionCredentials"] = connectionInfo.RDGatewayUseConnectionCredentials;
-            dataRow["RDGatewayUserViaAPI"] = connectionInfo.RDGatewayUserViaAPI;
-            dataRow["RDGatewayUsername"] = connectionInfo.RDGatewayUsername;
-            dataRow["RDPAlertIdleTimeout"] = connectionInfo.RDPAlertIdleTimeout;
-            dataRow["RDPAuthenticationLevel"] = connectionInfo.RDPAuthenticationLevel;
-            dataRow["RDPMinutesToIdleTimeout"] = connectionInfo.RDPMinutesToIdleTimeout;
-            dataRow["RDPSignScope"] = connectionInfo.RDPSignScope;
-            dataRow["RDPSignature"] = connectionInfo.RDPSignature;
-            dataRow["RdpVersion"] = connectionInfo.RdpVersion;
-            dataRow["RedirectAudioCapture"] = connectionInfo.RedirectAudioCapture;
-            dataRow["RedirectWebAuthn"] = connectionInfo.RedirectWebAuthn;
-            dataRow["EnableRdsAadAuth"] = connectionInfo.EnableRdsAadAuth;
-            dataRow["RedirectClipboard"] = connectionInfo.RedirectClipboard;
-            dataRow["RedirectDiskDrives"] = connectionInfo.RedirectDiskDrives;
-            dataRow["RedirectDiskDrivesCustom"] = connectionInfo.RedirectDiskDrivesCustom;
-            dataRow["RedirectKeys"] = connectionInfo.RedirectKeys;
-            dataRow["RedirectPorts"] = connectionInfo.RedirectPorts;
-            dataRow["RedirectPrinters"] = connectionInfo.RedirectPrinters;
-            dataRow["RedirectSmartCards"] = connectionInfo.RedirectSmartCards;
-            dataRow["RedirectSound"] = connectionInfo.RedirectSound;
-            dataRow["RenderingEngine"] = connectionInfo.RenderingEngine;
-            dataRow["Resolution"] = connectionInfo.Resolution;
-            dataRow["SSHOptions"] = connectionInfo.SSHOptions;
-            dataRow["SSHTunnelConnectionName"] = connectionInfo.SSHTunnelConnectionName;
-            dataRow["SoundQuality"] = connectionInfo.SoundQuality;
-            dataRow["StartProgram"] = connectionInfo.RDPStartProgram;
-            dataRow["StartProgramWorkDir"] = connectionInfo.RDPStartProgramWorkDir;
-            dataRow["Type"] = connectionInfo.GetTreeNodeType().ToString();
-            dataRow["UseCredSsp"] = connectionInfo.UseCredSsp;
-            dataRow["UseEnhancedMode"] = connectionInfo.UseEnhancedMode;
-            dataRow["UseRCG"] = connectionInfo.UseRCG;
-            dataRow["UseRedirectionServerName"] = connectionInfo.UseRedirectionServerName;
-            dataRow["UseRestrictedAdmin"] = connectionInfo.UseRestrictedAdmin;
-            dataRow["UseVmId"] = connectionInfo.UseVmId;
-            dataRow["UserField"] = connectionInfo.UserField;
-            dataRow["UserField1"] = connectionInfo.UserField1;
-            dataRow["UserField2"] = connectionInfo.UserField2;
-            dataRow["UserField3"] = connectionInfo.UserField3;
-            dataRow["UserField4"] = connectionInfo.UserField4;
-            dataRow["UserField5"] = connectionInfo.UserField5;
-            dataRow["UserField6"] = connectionInfo.UserField6;
-            dataRow["UserField7"] = connectionInfo.UserField7;
-            dataRow["UserField8"] = connectionInfo.UserField8;
-            dataRow["UserField9"] = connectionInfo.UserField9;
-            dataRow["UserField10"] = connectionInfo.UserField10;
-            dataRow["EnvironmentTags"] = connectionInfo.EnvironmentTags;
-            dataRow["Username"] = _saveFilter.SaveUsername ? connectionInfo.Username : "";
-            dataRow["VNCAuthMode"] = connectionInfo.VNCAuthMode;
-            dataRow["VNCColors"] = connectionInfo.VNCColors;
-            dataRow["VNCCompression"] = connectionInfo.VNCCompression;
-            dataRow["VNCEncoding"] = connectionInfo.VNCEncoding;
-            dataRow["VNCProxyIP"] = connectionInfo.VNCProxyIP;
-            dataRow["VNCProxyPassword"] = _cryptographyProvider.Encrypt(connectionInfo.VNCProxyPassword, _encryptionKey);
-            dataRow["VNCProxyPort"] = connectionInfo.VNCProxyPort;
-            dataRow["VNCProxyType"] = connectionInfo.VNCProxyType;
-            dataRow["VNCProxyUsername"] = connectionInfo.VNCProxyUsername;
-            dataRow["VNCSmartSizeMode"] = connectionInfo.VNCSmartSizeMode;
-            dataRow["VNCViewOnly"] = connectionInfo.VNCViewOnly; // TODO: this column can eventually be removed. we now save this property locally
-            dataRow["VNCClipboardRedirect"] = connectionInfo.VNCClipboardRedirect;
-            dataRow["VmId"] = connectionInfo.VmId;
+            dataRow["InheritAutomaticResize"] = connectionInfo.Inheritance.AutomaticResize;
+            dataRow["InheritColors"] = connectionInfo.Inheritance.Colors;
+            dataRow["InheritConnectionFrameColor"] = connectionInfo.Inheritance.ConnectionFrameColor;
+            dataRow["InheritDescription"] = connectionInfo.Inheritance.Description;
+            dataRow["InheritDisableCursorBlinking"] = connectionInfo.Inheritance.DisableCursorBlinking;
+            dataRow["InheritDisableCursorShadow"] = connectionInfo.Inheritance.DisableCursorShadow;
+            dataRow["InheritDisableFullWindowDrag"] = connectionInfo.Inheritance.DisableFullWindowDrag;
+            dataRow["InheritDisableMenuAnimations"] = connectionInfo.Inheritance.DisableMenuAnimations;
+            dataRow["InheritDisplayThemes"] = connectionInfo.Inheritance.DisplayThemes;
+            dataRow["InheritDisplayWallpaper"] = connectionInfo.Inheritance.DisplayWallpaper;
+            dataRow["InheritDomain"] = connectionInfo.Inheritance.Domain;
+            dataRow["InheritEnableDesktopComposition"] = connectionInfo.Inheritance.EnableDesktopComposition;
+            dataRow["InheritEnableFontSmoothing"] = connectionInfo.Inheritance.EnableFontSmoothing;
+            dataRow["InheritExtApp"] = connectionInfo.Inheritance.ExtApp;
+            dataRow["InheritExternalCredentialProvider"] = connectionInfo.Inheritance.ExternalCredentialProvider;
+            dataRow["InheritFavorite"] = connectionInfo.Inheritance.Favorite;
+            dataRow["InheritICAEncryptionStrength"] = false;
+            dataRow["InheritIcon"] = connectionInfo.Inheritance.Icon;
+            dataRow["InheritLoadBalanceInfo"] = connectionInfo.Inheritance.LoadBalanceInfo;
+            dataRow["InheritMacAddress"] = connectionInfo.Inheritance.MacAddress;
+            dataRow["InheritOpeningCommand"] = connectionInfo.Inheritance.OpeningCommand;
+            dataRow["InheritPanel"] = connectionInfo.Inheritance.Panel;
+            dataRow["InheritPassword"] = connectionInfo.Inheritance.Password;
+            dataRow["InheritPort"] = connectionInfo.Inheritance.Port;
+            dataRow["InheritPostExtApp"] = connectionInfo.Inheritance.PostExtApp;
+            dataRow["InheritPreExtApp"] = connectionInfo.Inheritance.PreExtApp;
+            dataRow["InheritProtocol"] = connectionInfo.Inheritance.Protocol;
+            dataRow["InheritPuttySession"] = connectionInfo.Inheritance.PuttySession;
+            dataRow["InheritRDGatewayDomain"] = connectionInfo.Inheritance.RDGatewayDomain;
+            dataRow["InheritRDGatewayExternalCredentialProvider"] = connectionInfo.Inheritance.RDGatewayExternalCredentialProvider;
+            dataRow["InheritRDGatewayHostname"] = connectionInfo.Inheritance.RDGatewayHostname;
+            dataRow["InheritRDGatewayPassword"] = connectionInfo.Inheritance.RDGatewayPassword;
+            dataRow["InheritRDGatewayUsageMethod"] = connectionInfo.Inheritance.RDGatewayUsageMethod;
+            dataRow["InheritRDGatewayUseConnectionCredentials"] = connectionInfo.Inheritance.RDGatewayUseConnectionCredentials;
+            dataRow["InheritRDGatewayUserViaAPI"] = connectionInfo.Inheritance.RDGatewayUserViaAPI;
+            dataRow["InheritRDGatewayUsername"] = connectionInfo.Inheritance.RDGatewayUsername;
+            dataRow["InheritRDPAlertIdleTimeout"] = connectionInfo.Inheritance.RDPAlertIdleTimeout;
+            dataRow["InheritRDPAuthenticationLevel"] = connectionInfo.Inheritance.RDPAuthenticationLevel;
+            dataRow["InheritRDPMinutesToIdleTimeout"] = connectionInfo.Inheritance.RDPMinutesToIdleTimeout;
+            dataRow["InheritRDPSignScope"] = connectionInfo.Inheritance.RDPSignScope;
+            dataRow["InheritRDPSignature"] = connectionInfo.Inheritance.RDPSignature;
+            dataRow["InheritRdpVersion"] = connectionInfo.Inheritance.RdpVersion;
+            dataRow["InheritRedirectAudioCapture"] = connectionInfo.Inheritance.RedirectAudioCapture;
+            dataRow["InheritRedirectWebAuthn"] = connectionInfo.Inheritance.RedirectWebAuthn;
+            dataRow["InheritEnableRdsAadAuth"] = connectionInfo.Inheritance.EnableRdsAadAuth;
+            dataRow["InheritRedirectClipboard"] = connectionInfo.Inheritance.RedirectClipboard;
+            dataRow["InheritRedirectDiskDrives"] = connectionInfo.Inheritance.RedirectDiskDrives;
+            dataRow["InheritRedirectDiskDrivesCustom"] = connectionInfo.Inheritance.RedirectDiskDrivesCustom;
+            dataRow["InheritRedirectKeys"] = connectionInfo.Inheritance.RedirectKeys;
+            dataRow["InheritRedirectPorts"] = connectionInfo.Inheritance.RedirectPorts;
+            dataRow["InheritRedirectPrinters"] = connectionInfo.Inheritance.RedirectPrinters;
+            dataRow["InheritRedirectSmartCards"] = connectionInfo.Inheritance.RedirectSmartCards;
+            dataRow["InheritRedirectSound"] = connectionInfo.Inheritance.RedirectSound;
+            dataRow["InheritRenderingEngine"] = connectionInfo.Inheritance.RenderingEngine;
+            dataRow["InheritResolution"] = connectionInfo.Inheritance.Resolution;
+            dataRow["InheritSSHOptions"] = connectionInfo.Inheritance.SSHOptions;
+            dataRow["InheritSSHTunnelConnectionName"] = connectionInfo.Inheritance.SSHTunnelConnectionName;
+            dataRow["InheritSoundQuality"] = connectionInfo.Inheritance.SoundQuality;
+            dataRow["InheritUseConsoleSession"] = connectionInfo.Inheritance.UseConsoleSession;
+            dataRow["InheritUseCredSsp"] = connectionInfo.Inheritance.UseCredSsp;
+            dataRow["InheritEnhancedMode"] = connectionInfo.Inheritance.UseEnhancedMode;
+            dataRow["InheritUseEnhancedMode"] = connectionInfo.Inheritance.UseEnhancedMode;
+            dataRow["InheritUseRCG"] = connectionInfo.Inheritance.UseRCG;
+            dataRow["InheritUseRedirectionServerName"] = connectionInfo.Inheritance.UseRedirectionServerName;
+            dataRow["InheritUseRestrictedAdmin"] = connectionInfo.Inheritance.UseRestrictedAdmin;
+            dataRow["InheritUseVmId"] = connectionInfo.Inheritance.UseVmId;
+            dataRow["InheritUserField"] = connectionInfo.Inheritance.UserField;
+            dataRow["InheritUserField1"] = connectionInfo.Inheritance.UserField1;
+            dataRow["InheritUserField2"] = connectionInfo.Inheritance.UserField2;
+            dataRow["InheritUserField3"] = connectionInfo.Inheritance.UserField3;
+            dataRow["InheritUserField4"] = connectionInfo.Inheritance.UserField4;
+            dataRow["InheritUserField5"] = connectionInfo.Inheritance.UserField5;
+            dataRow["InheritUserField6"] = connectionInfo.Inheritance.UserField6;
+            dataRow["InheritUserField7"] = connectionInfo.Inheritance.UserField7;
+            dataRow["InheritUserField8"] = connectionInfo.Inheritance.UserField8;
+            dataRow["InheritUserField9"] = connectionInfo.Inheritance.UserField9;
+            dataRow["InheritUserField10"] = connectionInfo.Inheritance.UserField10;
+            dataRow["InheritEnvironmentTags"] = connectionInfo.Inheritance.EnvironmentTags;
+            dataRow["InheritUserViaAPI"] = connectionInfo.Inheritance.UserViaAPI;
+            dataRow["InheritUsername"] = connectionInfo.Inheritance.Username;
+            dataRow["InheritVNCAuthMode"] = connectionInfo.Inheritance.VNCAuthMode;
+            dataRow["InheritVNCColors"] = connectionInfo.Inheritance.VNCColors;
+            dataRow["InheritVNCCompression"] = connectionInfo.Inheritance.VNCCompression;
+            dataRow["InheritVNCEncoding"] = connectionInfo.Inheritance.VNCEncoding;
+            dataRow["InheritVNCProxyIP"] = connectionInfo.Inheritance.VNCProxyIP;
+            dataRow["InheritVNCProxyPassword"] = connectionInfo.Inheritance.VNCProxyPassword;
+            dataRow["InheritVNCProxyPort"] = connectionInfo.Inheritance.VNCProxyPort;
+            dataRow["InheritVNCProxyType"] = connectionInfo.Inheritance.VNCProxyType;
+            dataRow["InheritVNCProxyUsername"] = connectionInfo.Inheritance.VNCProxyUsername;
+            dataRow["InheritVNCSmartSizeMode"] = connectionInfo.Inheritance.VNCSmartSizeMode;
+            dataRow["InheritVNCViewOnly"] = connectionInfo.Inheritance.VNCViewOnly;
+            dataRow["InheritVNCClipboardRedirect"] = connectionInfo.Inheritance.VNCClipboardRedirect;
+            dataRow["InheritVmId"] = connectionInfo.Inheritance.VmId;
             dataRow["UserViaAPI"] = connectionInfo.UserViaAPI;
-            dataRow["User"] = connectionInfo.User;
-            dataRow["Role"] = connectionInfo.Role;
-
-            if (_saveFilter.SaveInheritance)
-            {
-                dataRow["InheritAutomaticResize"] = connectionInfo.Inheritance.AutomaticResize;
-                dataRow["InheritColors"] = connectionInfo.Inheritance.Colors;
-                dataRow["InheritConnectionFrameColor"] = connectionInfo.Inheritance.ConnectionFrameColor;
-                dataRow["InheritDescription"] = connectionInfo.Inheritance.Description;
-                dataRow["InheritDisableCursorBlinking"] = connectionInfo.Inheritance.DisableCursorBlinking;
-                dataRow["InheritDisableCursorShadow"] = connectionInfo.Inheritance.DisableCursorShadow;
-                dataRow["InheritDisableFullWindowDrag"] = connectionInfo.Inheritance.DisableFullWindowDrag;
-                dataRow["InheritDisableMenuAnimations"] = connectionInfo.Inheritance.DisableMenuAnimations;
-                dataRow["InheritDisplayThemes"] = connectionInfo.Inheritance.DisplayThemes;
-                dataRow["InheritDisplayWallpaper"] = connectionInfo.Inheritance.DisplayWallpaper;
-                dataRow["InheritDomain"] = connectionInfo.Inheritance.Domain;
-                dataRow["InheritEnableDesktopComposition"] = connectionInfo.Inheritance.EnableDesktopComposition;
-                dataRow["InheritEnableFontSmoothing"] = connectionInfo.Inheritance.EnableFontSmoothing;
-                dataRow["InheritExtApp"] = connectionInfo.Inheritance.ExtApp;
-                dataRow["InheritExternalCredentialProvider"] = connectionInfo.Inheritance.ExternalCredentialProvider;
-                dataRow["InheritFavorite"] = connectionInfo.Inheritance.Favorite;
-                dataRow["InheritICAEncryptionStrength"] = false;
-                dataRow["InheritIcon"] = connectionInfo.Inheritance.Icon;
-                dataRow["InheritLoadBalanceInfo"] = connectionInfo.Inheritance.LoadBalanceInfo;
-                dataRow["InheritMacAddress"] = connectionInfo.Inheritance.MacAddress;
-                dataRow["InheritOpeningCommand"] = connectionInfo.Inheritance.OpeningCommand;
-                dataRow["InheritPanel"] = connectionInfo.Inheritance.Panel;
-                dataRow["InheritPassword"] = connectionInfo.Inheritance.Password;
-                dataRow["InheritPort"] = connectionInfo.Inheritance.Port;
-                dataRow["InheritPostExtApp"] = connectionInfo.Inheritance.PostExtApp;
-                dataRow["InheritPreExtApp"] = connectionInfo.Inheritance.PreExtApp;
-                dataRow["InheritProtocol"] = connectionInfo.Inheritance.Protocol;
-                dataRow["InheritPuttySession"] = connectionInfo.Inheritance.PuttySession;
-                dataRow["InheritRDGatewayDomain"] = connectionInfo.Inheritance.RDGatewayDomain;
-                dataRow["InheritRDGatewayExternalCredentialProvider"] = connectionInfo.Inheritance.RDGatewayExternalCredentialProvider;
-                dataRow["InheritRDGatewayHostname"] = connectionInfo.Inheritance.RDGatewayHostname;
-                dataRow["InheritRDGatewayPassword"] = connectionInfo.Inheritance.RDGatewayPassword;
-                dataRow["InheritRDGatewayUsageMethod"] = connectionInfo.Inheritance.RDGatewayUsageMethod;
-                dataRow["InheritRDGatewayUseConnectionCredentials"] = connectionInfo.Inheritance.RDGatewayUseConnectionCredentials;
-                dataRow["InheritRDGatewayUserViaAPI"] = connectionInfo.Inheritance.RDGatewayUserViaAPI;
-                dataRow["InheritRDGatewayUsername"] = connectionInfo.Inheritance.RDGatewayUsername;
-                dataRow["InheritRDPAlertIdleTimeout"] = connectionInfo.Inheritance.RDPAlertIdleTimeout;
-                dataRow["InheritRDPAuthenticationLevel"] = connectionInfo.Inheritance.RDPAuthenticationLevel;
-                dataRow["InheritRDPMinutesToIdleTimeout"] = connectionInfo.Inheritance.RDPMinutesToIdleTimeout;
-                dataRow["InheritRDPSignScope"] = connectionInfo.Inheritance.RDPSignScope;
-                dataRow["InheritRDPSignature"] = connectionInfo.Inheritance.RDPSignature;
-                dataRow["InheritRdpVersion"] = connectionInfo.Inheritance.RdpVersion;
-                dataRow["InheritRedirectAudioCapture"] = connectionInfo.Inheritance.RedirectAudioCapture;
-                dataRow["InheritRedirectWebAuthn"] = connectionInfo.Inheritance.RedirectWebAuthn;
-                dataRow["InheritEnableRdsAadAuth"] = connectionInfo.Inheritance.EnableRdsAadAuth;
-                dataRow["InheritRedirectClipboard"] = connectionInfo.Inheritance.RedirectClipboard;
-                dataRow["InheritRedirectDiskDrives"] = connectionInfo.Inheritance.RedirectDiskDrives;
-                dataRow["InheritRedirectDiskDrivesCustom"] = connectionInfo.Inheritance.RedirectDiskDrivesCustom;
-                dataRow["InheritRedirectKeys"] = connectionInfo.Inheritance.RedirectKeys;
-                dataRow["InheritRedirectPorts"] = connectionInfo.Inheritance.RedirectPorts;
-                dataRow["InheritRedirectPrinters"] = connectionInfo.Inheritance.RedirectPrinters;
-                dataRow["InheritRedirectSmartCards"] = connectionInfo.Inheritance.RedirectSmartCards;
-                dataRow["InheritRedirectSound"] = connectionInfo.Inheritance.RedirectSound;
-                dataRow["InheritRenderingEngine"] = connectionInfo.Inheritance.RenderingEngine;
-                dataRow["InheritResolution"] = connectionInfo.Inheritance.Resolution;
-                dataRow["InheritSSHOptions"] = connectionInfo.Inheritance.SSHOptions;
-                dataRow["InheritSSHTunnelConnectionName"] = connectionInfo.Inheritance.SSHTunnelConnectionName;
-                dataRow["InheritSoundQuality"] = connectionInfo.Inheritance.SoundQuality;
-                dataRow["InheritUseConsoleSession"] = connectionInfo.Inheritance.UseConsoleSession;
-                dataRow["InheritUseCredSsp"] = connectionInfo.Inheritance.UseCredSsp;
-                dataRow["InheritEnhancedMode"] = connectionInfo.Inheritance.UseEnhancedMode;
-                dataRow["InheritUseEnhancedMode"] = connectionInfo.Inheritance.UseEnhancedMode;
-                dataRow["InheritUseRCG"] = connectionInfo.Inheritance.UseRCG;
-                dataRow["InheritUseRedirectionServerName"] = connectionInfo.Inheritance.UseRedirectionServerName;
-                dataRow["InheritUseRestrictedAdmin"] = connectionInfo.Inheritance.UseRestrictedAdmin;
-                dataRow["InheritUseVmId"] = connectionInfo.Inheritance.UseVmId;
-                dataRow["InheritUserField"] = connectionInfo.Inheritance.UserField;
-                dataRow["InheritUserField1"] = connectionInfo.Inheritance.UserField1;
-                dataRow["InheritUserField2"] = connectionInfo.Inheritance.UserField2;
-                dataRow["InheritUserField3"] = connectionInfo.Inheritance.UserField3;
-                dataRow["InheritUserField4"] = connectionInfo.Inheritance.UserField4;
-                dataRow["InheritUserField5"] = connectionInfo.Inheritance.UserField5;
-                dataRow["InheritUserField6"] = connectionInfo.Inheritance.UserField6;
-                dataRow["InheritUserField7"] = connectionInfo.Inheritance.UserField7;
-                dataRow["InheritUserField8"] = connectionInfo.Inheritance.UserField8;
-                dataRow["InheritUserField9"] = connectionInfo.Inheritance.UserField9;
-                dataRow["InheritUserField10"] = connectionInfo.Inheritance.UserField10;
-                dataRow["InheritEnvironmentTags"] = connectionInfo.Inheritance.EnvironmentTags;
-                dataRow["InheritUserViaAPI"] = connectionInfo.Inheritance.UserViaAPI;
-                dataRow["InheritUsername"] = connectionInfo.Inheritance.Username;
-                dataRow["InheritVNCAuthMode"] = connectionInfo.Inheritance.VNCAuthMode;
-                dataRow["InheritVNCColors"] = connectionInfo.Inheritance.VNCColors;
-                dataRow["InheritVNCCompression"] = connectionInfo.Inheritance.VNCCompression;
-                dataRow["InheritVNCEncoding"] = connectionInfo.Inheritance.VNCEncoding;
-                dataRow["InheritVNCProxyIP"] = connectionInfo.Inheritance.VNCProxyIP;
-                dataRow["InheritVNCProxyPassword"] = connectionInfo.Inheritance.VNCProxyPassword;
-                dataRow["InheritVNCProxyPort"] = connectionInfo.Inheritance.VNCProxyPort;
-                dataRow["InheritVNCProxyType"] = connectionInfo.Inheritance.VNCProxyType;
-                dataRow["InheritVNCProxyUsername"] = connectionInfo.Inheritance.VNCProxyUsername;
-                dataRow["InheritVNCSmartSizeMode"] = connectionInfo.Inheritance.VNCSmartSizeMode;
-                dataRow["InheritVNCViewOnly"] = connectionInfo.Inheritance.VNCViewOnly;
-                dataRow["InheritVNCClipboardRedirect"] = connectionInfo.Inheritance.VNCClipboardRedirect;
-                dataRow["InheritVmId"] = connectionInfo.Inheritance.VmId;
-                dataRow["UserViaAPI"] = connectionInfo.UserViaAPI;
-                dataRow["InheritCacheBitmaps"] = connectionInfo.Inheritance.CacheBitmaps;
-            }
-            else
-            {
-                dataRow["InheritAutomaticResize"] = false;
-                dataRow["InheritColors"] = false;
-                dataRow["InheritConnectionFrameColor"] = false;
-                dataRow["InheritDescription"] = false;
-                dataRow["InheritDisableCursorBlinking"] = false;
-                dataRow["InheritDisableCursorShadow"] = false;
-                dataRow["InheritDisableFullWindowDrag"] = false;
-                dataRow["InheritDisableMenuAnimations"] = false;
-                dataRow["InheritDisplayThemes"] = false;
-                dataRow["InheritDisplayWallpaper"] = false;
-                dataRow["InheritDomain"] = false;
-                dataRow["InheritEnableDesktopComposition"] = false;
-                dataRow["InheritEnableFontSmoothing"] = false;
-                dataRow["InheritExtApp"] = false;
-                dataRow["InheritExternalCredentialProvider"] = false;
-                dataRow["InheritFavorite"] = false;
-                dataRow["InheritICAEncryptionStrength"] = false;
-                dataRow["InheritIcon"] = false;
-                dataRow["InheritLoadBalanceInfo"] = false;
-                dataRow["InheritMacAddress"] = false;
-                dataRow["InheritOpeningCommand"] = false;
-                dataRow["InheritPanel"] = false;
-                dataRow["InheritPassword"] = false;
-                dataRow["InheritPort"] = false;
-                dataRow["InheritPostExtApp"] = false;
-                dataRow["InheritPreExtApp"] = false;
-                dataRow["InheritProtocol"] = false;
-                dataRow["InheritPuttySession"] = false;
-                dataRow["InheritRDGatewayDomain"] = false;
-                dataRow["InheritRDGatewayExternalCredentialProvider"] = false;
-                dataRow["InheritRDGatewayHostname"] = false;
-                dataRow["InheritRDGatewayPassword"] = false;
-                dataRow["InheritRDGatewayUsageMethod"] = false;
-                dataRow["InheritRDGatewayUseConnectionCredentials"] = false;
-                dataRow["InheritRDGatewayUserViaAPI"] = false;
-                dataRow["InheritRDGatewayUsername"] = false;
-                dataRow["InheritRDPAlertIdleTimeout"] = false;
-                dataRow["InheritRDPAuthenticationLevel"] = false;
-                dataRow["InheritRDPMinutesToIdleTimeout"] = false;
-                dataRow["InheritRDPSignScope"] = false;
-                dataRow["InheritRDPSignature"] = false;
-                dataRow["InheritRdpVersion"] = false;
-                dataRow["InheritRedirectAudioCapture"] = false;
-                dataRow["InheritRedirectWebAuthn"] = false;
-                dataRow["InheritEnableRdsAadAuth"] = false;
-                dataRow["InheritRedirectClipboard"] = false;
-                dataRow["InheritRedirectDiskDrives"] = false;
-                dataRow["InheritRedirectDiskDrivesCustom"] = false;
-                dataRow["InheritRedirectKeys"] = false;
-                dataRow["InheritRedirectPorts"] = false;
-                dataRow["InheritRedirectPrinters"] = false;
-                dataRow["InheritRedirectSmartCards"] = false;
-                dataRow["InheritRedirectSound"] = false;
-                dataRow["InheritRenderingEngine"] = false;
-                dataRow["InheritResolution"] = false;
-                dataRow["InheritSSHOptions"] = false;
-                dataRow["InheritSSHTunnelConnectionName"] = false;
-                dataRow["InheritSoundQuality"] = false;
-                dataRow["InheritUseConsoleSession"] = false;
-                dataRow["InheritUseCredSsp"] = false;
-                dataRow["InheritUseEnhancedMode"] = false;
-                dataRow["InheritUseRCG"] = false;
-                dataRow["InheritUseRedirectionServerName"] = false;
-                dataRow["InheritUseRestrictedAdmin"] = false;
-                dataRow["InheritUseVmId"] = false;
-                dataRow["InheritEnhancedMode"] = false;
-                dataRow["InheritUserField"] = false;
-                dataRow["InheritUserField1"] = false;
-                dataRow["InheritUserField2"] = false;
-                dataRow["InheritUserField3"] = false;
-                dataRow["InheritUserField4"] = false;
-                dataRow["InheritUserField5"] = false;
-                dataRow["InheritUserField6"] = false;
-                dataRow["InheritUserField7"] = false;
-                dataRow["InheritUserField8"] = false;
-                dataRow["InheritUserField9"] = false;
-                dataRow["InheritUserField10"] = false;
-                dataRow["InheritEnvironmentTags"] = false;
-                dataRow["InheritUserViaAPI"] = false;
-                dataRow["InheritUsername"] = false;
-                dataRow["InheritVNCAuthMode"] = false;
-                dataRow["InheritVNCColors"] = false;
-                dataRow["InheritVNCCompression"] = false;
-                dataRow["InheritVNCEncoding"] = false;
-                dataRow["InheritVNCProxyIP"] = false;
-                dataRow["InheritVNCProxyPassword"] = false;
-                dataRow["InheritVNCProxyPort"] = false;
-                dataRow["InheritVNCProxyType"] = false;
-                dataRow["InheritVNCProxyUsername"] = false;
-                dataRow["InheritVNCSmartSizeMode"] = false;
-                dataRow["InheritVNCViewOnly"] = false;
-                dataRow["InheritVNCClipboardRedirect"] = false;
-                dataRow["InheritCacheBitmaps"] = false;
-                dataRow["UserViaAPI"] = "";
-            }
-
-            if (isNewRow) _dataTable.Rows.Add(dataRow);
+            dataRow["InheritCacheBitmaps"] = connectionInfo.Inheritance.CacheBitmaps;
         }
+        else
+        {
+            dataRow["InheritAutomaticResize"] = false;
+            dataRow["InheritColors"] = false;
+            dataRow["InheritConnectionFrameColor"] = false;
+            dataRow["InheritDescription"] = false;
+            dataRow["InheritDisableCursorBlinking"] = false;
+            dataRow["InheritDisableCursorShadow"] = false;
+            dataRow["InheritDisableFullWindowDrag"] = false;
+            dataRow["InheritDisableMenuAnimations"] = false;
+            dataRow["InheritDisplayThemes"] = false;
+            dataRow["InheritDisplayWallpaper"] = false;
+            dataRow["InheritDomain"] = false;
+            dataRow["InheritEnableDesktopComposition"] = false;
+            dataRow["InheritEnableFontSmoothing"] = false;
+            dataRow["InheritExtApp"] = false;
+            dataRow["InheritExternalCredentialProvider"] = false;
+            dataRow["InheritFavorite"] = false;
+            dataRow["InheritICAEncryptionStrength"] = false;
+            dataRow["InheritIcon"] = false;
+            dataRow["InheritLoadBalanceInfo"] = false;
+            dataRow["InheritMacAddress"] = false;
+            dataRow["InheritOpeningCommand"] = false;
+            dataRow["InheritPanel"] = false;
+            dataRow["InheritPassword"] = false;
+            dataRow["InheritPort"] = false;
+            dataRow["InheritPostExtApp"] = false;
+            dataRow["InheritPreExtApp"] = false;
+            dataRow["InheritProtocol"] = false;
+            dataRow["InheritPuttySession"] = false;
+            dataRow["InheritRDGatewayDomain"] = false;
+            dataRow["InheritRDGatewayExternalCredentialProvider"] = false;
+            dataRow["InheritRDGatewayHostname"] = false;
+            dataRow["InheritRDGatewayPassword"] = false;
+            dataRow["InheritRDGatewayUsageMethod"] = false;
+            dataRow["InheritRDGatewayUseConnectionCredentials"] = false;
+            dataRow["InheritRDGatewayUserViaAPI"] = false;
+            dataRow["InheritRDGatewayUsername"] = false;
+            dataRow["InheritRDPAlertIdleTimeout"] = false;
+            dataRow["InheritRDPAuthenticationLevel"] = false;
+            dataRow["InheritRDPMinutesToIdleTimeout"] = false;
+            dataRow["InheritRDPSignScope"] = false;
+            dataRow["InheritRDPSignature"] = false;
+            dataRow["InheritRdpVersion"] = false;
+            dataRow["InheritRedirectAudioCapture"] = false;
+            dataRow["InheritRedirectWebAuthn"] = false;
+            dataRow["InheritEnableRdsAadAuth"] = false;
+            dataRow["InheritRedirectClipboard"] = false;
+            dataRow["InheritRedirectDiskDrives"] = false;
+            dataRow["InheritRedirectDiskDrivesCustom"] = false;
+            dataRow["InheritRedirectKeys"] = false;
+            dataRow["InheritRedirectPorts"] = false;
+            dataRow["InheritRedirectPrinters"] = false;
+            dataRow["InheritRedirectSmartCards"] = false;
+            dataRow["InheritRedirectSound"] = false;
+            dataRow["InheritRenderingEngine"] = false;
+            dataRow["InheritResolution"] = false;
+            dataRow["InheritSSHOptions"] = false;
+            dataRow["InheritSSHTunnelConnectionName"] = false;
+            dataRow["InheritSoundQuality"] = false;
+            dataRow["InheritUseConsoleSession"] = false;
+            dataRow["InheritUseCredSsp"] = false;
+            dataRow["InheritUseEnhancedMode"] = false;
+            dataRow["InheritUseRCG"] = false;
+            dataRow["InheritUseRedirectionServerName"] = false;
+            dataRow["InheritUseRestrictedAdmin"] = false;
+            dataRow["InheritUseVmId"] = false;
+            dataRow["InheritEnhancedMode"] = false;
+            dataRow["InheritUserField"] = false;
+            dataRow["InheritUserField1"] = false;
+            dataRow["InheritUserField2"] = false;
+            dataRow["InheritUserField3"] = false;
+            dataRow["InheritUserField4"] = false;
+            dataRow["InheritUserField5"] = false;
+            dataRow["InheritUserField6"] = false;
+            dataRow["InheritUserField7"] = false;
+            dataRow["InheritUserField8"] = false;
+            dataRow["InheritUserField9"] = false;
+            dataRow["InheritUserField10"] = false;
+            dataRow["InheritEnvironmentTags"] = false;
+            dataRow["InheritUserViaAPI"] = false;
+            dataRow["InheritUsername"] = false;
+            dataRow["InheritVNCAuthMode"] = false;
+            dataRow["InheritVNCColors"] = false;
+            dataRow["InheritVNCCompression"] = false;
+            dataRow["InheritVNCEncoding"] = false;
+            dataRow["InheritVNCProxyIP"] = false;
+            dataRow["InheritVNCProxyPassword"] = false;
+            dataRow["InheritVNCProxyPort"] = false;
+            dataRow["InheritVNCProxyType"] = false;
+            dataRow["InheritVNCProxyUsername"] = false;
+            dataRow["InheritVNCSmartSizeMode"] = false;
+            dataRow["InheritVNCViewOnly"] = false;
+            dataRow["InheritVNCClipboardRedirect"] = false;
+            dataRow["InheritCacheBitmaps"] = false;
+            dataRow["UserViaAPI"] = "";
+        }
+
+        if (isNewRow) _dataTable.Rows.Add(dataRow);
     }
 }

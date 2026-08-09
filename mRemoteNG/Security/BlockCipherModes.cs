@@ -1,11 +1,10 @@
 ﻿// ReSharper disable InconsistentNaming
 
-namespace mRemoteNG.Security
+namespace mRemoteNG.Security;
+
+public enum BlockCipherModes
 {
-    public enum BlockCipherModes
-    {
-        GCM,
-        CCM,
-        EAX
-    }
+    GCM,
+    CCM,
+    EAX
 }

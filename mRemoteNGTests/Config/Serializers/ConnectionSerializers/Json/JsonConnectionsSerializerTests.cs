@@ -1,203 +1,189 @@
 using System;
-using System.Linq;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Json;
 using mRemoteNG.Connection;
 using mRemoteNG.Connection.Protocol;
 using mRemoteNG.Container;
 using mRemoteNG.Security;
-using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
-namespace mRemoteNGTests.Config.Serializers.ConnectionSerializers.Json
+namespace mRemoteNGTests.Config.Serializers.ConnectionSerializers.Json;
+
+[TestFixture]
+public class JsonConnectionsSerializerTests
 {
-    [TestFixture]
-    public class JsonConnectionsSerializerTests
+    private JsonConnectionsSerializer _serializer;
+    private SaveFilter _saveFilter;
+
+    [SetUp]
+    public void Setup()
     {
-        private JsonConnectionsSerializer _serializer;
-        private SaveFilter _saveFilter;
+        _saveFilter = new SaveFilter();
+        _serializer = new JsonConnectionsSerializer(_saveFilter);
+    }
 
-        [SetUp]
-        public void Setup()
+    [Test]
+    public void Serialize_SingleConnection_IncludesBasicProperties()
+    {
+        // Arrange
+        var connection = new ConnectionInfo
         {
-            _saveFilter = new SaveFilter();
-            _serializer = new JsonConnectionsSerializer(_saveFilter);
-        }
+            Name = "Test Connection",
+            Hostname = "test-host",
+            Protocol = ProtocolType.RDP,
+            Port = 3389,
+            Description = "A test description"
+        };
 
-        [Test]
-        public void Serialize_SingleConnection_IncludesBasicProperties()
+        // Act
+        string json = _serializer.Serialize(connection);
+
+        // Assert
+        Assert.That(json, Does.Contain("\"Name\": \"Test Connection\""));
+        Assert.That(json, Does.Contain("\"Hostname\": \"test-host\""));
+        Assert.That(json, Does.Contain("\"Protocol\": \"RDP\""));
+        Assert.That(json, Does.Contain("\"Port\": 3389"));
+        Assert.That(json, Does.Contain("\"Description\": \"A test description\""));
+    }
+
+    [Test]
+    public void Serialize_WithCredentialsEnabled_IncludesUsernameAndPassword()
+    {
+        // Arrange
+        _saveFilter.SaveUsername = true;
+        _saveFilter.SavePassword = true;
+        var connection = new ConnectionInfo
         {
-            // Arrange
-            var connection = new ConnectionInfo
-            {
-                Name = "Test Connection",
-                Hostname = "test-host",
-                Protocol = ProtocolType.RDP,
-                Port = 3389,
-                Description = "A test description"
-            };
+            Username = "test-user",
+            Password = "test-password"
+        };
 
-            // Act
-            string json = _serializer.Serialize(connection);
+        // Act
+        string json = _serializer.Serialize(connection);
 
-            // Assert
-            Assert.That(json, Does.Contain("\"Name\": \"Test Connection\""));
-            Assert.That(json, Does.Contain("\"Hostname\": \"test-host\""));
-            Assert.That(json, Does.Contain("\"Protocol\": \"RDP\""));
-            Assert.That(json, Does.Contain("\"Port\": 3389"));
-            Assert.That(json, Does.Contain("\"Description\": \"A test description\""));
-        }
+        // Assert
+        Assert.That(json, Does.Contain("\"Username\": \"test-user\""));
+        Assert.That(json, Does.Contain("\"Password\": \"test-password\""));
+    }
 
-        [Test]
-        public void Serialize_WithCredentialsEnabled_IncludesUsernameAndPassword()
+    [Test]
+    public void Serialize_WithCredentialsDisabled_ExcludesUsernameAndPassword()
+    {
+        // Arrange
+        _saveFilter.SaveUsername = false;
+        _saveFilter.SavePassword = false;
+        var connection = new ConnectionInfo
         {
-            // Arrange
-            _saveFilter.SaveUsername = true;
-            _saveFilter.SavePassword = true;
-            var connection = new ConnectionInfo
-            {
-                Username = "test-user",
-                Password = "test-password"
-            };
+            Username = "test-user",
+            Password = "test-password"
+        };
 
-            // Act
-            string json = _serializer.Serialize(connection);
+        // Act
+        string json = _serializer.Serialize(connection);
 
-            // Assert
-            Assert.That(json, Does.Contain("\"Username\": \"test-user\""));
-            Assert.That(json, Does.Contain("\"Password\": \"test-password\""));
-        }
+        // Assert
+        Assert.That(json, Does.Not.Contain("\"Username\""));
+        Assert.That(json, Does.Not.Contain("\"Password\""));
+    }
 
-        [Test]
-        public void Serialize_WithCredentialsDisabled_ExcludesUsernameAndPassword()
-        {
-            // Arrange
-            _saveFilter.SaveUsername = false;
-            _saveFilter.SavePassword = false;
-            var connection = new ConnectionInfo
-            {
-                Username = "test-user",
-                Password = "test-password"
-            };
+    [Test]
+    public void Serialize_Container_IncludesChildren()
+    {
+        // Arrange
+        var container = new ContainerInfo("cont-id") { Name = "My Folder" };
+        var child = new ConnectionInfo { Name = "Child Connection" };
+        container.Children.Add(child);
 
-            // Act
-            string json = _serializer.Serialize(connection);
+        // Act
+        string json = _serializer.Serialize(container);
 
-            // Assert
-            Assert.That(json, Does.Not.Contain("\"Username\""));
-            Assert.That(json, Does.Not.Contain("\"Password\""));
-        }
+        // Assert
+        Assert.That(json, Does.Contain("\"Name\": \"My Folder\""));
+        Assert.That(json, Does.Contain("\"Children\":"));
+        Assert.That(json, Does.Contain("\"Name\": \"Child Connection\""));
+    }
 
-        [Test]
-        public void Serialize_Container_IncludesChildren()
-        {
-            // Arrange
-            var container = new ContainerInfo("cont-id") { Name = "My Folder" };
-            var child = new ConnectionInfo { Name = "Child Connection" };
-            container.Children.Add(child);
+    [Test]
 
-            // Act
-            string json = _serializer.Serialize(container);
+    public void Serialize_NodeId_IsIncluded()
 
-            // Assert
-            Assert.That(json, Does.Contain("\"Name\": \"My Folder\""));
-            Assert.That(json, Does.Contain("\"Children\":"));
-            Assert.That(json, Does.Contain("\"Name\": \"Child Connection\""));
-        }
+    {
 
-                [Test]
+        // Arrange
 
-                public void Serialize_NodeId_IsIncluded()
+        var connection = new ConnectionInfo();
 
-                {
+        string expectedId = connection.ConstantID;
 
-                    // Arrange
 
-                    var connection = new ConnectionInfo();
+        // Act
 
-                    string expectedId = connection.ConstantID;
+        string json = _serializer.Serialize(connection);
 
-        
 
-                    // Act
+        // Assert
 
-                    string json = _serializer.Serialize(connection);
+        Assert.That(json, Does.Contain("\"Id\": \"" + expectedId + "\""));
 
-        
+    }
 
-                    // Assert
 
-                    Assert.That(json, Does.Contain("\"Id\": \"" + expectedId + "\""));
+    [Test]
 
-                }
+    public void Serialize_DeeplyNestedStructure_SerializesCorrectly()
 
-        
+    {
 
-                [Test]
+        // Arrange
 
-                public void Serialize_DeeplyNestedStructure_SerializesCorrectly()
+        var root = new ContainerInfo("root") { Name = "Root" };
 
-                {
+        var level1 = new ContainerInfo("l1") { Name = "Level 1" };
 
-                    // Arrange
+        var level2 = new ContainerInfo("l2") { Name = "Level 2" };
 
-                    var root = new ContainerInfo("root") { Name = "Root" };
+        var level3 = new ConnectionInfo { Name = "Leaf" };
 
-                    var level1 = new ContainerInfo("l1") { Name = "Level 1" };
 
-                    var level2 = new ContainerInfo("l2") { Name = "Level 2" };
+        root.Children.Add(level1);
 
-                    var level3 = new ConnectionInfo { Name = "Leaf" };
+        level1.Children.Add(level2);
 
-        
+        level2.Children.Add(level3);
 
-                    root.Children.Add(level1);
 
-                    level1.Children.Add(level2);
+        // Act
 
-                    level2.Children.Add(level3);
+        string json = _serializer.Serialize(root);
 
-        
 
-                    // Act
+        // Assert
 
-                    string json = _serializer.Serialize(root);
+        Assert.That(json, Does.Contain("\"Name\": \"Root\""));
 
-        
+        Assert.That(json, Does.Contain("\"Name\": \"Level 1\""));
 
-                    // Assert
+        Assert.That(json, Does.Contain("\"Name\": \"Level 2\""));
 
-                    Assert.That(json, Does.Contain("\"Name\": \"Root\""));
+        Assert.That(json, Does.Contain("\"Name\": \"Leaf\""));
 
-                    Assert.That(json, Does.Contain("\"Name\": \"Level 1\""));
 
-                    Assert.That(json, Does.Contain("\"Name\": \"Level 2\""));
+        // Check nesting structure via string index comparison (crude but effective)
 
-                    Assert.That(json, Does.Contain("\"Name\": \"Leaf\""));
+        int rootIdx = json.IndexOf("\"Name\": \"Root\"", StringComparison.Ordinal);
 
-                    
+        int l1Idx = json.IndexOf("\"Name\": \"Level 1\"", StringComparison.Ordinal);
 
-                    // Check nesting structure via string index comparison (crude but effective)
+        int l2Idx = json.IndexOf("\"Name\": \"Level 2\"", StringComparison.Ordinal);
 
-                    int rootIdx = json.IndexOf("\"Name\": \"Root\"", StringComparison.Ordinal);
+        int leafIdx = json.IndexOf("\"Name\": \"Leaf\"", StringComparison.Ordinal);
 
-                    int l1Idx = json.IndexOf("\"Name\": \"Level 1\"", StringComparison.Ordinal);
 
-                    int l2Idx = json.IndexOf("\"Name\": \"Level 2\"", StringComparison.Ordinal);
+        Assert.That(rootIdx, Is.LessThan(l1Idx));
 
-                    int leafIdx = json.IndexOf("\"Name\": \"Leaf\"", StringComparison.Ordinal);
+        Assert.That(l1Idx, Is.LessThan(l2Idx));
 
-        
+        Assert.That(l2Idx, Is.LessThan(leafIdx));
 
-                    Assert.That(rootIdx, Is.LessThan(l1Idx));
+    }
 
-                    Assert.That(l1Idx, Is.LessThan(l2Idx));
-
-                    Assert.That(l2Idx, Is.LessThan(leafIdx));
-
-                }
-
-            }
-
-        }
-
-        
+}

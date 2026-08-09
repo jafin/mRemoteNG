@@ -1,25 +1,24 @@
 ﻿using System;
 using System.Collections.Generic;
 
-namespace mRemoteNG.Tools.CustomCollections
+namespace mRemoteNG.Tools.CustomCollections;
+
+public class CollectionUpdatedEventArgs<T> : EventArgs
 {
-    public class CollectionUpdatedEventArgs<T> : EventArgs
-    {
-        public IEnumerable<T> ChangedItems { get; }
-        public ActionType Action { get; }
+    public IEnumerable<T> ChangedItems { get; }
+    public ActionType Action { get; }
 
-        public CollectionUpdatedEventArgs(ActionType action, IEnumerable<T> changedItems)
-        {
-            ArgumentNullException.ThrowIfNull(changedItems);
-            Action = action;
-            ChangedItems = changedItems;
-        }
-    }
-
-    public enum ActionType
+    public CollectionUpdatedEventArgs(ActionType action, IEnumerable<T> changedItems)
     {
-        Added,
-        Removed,
-        Updated
+        ArgumentNullException.ThrowIfNull(changedItems);
+        Action = action;
+        ChangedItems = changedItems;
     }
+}
+
+public enum ActionType
+{
+    Added,
+    Removed,
+    Updated
 }

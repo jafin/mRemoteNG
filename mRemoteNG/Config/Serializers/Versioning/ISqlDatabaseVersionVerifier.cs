@@ -1,9 +1,8 @@
 using System;
 
-namespace mRemoteNG.Config.Serializers.Versioning
+namespace mRemoteNG.Config.Serializers.Versioning;
+
+public interface ISqlDatabaseVersionVerifier
 {
-    public interface ISqlDatabaseVersionVerifier
-    {
-        bool VerifyDatabaseVersion(Version dbVersion);
-    }
+    bool VerifyDatabaseVersion(Version dbVersion);
 }

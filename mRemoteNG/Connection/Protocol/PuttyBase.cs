@@ -1,18 +1,4 @@
-﻿using mRemoteNG.App;
-using Microsoft.Win32;
-using mRemoteNG.Messages;
-using mRemoteNG.Resources.Language;
-using mRemoteNG.Security;
-using mRemoteNG.Security.Ssh;
-using mRemoteNG.Security.Ssh.Adapters;
-using mRemoteNG.Security.SymmetricEncryption;
-using mRemoteNG.Tools;
-using mRemoteNG.Tools.Cmdline;
-using mRemoteNG.Tree.Root;
-using mRemoteNG.UI;
-using mRemoteNG.UI.Forms;
-using mRemoteNG.UI.Tabs;
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Globalization;
@@ -25,1313 +11,1323 @@ using System.Security.Principal;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
+using mRemoteNG.App;
+using mRemoteNG.Messages;
+using mRemoteNG.Resources.Language;
+using mRemoteNG.Security.Ssh;
+using mRemoteNG.Security.Ssh.Adapters;
+using mRemoteNG.Tools;
+using mRemoteNG.Tools.Cmdline;
+using mRemoteNG.UI;
+using mRemoteNG.UI.Forms;
+using mRemoteNG.UI.Tabs;
 using Timer = System.Threading.Timer;
 
 // ReSharper disable ArrangeAccessorOwnerBody
 
-namespace mRemoteNG.Connection.Protocol
+namespace mRemoteNG.Connection.Protocol;
+
+[SupportedOSPlatform("windows")]
+public class PuttyBase : ProtocolBase
 {
-    [SupportedOSPlatform("windows")]
-    public class PuttyBase : ProtocolBase
+    private const int IDM_RECONF = 0x50; // PuTTY Settings Menu ID
+    private const int TerminalTitlePollIntervalMs = 500;
+    private const int WindowTextBufferLength = 512;
+    private const int OpeningCommandPollIntervalMs = 250;
+    private const int GracefulCloseTimeoutMs = 1000;
+    private const int GracefulClosePollIntervalMs = 50;
+    private const int MessageBoxIdOk = 1;
+    private const string DialogWindowClassName = "#32770";
+    private const string PuttyExitConfirmationTitle = "Exit Confirmation";
+    private bool _isPuttyNg;
+    private readonly DisplayProperties _display = new();
+    private readonly Lock _terminalTitleSync = new();
+    private Timer? _terminalTitleTimer;
+    private string _fallbackTabText = string.Empty;
+    private string _initialTerminalTitle = string.Empty;
+    private string _lastTerminalTitle = string.Empty;
+    private bool _terminalTitleTrackingEnabled;
+    private bool _postOpenLayoutResizePending;
+    private bool _postOpenLayoutResizeHooked;
+    private bool _isResizing;
+    private System.Windows.Forms.Timer? _windowSearchTimer;
+    private int _windowSearchStartTime;
+    private System.Windows.Forms.Timer? _openingCommandTimer;
+    private IntPtr _openingCommandPendingHandle;
+    private string _openingCommandPendingCommand = string.Empty;
+    private string _openingCommandInitialTitle = string.Empty;
+    private int _openingCommandElapsedMs;
+    private long _processStartTicks;
+    private bool _pendingResumeReconnect;
+    private long _resumeEventTickCount;
+
+    #region Public Properties
+
+    protected Putty_Protocol PuttyProtocol { private get; set; }
+
+    protected Putty_SSHVersion PuttySSHVersion { private get; set; }
+
+    public IntPtr PuttyHandle { get; set; }
+
+    private Process? PuttyProcess { get; set; }
+
+    public static string? PuttyPath { get; set; }
+
+    public bool Focused => NativeMethods.GetForegroundWindow() == PuttyHandle;
+
+    #endregion
+
+    #region Private Events & Handlers
+
+    private void ProcessExited(object sender, EventArgs e)
     {
-        private const int IDM_RECONF = 0x50; // PuTTY Settings Menu ID
-        private const int TerminalTitlePollIntervalMs = 500;
-        private const int WindowTextBufferLength = 512;
-        private const int OpeningCommandPollIntervalMs = 250;
-        private const int GracefulCloseTimeoutMs = 1000;
-        private const int GracefulClosePollIntervalMs = 50;
-        private const int MessageBoxIdOk = 1;
-        private const string DialogWindowClassName = "#32770";
-        private const string PuttyExitConfirmationTitle = "Exit Confirmation";
-        private bool _isPuttyNg;
-        private readonly DisplayProperties _display = new();
-        private readonly Lock _terminalTitleSync = new();
-        private Timer? _terminalTitleTimer;
-        private string _fallbackTabText = string.Empty;
-        private string _initialTerminalTitle = string.Empty;
-        private string _lastTerminalTitle = string.Empty;
-        private bool _terminalTitleTrackingEnabled;
-        private bool _postOpenLayoutResizePending;
-        private bool _postOpenLayoutResizeHooked;
-        private bool _isResizing;
-        private System.Windows.Forms.Timer? _windowSearchTimer;
-        private int _windowSearchStartTime;
-        private System.Windows.Forms.Timer? _openingCommandTimer;
-        private IntPtr _openingCommandPendingHandle;
-        private string _openingCommandPendingCommand = string.Empty;
-        private string _openingCommandInitialTitle = string.Empty;
-        private int _openingCommandElapsedMs;
-        private long _processStartTicks;
-        private bool _pendingResumeReconnect;
-        private long _resumeEventTickCount;
+        StopTerminalTitleTracking();
 
-        #region Public Properties
-
-        protected Putty_Protocol PuttyProtocol { private get; set; }
-
-        protected Putty_SSHVersion PuttySSHVersion { private get; set; }
-
-        public IntPtr PuttyHandle { get; set; }
-
-        private Process? PuttyProcess { get; set; }
-
-        public static string? PuttyPath { get; set; }
-
-        public bool Focused => NativeMethods.GetForegroundWindow() == PuttyHandle;
-
-        #endregion
-
-        #region Private Events & Handlers
-
-        private void ProcessExited(object sender, EventArgs e)
+        // Check whether this exit should trigger an auto-reconnect due to sleep/resume.
+        // Only applies to SSH sessions that exited with a network error (non-zero code)
+        // within 30 seconds of the last system resume event.
+        if (_pendingResumeReconnect)
         {
-            StopTerminalTitleTracking();
+            _pendingResumeReconnect = false;
+            int resumeExitCode = PuttyProcess?.ExitCode ?? 0;
+            long elapsedSinceResume = Environment.TickCount64 - _resumeEventTickCount;
 
-            // Check whether this exit should trigger an auto-reconnect due to sleep/resume.
-            // Only applies to SSH sessions that exited with a network error (non-zero code)
-            // within 30 seconds of the last system resume event.
-            if (_pendingResumeReconnect)
+            if (resumeExitCode != 0 && elapsedSinceResume < 30_000)
             {
-                _pendingResumeReconnect = false;
-                int resumeExitCode = PuttyProcess?.ExitCode ?? 0;
-                long elapsedSinceResume = Environment.TickCount64 - _resumeEventTickCount;
-
-                if (resumeExitCode != 0 && elapsedSinceResume < 30_000)
-                {
-                    // Network error caused by sleep — reconnect after a delay instead of closing.
-                    ScheduleAutoReconnect();
-                    return;
-                }
+                // Network error caused by sleep — reconnect after a delay instead of closing.
+                ScheduleAutoReconnect();
+                return;
             }
+        }
 
-            // If PuTTY exited with an error within 30 seconds, it likely indicates
-            // an authentication failure. Prompt the user to update the stored password.
+        // If PuTTY exited with an error within 30 seconds, it likely indicates
+        // an authentication failure. Prompt the user to update the stored password.
+        try
+        {
+            bool hasStoredPassword = !string.IsNullOrEmpty(InterfaceControl?.Info?.Password);
+            int exitCode = PuttyProcess?.ExitCode ?? 0;
+            long elapsedMs = Environment.TickCount64 - _processStartTicks;
+
+            if (hasStoredPassword && exitCode != 0 && elapsedMs < 30_000)
+            {
+                PromptToUpdatePassword();
+            }
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddExceptionStackTrace("Error checking PuTTY exit for password prompt", ex);
+        }
+
+        Event_Closed(this);
+    }
+
+    private void ScheduleAutoReconnect()
+    {
+        const int ReconnectDelayMs = 5000;
+
+        System.Threading.Tasks.Task.Delay(ReconnectDelayMs).ContinueWith(task =>
+        {
             try
             {
-                bool hasStoredPassword = !string.IsNullOrEmpty(InterfaceControl?.Info?.Password);
-                int exitCode = PuttyProcess?.ExitCode ?? 0;
-                long elapsedMs = Environment.TickCount64 - _processStartTicks;
+                if (InterfaceControl == null || InterfaceControl.IsDisposed || !InterfaceControl.IsHandleCreated)
+                    return;
 
-                if (hasStoredPassword && exitCode != 0 && elapsedMs < 30_000)
-                {
-                    PromptToUpdatePassword();
-                }
+                InterfaceControl.BeginInvoke((MethodInvoker)ExecuteAutoReconnect);
             }
-            catch (Exception ex)
+            catch (ObjectDisposedException)
             {
-                Runtime.MessageCollector.AddExceptionStackTrace("Error checking PuTTY exit for password prompt", ex);
+                // Intentionally empty — control may be disposed
             }
+            catch (InvalidOperationException)
+            {
+                // Intentionally empty — control may be disposed
+            }
+        }, System.Threading.Tasks.TaskScheduler.Default);
+    }
 
+    private void ExecuteAutoReconnect()
+    {
+        try
+        {
+            if (InterfaceControl == null || InterfaceControl.IsDisposed)
+                return;
+
+            // Dispose the old (already exited) process before starting a new one.
+            try { PuttyProcess?.Dispose(); } catch { }
+            PuttyProcess = null;
+
+            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+                "Auto-reconnecting SSH session after sleep/resume...", true);
+
+            if (!Connect())
+                Event_Closed(this);
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddExceptionStackTrace(
+                "SSH auto-reconnect after resume failed", ex);
             Event_Closed(this);
         }
+    }
 
-        private void ScheduleAutoReconnect()
+    #endregion
+
+    #region Public Methods
+
+    public virtual bool isRunning()
+    {
+        return PuttyProcess?.HasExited == false;
+    }
+
+    public static void CreatePipe(object oData)
+    {
+        string data = (string)oData;
+        string random = data[..8];
+        string password = data[8..];
+        try
         {
-            const int ReconnectDelayMs = 5000;
+            // Restrict the pipe ACL to the current user - it carries a plaintext password
+            // (same hardening as the VaultOpenbao pipe; default pipe security would let
+            // other local users connect first and read the secret).
+            using NamedPipeServerStream server = CreatePipeServer($"mRemoteNGSecretPipe{random}");
+            // Bound the wait so an aborted/failed PuTTY launch (cancelled auth, launch error,
+            // crash, or the tab closed before PuTTY opens the pipe) cannot block this thread -
+            // and the captured plaintext password it holds - for the process lifetime. The old
+            // untimed WaitForConnection() had no timeout, no cancellation and no try/finally.
+            // Mirrors the VaultOpenbao pipe handling in Connect().
+            using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
+            server.WaitForConnectionAsync(cts.Token).GetAwaiter().GetResult();
+            using StreamWriter writer = new(server);
+            writer.Write(password);
+            writer.Flush();
+        }
+        catch (OperationCanceledException)
+        {
+            // PuTTY never connected to the pipe within the timeout - release the pipe and exit.
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddExceptionStackTrace("Failed to provide PuTTY password via named pipe", ex);
+        }
+    }
 
-            System.Threading.Tasks.Task.Delay(ReconnectDelayMs).ContinueWith(task =>
+    protected virtual bool UseTerminalTitlePollingTimer => true;
+
+    protected virtual int PowerModeChangedResizeDelay => 2000;
+
+    /// <summary>
+    /// The command line handed to PuTTY by the last <see cref="Connect"/> call.
+    /// Exposed so tests can pin the produced arguments without inspecting the process.
+    /// </summary>
+    internal string? LastBuiltArguments { get; private set; }
+
+    /// <summary>
+    /// Whether the configured PuTTY executable is PuTTYNG. Overridable so tests do not
+    /// depend on a real executable being present.
+    /// </summary>
+    protected virtual bool DetectIsPuttyNg()
+    {
+        return PuttyTypeDetector.GetPuttyType() == PuttyTypeDetector.PuttyType.PuttyNg;
+    }
+
+    /// <summary>
+    /// The version of the configured PuTTY executable, which selects between
+    /// <c>-pwfile</c> (0.81+) and <c>-pw</c>. Overridable so tests can pin both branches.
+    /// </summary>
+    protected virtual Version GetPuttyVersion()
+    {
+        return PuttyTypeDetector.GetPuttyVersion(PuttyPath ?? string.Empty);
+    }
+
+    /// <summary>
+    /// Starts the named pipe that carries the password to PuTTY and returns the pipe path
+    /// for <c>-pwfile</c>. Overridable so tests get a deterministic pipe name and do not
+    /// spawn the pipe server thread.
+    /// </summary>
+    protected virtual string CreatePasswordPipeArgument(string password)
+    {
+        string random = string.Join("", Guid.NewGuid().ToString("n").Take(8));
+        // write data to pipe
+        Thread thread = new(new ParameterizedThreadStart(CreatePipe));
+        thread.Start($"{random}{password}");
+        return $"\\\\.\\PIPE\\mRemoteNGSecretPipe{random}";
+    }
+
+    /// <summary>
+    /// Auto-discovers a default PuTTY-native key from the user profile. Overridable so tests
+    /// do not depend on the contents of the developer's <c>~/.ssh</c>.
+    /// </summary>
+    protected virtual string? FindDefaultPrivateKey()
+    {
+        return FindDefaultSshKey();
+    }
+
+    /// <summary>
+    /// Resolves this connection's SSH credentials. Discovery is routed back through
+    /// <see cref="FindDefaultPrivateKey"/> so the protocol keeps ownership of its own hook.
+    /// </summary>
+    protected virtual ResolvedSshCredential ResolveCredentials()
+    {
+        ISshCredentialResolver resolver = SshCredentialResolver.CreateDefault(
+            new DelegateSshKeyLocator(_ => FindDefaultPrivateKey()));
+
+        return resolver.Resolve(InterfaceControl.Info, SshCredentialResolutionOptions.ForPutty);
+    }
+
+    /// <summary>
+    /// Replays resolution diagnostics on the channel each one was recorded against. The
+    /// resolver cannot do this itself: <see cref="ProtocolBase.Event_ErrorOccured"/> is
+    /// protected and raises an event that callers subscribe to.
+    /// </summary>
+    private void ReplayCredentialDiagnostics(ResolvedSshCredential credential)
+    {
+        foreach (SshCredentialDiagnostic diagnostic in credential.Diagnostics)
+        {
+            switch (diagnostic.Severity)
             {
-                try
-                {
-                    if (InterfaceControl == null || InterfaceControl.IsDisposed || !InterfaceControl.IsHandleCreated)
-                        return;
-
-                    InterfaceControl.BeginInvoke((MethodInvoker)ExecuteAutoReconnect);
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Intentionally empty — control may be disposed
-                }
-                catch (InvalidOperationException)
-                {
-                    // Intentionally empty — control may be disposed
-                }
-            }, System.Threading.Tasks.TaskScheduler.Default);
-        }
-
-        private void ExecuteAutoReconnect()
-        {
-            try
-            {
-                if (InterfaceControl == null || InterfaceControl.IsDisposed)
-                    return;
-
-                // Dispose the old (already exited) process before starting a new one.
-                try { PuttyProcess?.Dispose(); } catch { }
-                PuttyProcess = null;
-
-                Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                    "Auto-reconnecting SSH session after sleep/resume...", true);
-
-                if (!Connect())
-                    Event_Closed(this);
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace(
-                    "SSH auto-reconnect after resume failed", ex);
-                Event_Closed(this);
-            }
-        }
-
-        #endregion
-
-        #region Public Methods
-
-        public virtual bool isRunning()
-        {
-            return PuttyProcess?.HasExited == false;
-        }
-
-        public static void CreatePipe(object oData)
-        {
-            string data = (string)oData;
-            string random = data[..8];
-            string password = data[8..];
-            try
-            {
-                // Restrict the pipe ACL to the current user - it carries a plaintext password
-                // (same hardening as the VaultOpenbao pipe; default pipe security would let
-                // other local users connect first and read the secret).
-                using NamedPipeServerStream server = CreatePipeServer($"mRemoteNGSecretPipe{random}");
-                // Bound the wait so an aborted/failed PuTTY launch (cancelled auth, launch error,
-                // crash, or the tab closed before PuTTY opens the pipe) cannot block this thread -
-                // and the captured plaintext password it holds - for the process lifetime. The old
-                // untimed WaitForConnection() had no timeout, no cancellation and no try/finally.
-                // Mirrors the VaultOpenbao pipe handling in Connect().
-                using CancellationTokenSource cts = new(TimeSpan.FromSeconds(30));
-                server.WaitForConnectionAsync(cts.Token).GetAwaiter().GetResult();
-                using StreamWriter writer = new(server);
-                writer.Write(password);
-                writer.Flush();
-            }
-            catch (OperationCanceledException)
-            {
-                // PuTTY never connected to the pipe within the timeout - release the pipe and exit.
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace("Failed to provide PuTTY password via named pipe", ex);
-            }
-        }
-
-        protected virtual bool UseTerminalTitlePollingTimer => true;
-
-        protected virtual int PowerModeChangedResizeDelay => 2000;
-
-        /// <summary>
-        /// The command line handed to PuTTY by the last <see cref="Connect"/> call.
-        /// Exposed so tests can pin the produced arguments without inspecting the process.
-        /// </summary>
-        internal string? LastBuiltArguments { get; private set; }
-
-        /// <summary>
-        /// Whether the configured PuTTY executable is PuTTYNG. Overridable so tests do not
-        /// depend on a real executable being present.
-        /// </summary>
-        protected virtual bool DetectIsPuttyNg()
-        {
-            return PuttyTypeDetector.GetPuttyType() == PuttyTypeDetector.PuttyType.PuttyNg;
-        }
-
-        /// <summary>
-        /// The version of the configured PuTTY executable, which selects between
-        /// <c>-pwfile</c> (0.81+) and <c>-pw</c>. Overridable so tests can pin both branches.
-        /// </summary>
-        protected virtual Version GetPuttyVersion()
-        {
-            return PuttyTypeDetector.GetPuttyVersion(PuttyPath ?? string.Empty);
-        }
-
-        /// <summary>
-        /// Starts the named pipe that carries the password to PuTTY and returns the pipe path
-        /// for <c>-pwfile</c>. Overridable so tests get a deterministic pipe name and do not
-        /// spawn the pipe server thread.
-        /// </summary>
-        protected virtual string CreatePasswordPipeArgument(string password)
-        {
-            string random = string.Join("", Guid.NewGuid().ToString("n").Take(8));
-            // write data to pipe
-            Thread thread = new(new ParameterizedThreadStart(CreatePipe));
-            thread.Start($"{random}{password}");
-            return $"\\\\.\\PIPE\\mRemoteNGSecretPipe{random}";
-        }
-
-        /// <summary>
-        /// Auto-discovers a default PuTTY-native key from the user profile. Overridable so tests
-        /// do not depend on the contents of the developer's <c>~/.ssh</c>.
-        /// </summary>
-        protected virtual string? FindDefaultPrivateKey()
-        {
-            return FindDefaultSshKey();
-        }
-
-        /// <summary>
-        /// Resolves this connection's SSH credentials. Discovery is routed back through
-        /// <see cref="FindDefaultPrivateKey"/> so the protocol keeps ownership of its own hook.
-        /// </summary>
-        protected virtual ResolvedSshCredential ResolveCredentials()
-        {
-            ISshCredentialResolver resolver = SshCredentialResolver.CreateDefault(
-                new DelegateSshKeyLocator(_ => FindDefaultPrivateKey()));
-
-            return resolver.Resolve(InterfaceControl.Info, SshCredentialResolutionOptions.ForPutty);
-        }
-
-        /// <summary>
-        /// Replays resolution diagnostics on the channel each one was recorded against. The
-        /// resolver cannot do this itself: <see cref="ProtocolBase.Event_ErrorOccured"/> is
-        /// protected and raises an event that callers subscribe to.
-        /// </summary>
-        private void ReplayCredentialDiagnostics(ResolvedSshCredential credential)
-        {
-            foreach (SshCredentialDiagnostic diagnostic in credential.Diagnostics)
-            {
-                switch (diagnostic.Severity)
-                {
-                    case SshCredentialDiagnosticSeverity.ProtocolError:
-                        Event_ErrorOccured(this, diagnostic.Message, 0);
-                        break;
-                    case SshCredentialDiagnosticSeverity.Error:
-                        Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, diagnostic.Message);
-                        break;
-                    default:
-                        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, diagnostic.Message);
-                        break;
-                }
+                case SshCredentialDiagnosticSeverity.ProtocolError:
+                    Event_ErrorOccured(this, diagnostic.Message, 0);
+                    break;
+                case SshCredentialDiagnosticSeverity.Error:
+                    Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, diagnostic.Message);
+                    break;
+                default:
+                    Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, diagnostic.Message);
+                    break;
             }
         }
+    }
 
-        protected virtual string ReadTerminalWindowTitle()
+    protected virtual string ReadTerminalWindowTitle()
+    {
+        try
         {
-            try
-            {
-                if (PuttyHandle == IntPtr.Zero)
-                    return string.Empty;
-
-                StringBuilder textBuffer = new(WindowTextBufferLength);
-                NativeMethods.SendMessage(PuttyHandle, NativeMethods.WM_GETTEXT, (IntPtr)textBuffer.Capacity, textBuffer);
-                return textBuffer.ToString();
-            }
-            catch
-            {
+            if (PuttyHandle == IntPtr.Zero)
                 return string.Empty;
-            }
+
+            StringBuilder textBuffer = new(WindowTextBufferLength);
+            NativeMethods.SendMessage(PuttyHandle, NativeMethods.WM_GETTEXT, (IntPtr)textBuffer.Capacity, textBuffer);
+            return textBuffer.ToString();
         }
-
-        protected void StartTerminalTitleTracking()
+        catch
         {
-            StopTerminalTitleTracking();
+            return string.Empty;
+        }
+    }
 
-            if (InterfaceControl.Parent is not ConnectionTab connectionTab)
-                return;
+    protected void StartTerminalTitleTracking()
+    {
+        StopTerminalTitleTracking();
 
-            lock (_terminalTitleSync)
+        if (InterfaceControl.Parent is not ConnectionTab connectionTab)
+            return;
+
+        lock (_terminalTitleSync)
+        {
+            _fallbackTabText = connectionTab.TabText;
+            _initialTerminalTitle = ReadTerminalWindowTitle();
+            _lastTerminalTitle = _initialTerminalTitle;
+            _terminalTitleTrackingEnabled = true;
+
+            if (UseTerminalTitlePollingTimer)
             {
-                _fallbackTabText = connectionTab.TabText;
-                _initialTerminalTitle = ReadTerminalWindowTitle();
-                _lastTerminalTitle = _initialTerminalTitle;
-                _terminalTitleTrackingEnabled = true;
-
-                if (UseTerminalTitlePollingTimer)
-                {
-                    _terminalTitleTimer = new Timer(_ => UpdateTabTitleFromTerminalTitle(),
-                                                    null,
-                                                    TerminalTitlePollIntervalMs,
-                                                    TerminalTitlePollIntervalMs);
-                }
+                _terminalTitleTimer = new Timer(_ => UpdateTabTitleFromTerminalTitle(),
+                    null,
+                    TerminalTitlePollIntervalMs,
+                    TerminalTitlePollIntervalMs);
             }
         }
+    }
 
-        protected void StopTerminalTitleTracking()
+    protected void StopTerminalTitleTracking()
+    {
+        Timer? timerToDispose;
+        string fallbackTabText;
+        bool restoreFallback;
+
+        lock (_terminalTitleSync)
         {
-            Timer? timerToDispose;
-            string fallbackTabText;
-            bool restoreFallback;
-
-            lock (_terminalTitleSync)
-            {
-                restoreFallback = _terminalTitleTrackingEnabled;
-                _terminalTitleTrackingEnabled = false;
-                timerToDispose = _terminalTitleTimer;
-                _terminalTitleTimer = null;
-                fallbackTabText = _fallbackTabText;
-            }
-
-            timerToDispose?.Dispose();
-
-            if (restoreFallback)
-                ApplyTabText(fallbackTabText);
+            restoreFallback = _terminalTitleTrackingEnabled;
+            _terminalTitleTrackingEnabled = false;
+            timerToDispose = _terminalTitleTimer;
+            _terminalTitleTimer = null;
+            fallbackTabText = _fallbackTabText;
         }
 
-        private void StopWindowSearch()
+        timerToDispose?.Dispose();
+
+        if (restoreFallback)
+            ApplyTabText(fallbackTabText);
+    }
+
+    private void StopWindowSearch()
+    {
+        if (_windowSearchTimer == null) return;
+        _windowSearchTimer.Stop();
+        _windowSearchTimer.Dispose();
+        _windowSearchTimer = null;
+    }
+
+    private void StopOpeningCommandTimer()
+    {
+        if (_openingCommandTimer == null) return;
+        _openingCommandTimer.Stop();
+        _openingCommandTimer.Dispose();
+        _openingCommandTimer = null;
+    }
+
+    private void OpeningCommandTimer_Tick(object? sender, EventArgs e)
+    {
+        _openingCommandElapsedMs += OpeningCommandPollIntervalMs;
+        string currentTitle = ReadTerminalWindowTitle();
+        bool titleChanged = !string.IsNullOrEmpty(currentTitle)
+                            && !string.Equals(currentTitle, _openingCommandInitialTitle, StringComparison.Ordinal);
+        bool timedOut = _openingCommandElapsedMs >= Properties.OptionsAdvancedPage.Default.MaxPuttyWaitTime * 1000;
+
+        if (!titleChanged && !timedOut)
+            return;
+
+        StopOpeningCommandTimer();
+
+        if (timedOut && !titleChanged)
         {
-            if (_windowSearchTimer == null) return;
-            _windowSearchTimer.Stop();
-            _windowSearchTimer.Dispose();
-            _windowSearchTimer = null;
+            // Title never changed — authentication likely still in progress
+            // (e.g. interactive login without stored credentials). Discard the
+            // command so it doesn't get typed into a login/password prompt (#3170).
+            Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg,
+                "Opening command discarded: terminal title did not change within timeout (authentication may still be in progress).");
+            _openingCommandPendingCommand = string.Empty;
+            _openingCommandPendingHandle = IntPtr.Zero;
+            return;
         }
 
-        private void StopOpeningCommandTimer()
+        if (_openingCommandPendingHandle != IntPtr.Zero && !string.IsNullOrEmpty(_openingCommandPendingCommand))
         {
-            if (_openingCommandTimer == null) return;
-            _openingCommandTimer.Stop();
-            _openingCommandTimer.Dispose();
-            _openingCommandTimer = null;
+            NativeMethods.SetForegroundWindow(_openingCommandPendingHandle);
+            SendKeys.SendWait(_openingCommandPendingCommand);
+            _openingCommandPendingCommand = string.Empty;
+            _openingCommandPendingHandle = IntPtr.Zero;
         }
+    }
 
-        private void OpeningCommandTimer_Tick(object? sender, EventArgs e)
+    private void WindowSearchTimer_Tick(object? sender, EventArgs e)
+    {
+        try
         {
-            _openingCommandElapsedMs += OpeningCommandPollIntervalMs;
-            string currentTitle = ReadTerminalWindowTitle();
-            bool titleChanged = !string.IsNullOrEmpty(currentTitle)
-                                && !string.Equals(currentTitle, _openingCommandInitialTitle, StringComparison.Ordinal);
-            bool timedOut = _openingCommandElapsedMs >= Properties.OptionsAdvancedPage.Default.MaxPuttyWaitTime * 1000;
-
-            if (!titleChanged && !timedOut)
-                return;
-
-            StopOpeningCommandTimer();
-
-            if (timedOut && !titleChanged)
-            {
-                // Title never changed — authentication likely still in progress
-                // (e.g. interactive login without stored credentials). Discard the
-                // command so it doesn't get typed into a login/password prompt (#3170).
-                Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg,
-                    "Opening command discarded: terminal title did not change within timeout (authentication may still be in progress).");
-                _openingCommandPendingCommand = string.Empty;
-                _openingCommandPendingHandle = IntPtr.Zero;
-                return;
-            }
-
-            if (_openingCommandPendingHandle != IntPtr.Zero && !string.IsNullOrEmpty(_openingCommandPendingCommand))
-            {
-                NativeMethods.SetForegroundWindow(_openingCommandPendingHandle);
-                SendKeys.SendWait(_openingCommandPendingCommand);
-                _openingCommandPendingCommand = string.Empty;
-                _openingCommandPendingHandle = IntPtr.Zero;
-            }
-        }
-
-        private void WindowSearchTimer_Tick(object? sender, EventArgs e)
-        {
-            try
-            {
-                if (PuttyProcess == null || PuttyProcess.HasExited)
-                {
-                    StopWindowSearch();
-                    Event_Closed(this);
-                    return;
-                }
-
-                if (_isPuttyNg)
-                {
-                    PuttyHandle = NativeMethods.FindWindowEx(InterfaceControl.Handle, new IntPtr(0), null, null);
-                }
-                else
-                {
-                    PuttyProcess.Refresh();
-                    IntPtr candidateHandle = PuttyProcess.MainWindowHandle;
-
-                    if (candidateHandle != IntPtr.Zero)
-                    {
-                        // Check the window class name to distinguish the actual PuTTY
-                        // terminal window ("PuTTY") from popup dialogs like the host key
-                        // verification alert (class "#32770"). Dialogs must remain as
-                        // top-level windows so the user can interact with them.
-                        StringBuilder className = new(256);
-                        _ = NativeMethods.GetClassName(candidateHandle, className, className.Capacity);
-                        string cls = className.ToString();
-
-                        if (cls.Equals("PuTTY", StringComparison.OrdinalIgnoreCase))
-                        {
-                            PuttyHandle = candidateHandle;
-                        }
-                    }
-                }
-
-                if (PuttyHandle != IntPtr.Zero)
-                {
-                    StopWindowSearch();
-                    CompleteConnectionSetup();
-                }
-                else if (Environment.TickCount - _windowSearchStartTime > Properties.OptionsAdvancedPage.Default.MaxPuttyWaitTime * 1000)
-                {
-                    StopWindowSearch();
-                    Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, "PuTTY window discovery timed out.");
-                    CompleteConnectionSetup();
-                }
-            }
-            catch (Exception ex)
+            if (PuttyProcess == null || PuttyProcess.HasExited)
             {
                 StopWindowSearch();
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, "Error during PuTTY window discovery: " + ex.Message);
-            }
-        }
-
-        private void CompleteConnectionSetup()
-        {
-            if (!_isPuttyNg && PuttyHandle != IntPtr.Zero)
-            {
-                NativeMethods.SetParent(PuttyHandle, InterfaceControl.Handle);
-            }
-
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, Language.PuttyStuff, true);
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, string.Format(CultureInfo.InvariantCulture, Language.PuttyHandle, PuttyHandle), true);
-            if (PuttyProcess != null)
-                Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, string.Format(CultureInfo.InvariantCulture, Language.PuttyTitle, PuttyProcess.MainWindowTitle), true);
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, string.Format(CultureInfo.InvariantCulture, Language.PanelHandle, InterfaceControl.Parent?.Handle), true);
-
-            if (!string.IsNullOrEmpty(InterfaceControl.Info?.OpeningCommand) && PuttyHandle != IntPtr.Zero)
-            {
-                var parser = new ExternalToolArgumentParser(InterfaceControl.Info);
-                string parsedCommand = parser.ParseArguments(InterfaceControl.Info.OpeningCommand.TrimEnd(), escapeForShell: false);
-                string finalCommand = EscapeSendKeys(parsedCommand) + "\n";
-                string initialTitle = ReadTerminalWindowTitle();
-                if (string.IsNullOrEmpty(initialTitle))
-                {
-                    // No title detectable yet — send immediately.
-                    NativeMethods.SetForegroundWindow(PuttyHandle);
-                    SendKeys.SendWait(finalCommand);
-                }
-                else
-                {
-                    // Defer sending until the terminal title changes, which signals that
-                    // SSH authentication has completed and the shell is ready.  This prevents
-                    // the command from being injected into keyboard-interactive auth prompts.
-                    _openingCommandPendingCommand = finalCommand;
-                    _openingCommandPendingHandle = PuttyHandle;
-                    _openingCommandInitialTitle = initialTitle;
-                    _openingCommandElapsedMs = 0;
-                    _openingCommandTimer = new System.Windows.Forms.Timer { Interval = OpeningCommandPollIntervalMs };
-                    _openingCommandTimer.Tick += OpeningCommandTimer_Tick;
-                    _openingCommandTimer.Start();
-                }
-            }
-
-            Resize(this, EventArgs.Empty);
-            SchedulePostOpenLayoutResizePass();
-
-            StartTerminalTitleTracking();
-            base.Connect();
-        }
-
-        protected virtual void UpdateTabTitleFromTerminalTitle()
-        {
-            string terminalTitle = ReadTerminalWindowTitle();
-
-            lock (_terminalTitleSync)
-            {
-                if (!_terminalTitleTrackingEnabled)
-                    return;
-
-                if (string.Equals(_lastTerminalTitle, terminalTitle, StringComparison.Ordinal))
-                    return;
-
-                _lastTerminalTitle = terminalTitle;
-            }
-
-            string tabText = ResolveTabText(terminalTitle);
-            ApplyTabText(tabText);
-        }
-
-        private string ResolveTabText(string terminalTitle)
-        {
-            lock (_terminalTitleSync)
-            {
-                if (string.IsNullOrWhiteSpace(terminalTitle) ||
-                    string.Equals(terminalTitle, _initialTerminalTitle, StringComparison.Ordinal))
-                {
-                    return _fallbackTabText;
-                }
-
-                // Filter noise from #90: very short titles leak from vi/editor status,
-                // and "(inactive)" stays stuck after Ctrl-D when the session closes.
-                string trimmed = terminalTitle.Trim();
-                if (trimmed.Length <= 2 ||
-                    trimmed.EndsWith("(inactive)", StringComparison.OrdinalIgnoreCase))
-                {
-                    return _fallbackTabText;
-                }
-            }
-
-            string tabText = terminalTitle.Replace("&", "&&", StringComparison.Ordinal);
-
-            if (Properties.OptionsTabsPanelsPage.Default.ShowLogonInfoOnTabs)
-            {
-                ConnectionInfo? info = InterfaceControl?.Info;
-                if (info != null)
-                {
-                    string domain = info.Domain;
-                    string username = info.Username;
-                    if (domain != "" || username != "")
-                    {
-                        string logonSuffix = " (";
-                        if (domain != "")
-                            logonSuffix += domain;
-                        if (username != "")
-                        {
-                            if (domain != "")
-                                logonSuffix += @"\";
-                            logonSuffix += username;
-                        }
-                        logonSuffix += ")";
-                        tabText += logonSuffix;
-                    }
-                }
-            }
-
-            return tabText;
-        }
-
-        private void ApplyTabText(string tabText)
-        {
-            if (InterfaceControl.Parent is not ConnectionTab connectionTab)
+                Event_Closed(this);
                 return;
-
-            if (connectionTab.IsDisposed || connectionTab.Disposing)
-                return;
-
-            void Update()
-            {
-                if (connectionTab.IsDisposed || connectionTab.Disposing)
-                    return;
-
-                connectionTab.TabText = tabText;
-
-                if (!connectionTab.IsActivated)
-                {
-                    connectionTab.HasUnreadActivity = true;
-                }
             }
 
-            if (connectionTab.InvokeRequired)
+            if (_isPuttyNg)
             {
-                try
-                {
-                    connectionTab.BeginInvoke((Action)Update);
-                }
-                catch (ObjectDisposedException)
-                {
-                    // The tab was disposed while marshaling the title update.
-                }
-                catch (InvalidOperationException)
-                {
-                    // The tab handle is no longer available.
-                }
+                PuttyHandle = NativeMethods.FindWindowEx(InterfaceControl.Handle, new IntPtr(0), null, null);
             }
             else
             {
-                Update();
-            }
-        }
+                PuttyProcess.Refresh();
+                IntPtr candidateHandle = PuttyProcess.MainWindowHandle;
 
-        private void ResetPostOpenLayoutResizeState()
-        {
-            _postOpenLayoutResizePending = false;
-            UnhookPostOpenLayoutResize();
-        }
-
-        private void HookPostOpenLayoutResize()
-        {
-            if (_postOpenLayoutResizeHooked)
-                return;
-
-            if (InterfaceControl.IsDisposed)
-                return;
-
-            InterfaceControl.HandleCreated += InterfaceControl_HandleCreated;
-            _postOpenLayoutResizeHooked = true;
-        }
-
-        private void UnhookPostOpenLayoutResize()
-        {
-            if (!_postOpenLayoutResizeHooked)
-                return;
-
-            try
-            {
-                if (!InterfaceControl.IsDisposed)
-                    InterfaceControl.HandleCreated -= InterfaceControl_HandleCreated;
-            }
-            catch (ObjectDisposedException)
-            {
-                // Interface control already disposed.
-            }
-            catch (InvalidOperationException)
-            {
-                // Interface handle is no longer available.
-            }
-            finally
-            {
-                _postOpenLayoutResizeHooked = false;
-            }
-        }
-
-        private void InterfaceControl_HandleCreated(object? sender, EventArgs e)
-        {
-            RequestPostOpenLayoutResizePass();
-        }
-
-        protected virtual void QueuePostOpenLayoutResizePass(MethodInvoker resizeAction)
-        {
-            InterfaceControl.BeginInvoke(resizeAction);
-        }
-
-        protected void SchedulePostOpenLayoutResizePass()
-        {
-            _postOpenLayoutResizePending = true;
-            HookPostOpenLayoutResize();
-            RequestPostOpenLayoutResizePass();
-        }
-
-        internal void RequestPostOpenLayoutResizePass()
-        {
-            if (!_postOpenLayoutResizePending)
-                return;
-
-            if (InterfaceControl.IsDisposed)
-            {
-                ResetPostOpenLayoutResizeState();
-                return;
-            }
-
-            if (!InterfaceControl.IsHandleCreated)
-                return;
-
-            try
-            {
-                QueuePostOpenLayoutResizePass((MethodInvoker)(() =>
+                if (candidateHandle != IntPtr.Zero)
                 {
-                    if (!_postOpenLayoutResizePending || InterfaceControl.IsDisposed)
-                        return;
+                    // Check the window class name to distinguish the actual PuTTY
+                    // terminal window ("PuTTY") from popup dialogs like the host key
+                    // verification alert (class "#32770"). Dialogs must remain as
+                    // top-level windows so the user can interact with them.
+                    StringBuilder className = new(256);
+                    _ = NativeMethods.GetClassName(candidateHandle, className, className.Capacity);
+                    string cls = className.ToString();
 
-                    _postOpenLayoutResizePending = false;
-                    UnhookPostOpenLayoutResize();
-                    Resize(this, EventArgs.Empty);
-                }));
+                    if (cls.Equals("PuTTY", StringComparison.OrdinalIgnoreCase))
+                    {
+                        PuttyHandle = candidateHandle;
+                    }
+                }
             }
-            catch (ObjectDisposedException)
+
+            if (PuttyHandle != IntPtr.Zero)
             {
-                ResetPostOpenLayoutResizeState();
+                StopWindowSearch();
+                CompleteConnectionSetup();
             }
-            catch (InvalidOperationException)
+            else if (Environment.TickCount - _windowSearchStartTime > Properties.OptionsAdvancedPage.Default.MaxPuttyWaitTime * 1000)
             {
-                // Handle may have been recreated between checks; keep pending and retry later.
+                StopWindowSearch();
+                Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, "PuTTY window discovery timed out.");
+                CompleteConnectionSetup();
+            }
+        }
+        catch (Exception ex)
+        {
+            StopWindowSearch();
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, "Error during PuTTY window discovery: " + ex.Message);
+        }
+    }
+
+    private void CompleteConnectionSetup()
+    {
+        if (!_isPuttyNg && PuttyHandle != IntPtr.Zero)
+        {
+            NativeMethods.SetParent(PuttyHandle, InterfaceControl.Handle);
+        }
+
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, Language.PuttyStuff, true);
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, string.Format(CultureInfo.InvariantCulture, Language.PuttyHandle, PuttyHandle), true);
+        if (PuttyProcess != null)
+            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, string.Format(CultureInfo.InvariantCulture, Language.PuttyTitle, PuttyProcess.MainWindowTitle), true);
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, string.Format(CultureInfo.InvariantCulture, Language.PanelHandle, InterfaceControl.Parent?.Handle), true);
+
+        if (!string.IsNullOrEmpty(InterfaceControl.Info?.OpeningCommand) && PuttyHandle != IntPtr.Zero)
+        {
+            var parser = new ExternalToolArgumentParser(InterfaceControl.Info);
+            string parsedCommand = parser.ParseArguments(InterfaceControl.Info.OpeningCommand.TrimEnd(), escapeForShell: false);
+            string finalCommand = EscapeSendKeys(parsedCommand) + "\n";
+            string initialTitle = ReadTerminalWindowTitle();
+            if (string.IsNullOrEmpty(initialTitle))
+            {
+                // No title detectable yet — send immediately.
+                NativeMethods.SetForegroundWindow(PuttyHandle);
+                SendKeys.SendWait(finalCommand);
+            }
+            else
+            {
+                // Defer sending until the terminal title changes, which signals that
+                // SSH authentication has completed and the shell is ready.  This prevents
+                // the command from being injected into keyboard-interactive auth prompts.
+                _openingCommandPendingCommand = finalCommand;
+                _openingCommandPendingHandle = PuttyHandle;
+                _openingCommandInitialTitle = initialTitle;
+                _openingCommandElapsedMs = 0;
+                _openingCommandTimer = new System.Windows.Forms.Timer { Interval = OpeningCommandPollIntervalMs };
+                _openingCommandTimer.Tick += OpeningCommandTimer_Tick;
+                _openingCommandTimer.Start();
             }
         }
 
-        public override bool Initialize()
-        {
-            if (!base.Initialize())
-                return false;
+        Resize(this, EventArgs.Empty);
+        SchedulePostOpenLayoutResizePass();
 
-            if (InterfaceControl != null)
+        StartTerminalTitleTracking();
+        base.Connect();
+    }
+
+    protected virtual void UpdateTabTitleFromTerminalTitle()
+    {
+        string terminalTitle = ReadTerminalWindowTitle();
+
+        lock (_terminalTitleSync)
+        {
+            if (!_terminalTitleTrackingEnabled)
+                return;
+
+            if (string.Equals(_lastTerminalTitle, terminalTitle, StringComparison.Ordinal))
+                return;
+
+            _lastTerminalTitle = terminalTitle;
+        }
+
+        string tabText = ResolveTabText(terminalTitle);
+        ApplyTabText(tabText);
+    }
+
+    private string ResolveTabText(string terminalTitle)
+    {
+        lock (_terminalTitleSync)
+        {
+            if (string.IsNullOrWhiteSpace(terminalTitle) ||
+                string.Equals(terminalTitle, _initialTerminalTitle, StringComparison.Ordinal))
             {
-                InterfaceControl.Resize += Resize;
+                return _fallbackTabText;
             }
+
+            // Filter noise from #90: very short titles leak from vi/editor status,
+            // and "(inactive)" stays stuck after Ctrl-D when the session closes.
+            string trimmed = terminalTitle.Trim();
+            if (trimmed.Length <= 2 ||
+                trimmed.EndsWith("(inactive)", StringComparison.OrdinalIgnoreCase))
+            {
+                return _fallbackTabText;
+            }
+        }
+
+        string tabText = terminalTitle.Replace("&", "&&", StringComparison.Ordinal);
+
+        if (Properties.OptionsTabsPanelsPage.Default.ShowLogonInfoOnTabs)
+        {
+            ConnectionInfo? info = InterfaceControl?.Info;
+            if (info != null)
+            {
+                string domain = info.Domain;
+                string username = info.Username;
+                if (domain != "" || username != "")
+                {
+                    string logonSuffix = " (";
+                    if (domain != "")
+                        logonSuffix += domain;
+                    if (username != "")
+                    {
+                        if (domain != "")
+                            logonSuffix += @"\";
+                        logonSuffix += username;
+                    }
+                    logonSuffix += ")";
+                    tabText += logonSuffix;
+                }
+            }
+        }
+
+        return tabText;
+    }
+
+    private void ApplyTabText(string tabText)
+    {
+        if (InterfaceControl.Parent is not ConnectionTab connectionTab)
+            return;
+
+        if (connectionTab.IsDisposed || connectionTab.Disposing)
+            return;
+
+        void Update()
+        {
+            if (connectionTab.IsDisposed || connectionTab.Disposing)
+                return;
+
+            connectionTab.TabText = tabText;
+
+            if (!connectionTab.IsActivated)
+            {
+                connectionTab.HasUnreadActivity = true;
+            }
+        }
+
+        if (connectionTab.InvokeRequired)
+        {
+            try
+            {
+                connectionTab.BeginInvoke((Action)Update);
+            }
+            catch (ObjectDisposedException)
+            {
+                // The tab was disposed while marshaling the title update.
+            }
+            catch (InvalidOperationException)
+            {
+                // The tab handle is no longer available.
+            }
+        }
+        else
+        {
+            Update();
+        }
+    }
+
+    private void ResetPostOpenLayoutResizeState()
+    {
+        _postOpenLayoutResizePending = false;
+        UnhookPostOpenLayoutResize();
+    }
+
+    private void HookPostOpenLayoutResize()
+    {
+        if (_postOpenLayoutResizeHooked)
+            return;
+
+        if (InterfaceControl.IsDisposed)
+            return;
+
+        InterfaceControl.HandleCreated += InterfaceControl_HandleCreated;
+        _postOpenLayoutResizeHooked = true;
+    }
+
+    private void UnhookPostOpenLayoutResize()
+    {
+        if (!_postOpenLayoutResizeHooked)
+            return;
+
+        try
+        {
+            if (!InterfaceControl.IsDisposed)
+                InterfaceControl.HandleCreated -= InterfaceControl_HandleCreated;
+        }
+        catch (ObjectDisposedException)
+        {
+            // Interface control already disposed.
+        }
+        catch (InvalidOperationException)
+        {
+            // Interface handle is no longer available.
+        }
+        finally
+        {
+            _postOpenLayoutResizeHooked = false;
+        }
+    }
+
+    private void InterfaceControl_HandleCreated(object? sender, EventArgs e)
+    {
+        RequestPostOpenLayoutResizePass();
+    }
+
+    protected virtual void QueuePostOpenLayoutResizePass(MethodInvoker resizeAction)
+    {
+        InterfaceControl.BeginInvoke(resizeAction);
+    }
+
+    protected void SchedulePostOpenLayoutResizePass()
+    {
+        _postOpenLayoutResizePending = true;
+        HookPostOpenLayoutResize();
+        RequestPostOpenLayoutResizePass();
+    }
+
+    internal void RequestPostOpenLayoutResizePass()
+    {
+        if (!_postOpenLayoutResizePending)
+            return;
+
+        if (InterfaceControl.IsDisposed)
+        {
+            ResetPostOpenLayoutResizeState();
+            return;
+        }
+
+        if (!InterfaceControl.IsHandleCreated)
+            return;
+
+        try
+        {
+            QueuePostOpenLayoutResizePass((MethodInvoker)(() =>
+            {
+                if (!_postOpenLayoutResizePending || InterfaceControl.IsDisposed)
+                    return;
+
+                _postOpenLayoutResizePending = false;
+                UnhookPostOpenLayoutResize();
+                Resize(this, EventArgs.Empty);
+            }));
+        }
+        catch (ObjectDisposedException)
+        {
+            ResetPostOpenLayoutResizeState();
+        }
+        catch (InvalidOperationException)
+        {
+            // Handle may have been recreated between checks; keep pending and retry later.
+        }
+    }
+
+    public override bool Initialize()
+    {
+        if (!base.Initialize())
+            return false;
+
+        if (InterfaceControl != null)
+        {
+            InterfaceControl.Resize += Resize;
+        }
+
+        return true;
+    }
+
+    public override bool Connect()
+    {
+        string optionalTemporaryPrivateKeyPath = ""; // path to ppk file instead of password. only temporary (extracted from credential vault).
+        ResolvedSshCredential? credential = null;
+
+        try
+        {
+            StopTerminalTitleTracking();
+            ResetPostOpenLayoutResizeState();
+            _isPuttyNg = DetectIsPuttyNg();
+
+            // Validate PuttyPath to prevent command injection
+            PathValidator.ValidateExecutablePathOrThrow(PuttyPath ?? string.Empty, nameof(PuttyPath));
+
+            PuttyProcess = new Process
+            {
+                StartInfo =
+                {
+                    UseShellExecute = false,
+                    FileName = PuttyPath
+                }
+            };
+
+            CommandLineArguments arguments = new() { EscapeForShell = false };
+
+            arguments.Add("-load", InterfaceControl.Info.PuttySession);
+
+            if (!(InterfaceControl.Info is PuttySessionInfo))
+            {
+                arguments.Add("-" + PuttyProtocol);
+
+                if (PuttyProtocol == Putty_Protocol.ssh)
+                {
+
+                    credential = ResolveCredentials();
+                    ReplayCredentialDiagnostics(credential);
+
+                    // Provider-supplied key material is materialised to a temporary file so
+                    // PuTTY can load it with -i. Only Delinea and Passwordstate reach here;
+                    // the resolver withholds key material from the providers whose keys this
+                    // code path has always discarded.
+                    if (credential.HasKeyMaterial)
+                    {
+                        optionalTemporaryPrivateKeyPath = Path.GetTempFileName();
+                        File.WriteAllText(optionalTemporaryPrivateKeyPath, credential.RevealKeyMaterial());
+                        _ = new FileInfo(optionalTemporaryPrivateKeyPath)
+                        {
+                            Attributes = FileAttributes.Temporary
+                        };
+                    }
+
+                    // Auto-discovery is the resolver's job now; it reports a discovered key by
+                    // returning a path the connection did not configure.
+                    if (!string.IsNullOrEmpty(credential.PrivateKeyPath) &&
+                        !string.Equals(credential.PrivateKeyPath, InterfaceControl.Info?.PrivateKeyPath, StringComparison.Ordinal))
+                    {
+                        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+                            $"No private key configured; auto-discovered SSH key: {credential.PrivateKeyPath}", true);
+                    }
+
+
+                    arguments.Add("-" + (int)PuttySSHVersion);
+
+                    PuttyArgsAdapter credentialAdapter = new(GetPuttyVersion(), CreatePasswordPipeArgument);
+
+                    if (!Force.HasFlag(ConnectionInfo.Force.NoCredentials))
+                    {
+                        credentialAdapter.AppendLoginAndPassword(arguments, credential);
+                    }
+
+                    if (InterfaceControl.Info?.ExternalCredentialProvider == ExternalCredentialProvider.VaultOpenbao && InterfaceControl.Info?.VaultOpenbaoSecretEngine == VaultOpenbaoSecretEngine.SSHOTP) {
+                        if (!_isPuttyNg) {
+                            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, "Cannot connect to VaultOpenbao ssh otp without using puttyng to inject authenticator plugin");
+                            return false;
+                        }
+                        arguments.Add("-auth-plugin");
+                        string random = string.Join("", Guid.NewGuid().ToString("n").Take(8));
+                        string pipename = $"mRemoteNGSecretPipe{random}";
+                        // The plugin is handed the UNQUALIFIED username and matches it against
+                        // its data request, while -l on the same line carries the qualified
+                        // form. Collapsing the two breaks SSH-OTP whenever a domain is set.
+                        string otpUsername = credential.UnqualifiedUsername;
+                        string otpPassword = credential.RevealSecret();
+                        arguments.Add($"{App.Info.GeneralAppInfo.HomePath}\\vault-ssh-helper-plugin.exe {otpUsername} --pipeName={pipename}");
+                        System.Threading.Tasks.Task.Run(async () => {
+                            using NamedPipeServerStream server = CreatePipeServer(pipename);
+                            var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token;
+                            await server.WaitForConnectionAsync(cts);
+                            using var reader = new StreamReader(server, Utf8NoBom, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true);
+                            using var writer = new StreamWriter(server, Utf8NoBom, bufferSize: 1024, leaveOpen: true) { AutoFlush = true };
+                            string? pingMessage = await reader.ReadLineAsync(cts);
+                            if (!string.Equals(pingMessage, "ping", StringComparison.Ordinal)) throw new FormatException("Invalid ping from VaultOpenbao SSH OTP plugin");
+                            await writer.WriteLineAsync("pong");
+                            string dataRequest = await reader.ReadLineAsync(cts) ?? throw new FormatException("Invalid data request from VaultOpenbao SSH OTP plugin");
+                            var data = DeserializeData(dataRequest);
+                            if (data.Username != otpUsername || data.Hostname != InterfaceControl.Info.Hostname || data.Port != InterfaceControl.Info.Port)
+                                throw new FormatException("Mismatched data request from VaultOpenbao SSH OTP plugin");
+                            await writer.WriteLineAsync(otpPassword);
+                        }).ConfigureAwait(false);
+                    }
+
+                    // Provider-supplied key material wins, then the configured or discovered path.
+                    PuttyArgsAdapter.AppendIdentity(arguments, credential, optionalTemporaryPrivateKeyPath);
+                }
+
+                arguments.Add("-P", InterfaceControl.Info?.Port.ToString(CultureInfo.InvariantCulture) ?? "22");
+                arguments.Add(InterfaceControl.Info?.Hostname ?? "");
+            }
+
+            if (_isPuttyNg)
+            {
+                arguments.Add("-hwndparent", InterfaceControl.Handle.ToString(CultureInfo.InvariantCulture));
+            }
+
+            PuttyProcess.StartInfo.Arguments = arguments.ToString();
+            // add additional SSH options, f.e. tunnel or noshell parameters that may be specified for the connection
+            // Only apply to SSH protocols — SSHOptions must not leak to Telnet/Rlogin/Raw/Serial (#1056)
+            if (PuttyProtocol == Putty_Protocol.ssh && !string.IsNullOrEmpty(InterfaceControl.Info?.SSHOptions))
+            {
+                PuttyProcess.StartInfo.Arguments += " " + InterfaceControl.Info.SSHOptions;
+            }
+
+            LastBuiltArguments = PuttyProcess.StartInfo.Arguments;
+
+            PuttyProcess.EnableRaisingEvents = true;
+            PuttyProcess.Exited += ProcessExited;
+
+            // Start the process minimized for non-PuTTYNG so the window
+            // does not flash at its default position on screen before
+            // being reparented into the mRemoteNG panel.
+            if (!_isPuttyNg)
+            {
+                PuttyProcess.StartInfo.WindowStyle = ProcessWindowStyle.Minimized;
+            }
+
+            PuttyProcess.Start();
+            _processStartTicks = Environment.TickCount64;
+            ChildProcessTracker.AddProcess(PuttyProcess);
+
+            _windowSearchStartTime = Environment.TickCount;
+            _windowSearchTimer = new System.Windows.Forms.Timer();
+            _windowSearchTimer.Interval = 50;
+            _windowSearchTimer.Tick += WindowSearchTimer_Tick;
+            _windowSearchTimer.Start();
 
             return true;
         }
-
-        public override bool Connect()
+        catch (Exception ex)
         {
-            string optionalTemporaryPrivateKeyPath = ""; // path to ppk file instead of password. only temporary (extracted from credential vault).
-            ResolvedSshCredential? credential = null;
-
-            try
-            {
-                StopTerminalTitleTracking();
-                ResetPostOpenLayoutResizeState();
-                _isPuttyNg = DetectIsPuttyNg();
-
-                // Validate PuttyPath to prevent command injection
-                PathValidator.ValidateExecutablePathOrThrow(PuttyPath ?? string.Empty, nameof(PuttyPath));
-
-                PuttyProcess = new Process
-                {
-                    StartInfo =
-                    {
-                        UseShellExecute = false,
-                        FileName = PuttyPath
-                    }
-                };
-
-                CommandLineArguments arguments = new() { EscapeForShell = false };
-
-                arguments.Add("-load", InterfaceControl.Info.PuttySession);
-
-                if (!(InterfaceControl.Info is PuttySessionInfo))
-                {
-                    arguments.Add("-" + PuttyProtocol);
-
-                    if (PuttyProtocol == Putty_Protocol.ssh)
-                    {
-
-                        credential = ResolveCredentials();
-                        ReplayCredentialDiagnostics(credential);
-
-                        // Provider-supplied key material is materialised to a temporary file so
-                        // PuTTY can load it with -i. Only Delinea and Passwordstate reach here;
-                        // the resolver withholds key material from the providers whose keys this
-                        // code path has always discarded.
-                        if (credential.HasKeyMaterial)
-                        {
-                            optionalTemporaryPrivateKeyPath = Path.GetTempFileName();
-                            File.WriteAllText(optionalTemporaryPrivateKeyPath, credential.RevealKeyMaterial());
-                            _ = new FileInfo(optionalTemporaryPrivateKeyPath)
-                            {
-                                Attributes = FileAttributes.Temporary
-                            };
-                        }
-
-                        // Auto-discovery is the resolver's job now; it reports a discovered key by
-                        // returning a path the connection did not configure.
-                        if (!string.IsNullOrEmpty(credential.PrivateKeyPath) &&
-                            !string.Equals(credential.PrivateKeyPath, InterfaceControl.Info?.PrivateKeyPath, StringComparison.Ordinal))
-                        {
-                            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                                $"No private key configured; auto-discovered SSH key: {credential.PrivateKeyPath}", true);
-                        }
-
-
-                        arguments.Add("-" + (int)PuttySSHVersion);
-
-                        PuttyArgsAdapter credentialAdapter = new(GetPuttyVersion(), CreatePasswordPipeArgument);
-
-                        if (!Force.HasFlag(ConnectionInfo.Force.NoCredentials))
-                        {
-                            credentialAdapter.AppendLoginAndPassword(arguments, credential);
-                        }
-
-                        if (InterfaceControl.Info?.ExternalCredentialProvider == ExternalCredentialProvider.VaultOpenbao && InterfaceControl.Info?.VaultOpenbaoSecretEngine == VaultOpenbaoSecretEngine.SSHOTP) {
-                            if (!_isPuttyNg) {
-                                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, "Cannot connect to VaultOpenbao ssh otp without using puttyng to inject authenticator plugin");
-                                return false;
-                            }
-                            arguments.Add("-auth-plugin");
-                            string random = string.Join("", Guid.NewGuid().ToString("n").Take(8));
-                            string pipename = $"mRemoteNGSecretPipe{random}";
-                            // The plugin is handed the UNQUALIFIED username and matches it against
-                            // its data request, while -l on the same line carries the qualified
-                            // form. Collapsing the two breaks SSH-OTP whenever a domain is set.
-                            string otpUsername = credential.UnqualifiedUsername;
-                            string otpPassword = credential.RevealSecret();
-                            arguments.Add($"{App.Info.GeneralAppInfo.HomePath}\\vault-ssh-helper-plugin.exe {otpUsername} --pipeName={pipename}");
-                            System.Threading.Tasks.Task.Run(async () => {
-                                using NamedPipeServerStream server = CreatePipeServer(pipename);
-                                var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)).Token;
-                                await server.WaitForConnectionAsync(cts);
-                                using var reader = new StreamReader(server, Utf8NoBom, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true);
-                                using var writer = new StreamWriter(server, Utf8NoBom, bufferSize: 1024, leaveOpen: true) { AutoFlush = true };
-                                string? pingMessage = await reader.ReadLineAsync(cts);
-                                if (!string.Equals(pingMessage, "ping", StringComparison.Ordinal)) throw new FormatException("Invalid ping from VaultOpenbao SSH OTP plugin");
-                                await writer.WriteLineAsync("pong");
-                                string dataRequest = await reader.ReadLineAsync(cts) ?? throw new FormatException("Invalid data request from VaultOpenbao SSH OTP plugin");
-                                var data = DeserializeData(dataRequest);
-                                if (data.Username != otpUsername || data.Hostname != InterfaceControl.Info.Hostname || data.Port != InterfaceControl.Info.Port)
-                                    throw new FormatException("Mismatched data request from VaultOpenbao SSH OTP plugin");
-                                await writer.WriteLineAsync(otpPassword);
-                            }).ConfigureAwait(false);
-                        }
-
-                        // Provider-supplied key material wins, then the configured or discovered path.
-                        PuttyArgsAdapter.AppendIdentity(arguments, credential, optionalTemporaryPrivateKeyPath);
-                    }
-
-                    arguments.Add("-P", InterfaceControl.Info?.Port.ToString(CultureInfo.InvariantCulture) ?? "22");
-                    arguments.Add(InterfaceControl.Info?.Hostname ?? "");
-                }
-
-                if (_isPuttyNg)
-                {
-                    arguments.Add("-hwndparent", InterfaceControl.Handle.ToString(CultureInfo.InvariantCulture));
-                }
-
-                PuttyProcess.StartInfo.Arguments = arguments.ToString();
-                // add additional SSH options, f.e. tunnel or noshell parameters that may be specified for the connection
-                // Only apply to SSH protocols — SSHOptions must not leak to Telnet/Rlogin/Raw/Serial (#1056)
-                if (PuttyProtocol == Putty_Protocol.ssh && !string.IsNullOrEmpty(InterfaceControl.Info?.SSHOptions))
-                {
-                    PuttyProcess.StartInfo.Arguments += " " + InterfaceControl.Info.SSHOptions;
-                }
-
-                LastBuiltArguments = PuttyProcess.StartInfo.Arguments;
-
-                PuttyProcess.EnableRaisingEvents = true;
-                PuttyProcess.Exited += ProcessExited;
-
-                // Start the process minimized for non-PuTTYNG so the window
-                // does not flash at its default position on screen before
-                // being reparented into the mRemoteNG panel.
-                if (!_isPuttyNg)
-                {
-                    PuttyProcess.StartInfo.WindowStyle = ProcessWindowStyle.Minimized;
-                }
-
-                PuttyProcess.Start();
-                _processStartTicks = Environment.TickCount64;
-                ChildProcessTracker.AddProcess(PuttyProcess);
-
-                _windowSearchStartTime = Environment.TickCount;
-                _windowSearchTimer = new System.Windows.Forms.Timer();
-                _windowSearchTimer.Interval = 50;
-                _windowSearchTimer.Tick += WindowSearchTimer_Tick;
-                _windowSearchTimer.Start();
-
-                return true;
-            }
-            catch (Exception ex)
-            {
-                StopTerminalTitleTracking();
-                ResetPostOpenLayoutResizeState();
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ConnectionFailed + Environment.NewLine + ex.Message);
-                return false;
-            }
-            finally
-            {
-                credential?.Dispose();
-
-                // Securely wipe then delete the temporary private key file
-                if (!string.IsNullOrEmpty(optionalTemporaryPrivateKeyPath))
-                {
-                    System.Threading.Thread.Sleep(500);
-                    try
-                    {
-                        if (System.IO.File.Exists(optionalTemporaryPrivateKeyPath))
-                        {
-                            var fi = new System.IO.FileInfo(optionalTemporaryPrivateKeyPath);
-                            long length = fi.Length;
-                            using (var fs = new System.IO.FileStream(optionalTemporaryPrivateKeyPath, System.IO.FileMode.Open, System.IO.FileAccess.Write, System.IO.FileShare.None))
-                            {
-                                byte[] zeros = new byte[Math.Min(length, 4096)];
-                                long remaining = length;
-                                while (remaining > 0)
-                                {
-                                    int toWrite = (int)Math.Min(remaining, zeros.Length);
-                                    fs.Write(zeros, 0, toWrite);
-                                    remaining -= toWrite;
-                                }
-                                fs.Flush();
-                            }
-                        }
-                    }
-                    catch { /* best-effort wipe */ }
-                    try { System.IO.File.Delete(optionalTemporaryPrivateKeyPath); } catch { }
-                }
-            }
+            StopTerminalTitleTracking();
+            ResetPostOpenLayoutResizeState();
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ConnectionFailed + Environment.NewLine + ex.Message);
+            return false;
         }
-
-        public override void Focus()
+        finally
         {
-            try
+            credential?.Dispose();
+
+            // Securely wipe then delete the temporary private key file
+            if (!string.IsNullOrEmpty(optionalTemporaryPrivateKeyPath))
             {
-                if (PuttyHandle == IntPtr.Zero)
-                    return;
-
-                // Never pull foreground to PuTTY while the cursor is over the main window's
-                // non-client area (title bar / close button). Activating the main window by
-                // clicking its X fires an active-content-changed refocus that lands here; if it
-                // ran SetForegroundWindow(PuTTY) it would steal foreground back before the close
-                // button's SC_CLOSE is posted, so the window would not close (#110).
-                if (FrmMain.IsCreated && FrmMain.Default.IsCursorOverMainWindowNonClientArea())
-                    return;
-
-                IntPtr foregroundWindow = NativeMethods.GetForegroundWindow();
-                IntPtr connectionWindowHandle = InterfaceControl.FindForm()?.Handle ?? IntPtr.Zero;
-                IntPtr mainWindowHandle = FrmMain.IsCreated ? FrmMain.Default.Handle : IntPtr.Zero;
-
-                // Avoid stealing focus from unrelated windows during taskbar/app switching.
-                if (foregroundWindow != PuttyHandle &&
-                    foregroundWindow != connectionWindowHandle &&
-                    foregroundWindow != mainWindowHandle)
-                {
-                    return;
-                }
-
-                NativeMethods.SetForegroundWindow(PuttyHandle);
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.PuttyFocusFailed + Environment.NewLine + ex.Message, true);
-            }
-        }
-
-        protected override void Resize(object sender, EventArgs e)
-        {
-            try
-            {
-                if (_isResizing) return; // prevent reentrancy from MoveWindow triggering layout
-                if (InterfaceControl.Size == Size.Empty || PuttyHandle == IntPtr.Zero)
-                    return;
-
-                _isResizing = true;
-
-                Rectangle clientRect = InterfaceControl.ClientRectangle;
-
-                if (_isPuttyNg)
-                {
-                    // PuTTYNG creates a borderless child window — fill exactly
-                    NativeMethods.MoveWindow(PuttyHandle, clientRect.X, clientRect.Y, clientRect.Width, clientRect.Height, true);
-                }
-                else
-                {
-                    // Regular PuTTY retains its title bar and borders after SetParent.
-                    // Offset the window so chrome is pushed outside the visible area,
-                    // showing only the terminal content.
-                    NativeMethods.MoveWindow(PuttyHandle, clientRect.X - 8, clientRect.Y - 30, clientRect.Width + 16, clientRect.Height + 38, true);
-                }
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.PuttyResizeFailed + Environment.NewLine + ex.Message, true);
-            }
-            finally
-            {
-                _isResizing = false;
-            }
-        }
-
-        public override void OnPowerModeChanged(PowerModes powerMode)
-        {
-            if (powerMode != PowerModes.Resume)
-                return;
-
-            // After hibernate/sleep, GPU and display drivers may take a variable amount
-            // of time to restore.  Fire multiple resize attempts with increasing delays
-            // so the PuTTY window fills its container as soon as the UI is ready.
-            int[] delays = PowerModeChangedResizeDelay == 0
-                ? [0]  // test override — single immediate attempt
-                : [PowerModeChangedResizeDelay, PowerModeChangedResizeDelay * 2, PowerModeChangedResizeDelay * 4];
-
-            foreach (int delay in delays)
-            {
-                ScheduleResizeAfterDelay(delay);
-            }
-
-            // Mark SSH sessions for auto-reconnect: if the PuTTY process exits with a
-            // network error shortly after resume, we reconnect automatically instead of
-            // showing the "connection closed" state.
-            if (PuttyProtocol == Putty_Protocol.ssh && isRunning())
-            {
-                _pendingResumeReconnect = true;
-                _resumeEventTickCount = Environment.TickCount64;
-            }
-        }
-
-        private void ScheduleResizeAfterDelay(int delayMs)
-        {
-            void DoResize()
-            {
+                System.Threading.Thread.Sleep(500);
                 try
                 {
-                    if (InterfaceControl != null && !InterfaceControl.IsDisposed && InterfaceControl.IsHandleCreated)
+                    if (System.IO.File.Exists(optionalTemporaryPrivateKeyPath))
                     {
-                        InterfaceControl.BeginInvoke((MethodInvoker)(() => Resize(this, EventArgs.Empty)));
+                        var fi = new System.IO.FileInfo(optionalTemporaryPrivateKeyPath);
+                        long length = fi.Length;
+                        using (var fs = new System.IO.FileStream(optionalTemporaryPrivateKeyPath, System.IO.FileMode.Open, System.IO.FileAccess.Write, System.IO.FileShare.None))
+                        {
+                            byte[] zeros = new byte[Math.Min(length, 4096)];
+                            long remaining = length;
+                            while (remaining > 0)
+                            {
+                                int toWrite = (int)Math.Min(remaining, zeros.Length);
+                                fs.Write(zeros, 0, toWrite);
+                                remaining -= toWrite;
+                            }
+                            fs.Flush();
+                        }
                     }
                 }
-                catch (Exception)
-                {
-                    _ = 0; // Ignore if we can't invoke (e.g. app closing)
-                }
+                catch { /* best-effort wipe */ }
+                try { System.IO.File.Delete(optionalTemporaryPrivateKeyPath); } catch { }
             }
+        }
+    }
 
-            if (delayMs <= 0)
+    public override void Focus()
+    {
+        try
+        {
+            if (PuttyHandle == IntPtr.Zero)
+                return;
+
+            // Never pull foreground to PuTTY while the cursor is over the main window's
+            // non-client area (title bar / close button). Activating the main window by
+            // clicking its X fires an active-content-changed refocus that lands here; if it
+            // ran SetForegroundWindow(PuTTY) it would steal foreground back before the close
+            // button's SC_CLOSE is posted, so the window would not close (#110).
+            if (FrmMain.IsCreated && FrmMain.Default.IsCursorOverMainWindowNonClientArea())
+                return;
+
+            IntPtr foregroundWindow = NativeMethods.GetForegroundWindow();
+            IntPtr connectionWindowHandle = InterfaceControl.FindForm()?.Handle ?? IntPtr.Zero;
+            IntPtr mainWindowHandle = FrmMain.IsCreated ? FrmMain.Default.Handle : IntPtr.Zero;
+
+            // Avoid stealing focus from unrelated windows during taskbar/app switching.
+            if (foregroundWindow != PuttyHandle &&
+                foregroundWindow != connectionWindowHandle &&
+                foregroundWindow != mainWindowHandle)
             {
-                DoResize();
                 return;
             }
 
-            System.Threading.Tasks.Task.Delay(delayMs).ContinueWith(_ => DoResize(),
-                System.Threading.Tasks.TaskScheduler.Default);
+            NativeMethods.SetForegroundWindow(PuttyHandle);
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.PuttyFocusFailed + Environment.NewLine + ex.Message, true);
+        }
+    }
+
+    protected override void Resize(object sender, EventArgs e)
+    {
+        try
+        {
+            if (_isResizing) return; // prevent reentrancy from MoveWindow triggering layout
+            if (InterfaceControl.Size == Size.Empty || PuttyHandle == IntPtr.Zero)
+                return;
+
+            _isResizing = true;
+
+            Rectangle clientRect = InterfaceControl.ClientRectangle;
+
+            if (_isPuttyNg)
+            {
+                // PuTTYNG creates a borderless child window — fill exactly
+                NativeMethods.MoveWindow(PuttyHandle, clientRect.X, clientRect.Y, clientRect.Width, clientRect.Height, true);
+            }
+            else
+            {
+                // Regular PuTTY retains its title bar and borders after SetParent.
+                // Offset the window so chrome is pushed outside the visible area,
+                // showing only the terminal content.
+                NativeMethods.MoveWindow(PuttyHandle, clientRect.X - 8, clientRect.Y - 30, clientRect.Width + 16, clientRect.Height + 38, true);
+            }
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.PuttyResizeFailed + Environment.NewLine + ex.Message, true);
+        }
+        finally
+        {
+            _isResizing = false;
+        }
+    }
+
+    public override void OnPowerModeChanged(PowerModes powerMode)
+    {
+        if (powerMode != PowerModes.Resume)
+            return;
+
+        // After hibernate/sleep, GPU and display drivers may take a variable amount
+        // of time to restore.  Fire multiple resize attempts with increasing delays
+        // so the PuTTY window fills its container as soon as the UI is ready.
+        int[] delays = PowerModeChangedResizeDelay == 0
+            ? [0]  // test override — single immediate attempt
+            : [PowerModeChangedResizeDelay, PowerModeChangedResizeDelay * 2, PowerModeChangedResizeDelay * 4];
+
+        foreach (int delay in delays)
+        {
+            ScheduleResizeAfterDelay(delay);
         }
 
-        private bool IsSshTunnelSession()
+        // Mark SSH sessions for auto-reconnect: if the PuTTY process exits with a
+        // network error shortly after resume, we reconnect automatically instead of
+        // showing the "connection closed" state.
+        if (PuttyProtocol == Putty_Protocol.ssh && isRunning())
         {
-            ConnectionInfo? info = InterfaceControl?.Info;
-            if (info == null)
-                return false;
+            _pendingResumeReconnect = true;
+            _resumeEventTickCount = Environment.TickCount64;
+        }
+    }
 
-            if (info.Protocol != ProtocolType.SSH1 && info.Protocol != ProtocolType.SSH2)
-                return false;
-
-            string sshOptions = info.SSHOptions ?? string.Empty;
-            return sshOptions.Contains(" -L ", StringComparison.OrdinalIgnoreCase) ||
-                   sshOptions.StartsWith("-L ", StringComparison.OrdinalIgnoreCase);
+    private void ScheduleResizeAfterDelay(int delayMs)
+    {
+        void DoResize()
+        {
+            try
+            {
+                if (InterfaceControl != null && !InterfaceControl.IsDisposed && InterfaceControl.IsHandleCreated)
+                {
+                    InterfaceControl.BeginInvoke((MethodInvoker)(() => Resize(this, EventArgs.Empty)));
+                }
+            }
+            catch (Exception)
+            {
+                _ = 0; // Ignore if we can't invoke (e.g. app closing)
+            }
         }
 
-        private bool TryClosePuttyGracefully()
+        if (delayMs <= 0)
         {
-            if (PuttyProcess == null || PuttyProcess.HasExited)
+            DoResize();
+            return;
+        }
+
+        System.Threading.Tasks.Task.Delay(delayMs).ContinueWith(_ => DoResize(),
+            System.Threading.Tasks.TaskScheduler.Default);
+    }
+
+    private bool IsSshTunnelSession()
+    {
+        ConnectionInfo? info = InterfaceControl?.Info;
+        if (info == null)
+            return false;
+
+        if (info.Protocol != ProtocolType.SSH1 && info.Protocol != ProtocolType.SSH2)
+            return false;
+
+        string sshOptions = info.SSHOptions ?? string.Empty;
+        return sshOptions.Contains(" -L ", StringComparison.OrdinalIgnoreCase) ||
+               sshOptions.StartsWith("-L ", StringComparison.OrdinalIgnoreCase);
+    }
+
+    private bool TryClosePuttyGracefully()
+    {
+        if (PuttyProcess == null || PuttyProcess.HasExited)
+            return true;
+
+        bool closeRequested = false;
+        if (PuttyHandle != IntPtr.Zero)
+        {
+            closeRequested = NativeMethods.PostMessage(
+                PuttyHandle,
+                NativeMethods.WM_CLOSE,
+                IntPtr.Zero,
+                IntPtr.Zero);
+        }
+
+        if (!closeRequested)
+            closeRequested = PuttyProcess.CloseMainWindow();
+
+        if (!closeRequested)
+            return false;
+
+        // PuTTY answers WM_CLOSE with its own "Are you sure you want to close this
+        // session?" box whenever warn-on-close is enabled for the session. mRemoteNG
+        // already asked the user to confirm the disconnect, so acknowledge that box on
+        // their behalf instead of making them answer the same question twice.
+        int waitedMs = 0;
+        while (waitedMs < GracefulCloseTimeoutMs)
+        {
+            if (PuttyProcess.WaitForExit(GracefulClosePollIntervalMs))
                 return true;
 
-            bool closeRequested = false;
+            waitedMs += GracefulClosePollIntervalMs;
+            DismissPuttyExitConfirmation();
+        }
+
+        return PuttyProcess.HasExited;
+    }
+
+    private void DismissPuttyExitConfirmation()
+    {
+        IntPtr confirmationDialog = FindPuttyExitConfirmationDialog();
+        if (confirmationDialog == IntPtr.Zero)
+            return;
+
+        NativeMethods.PostMessage(confirmationDialog,
+            NativeMethods.WM_COMMAND,
+            (IntPtr)MessageBoxIdOk,
+            IntPtr.Zero);
+    }
+
+    private IntPtr FindPuttyExitConfirmationDialog()
+    {
+        uint puttyProcessId;
+        try
+        {
+            if (PuttyProcess == null)
+                return IntPtr.Zero;
+
+            puttyProcessId = (uint)PuttyProcess.Id;
+        }
+        catch (InvalidOperationException)
+        {
+            return IntPtr.Zero;
+        }
+
+        IntPtr dialogHandle = IntPtr.Zero;
+
+        NativeMethods.EnumWindows((hWnd, lParam) =>
+        {
+            _ = NativeMethods.GetWindowThreadProcessId(hWnd, out uint windowProcessId);
+            if (windowProcessId != puttyProcessId)
+                return true;
+
+            StringBuilder className = new(WindowTextBufferLength);
+            _ = NativeMethods.GetClassName(hWnd, className, className.Capacity);
+
+            StringBuilder windowTitle = new(WindowTextBufferLength);
+            _ = NativeMethods.GetWindowText(hWnd, windowTitle, windowTitle.Capacity);
+
+            if (!IsPuttyExitConfirmation(className.ToString(), windowTitle.ToString()))
+                return true;
+
+            dialogHandle = hWnd;
+            return false;
+        }, IntPtr.Zero);
+
+        return dialogHandle;
+    }
+
+    /// <summary>
+    /// Identifies PuTTY's warn-on-close message box. Only that box may be answered
+    /// automatically - every other PuTTY dialog (host key security alert, settings)
+    /// must stay under user control.
+    /// </summary>
+    internal static bool IsPuttyExitConfirmation(string windowClassName, string windowTitle)
+    {
+        return string.Equals(windowClassName, DialogWindowClassName, StringComparison.Ordinal) &&
+               windowTitle.Contains(PuttyExitConfirmationTitle, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public override void Close()
+    {
+        if (InterfaceControl != null)
+        {
+            InterfaceControl.Resize -= Resize;
+        }
+
+        StopTerminalTitleTracking();
+        StopWindowSearch();
+        StopOpeningCommandTimer();
+        ResetPostOpenLayoutResizeState();
+
+        try
+        {
+            if (PuttyProcess?.HasExited == false)
+            {
+                bool processExited = TryClosePuttyGracefully();
+                if (!processExited && !IsSshTunnelSession())
+                {
+                    PuttyProcess.Kill();
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.PuttyKillFailed + Environment.NewLine + ex.Message, true);
+        }
+
+        try
+        {
+            PuttyProcess?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.PuttyDisposeFailed + Environment.NewLine + ex.Message, true);
+        }
+
+        base.Close();
+    }
+
+    public void ShowSettingsDialog()
+    {
+        try
+        {
+            NativeMethods.PostMessage(PuttyHandle, NativeMethods.WM_SYSCOMMAND, (IntPtr)IDM_RECONF, (IntPtr)0);
+            NativeMethods.SetForegroundWindow(PuttyHandle);
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.PuttyShowSettingsDialogFailed + Environment.NewLine + ex.Message, true);
+        }
+    }
+
+    public void CopyAllToClipboard()
+    {
+        try
+        {
             if (PuttyHandle != IntPtr.Zero)
             {
-                closeRequested = NativeMethods.PostMessage(
-                    PuttyHandle,
-                    NativeMethods.WM_CLOSE,
-                    IntPtr.Zero,
-                    IntPtr.Zero);
+                NativeMethods.PostMessage(PuttyHandle, NativeMethods.WM_SYSCOMMAND, (IntPtr)0x0170, IntPtr.Zero);
             }
-
-            if (!closeRequested)
-                closeRequested = PuttyProcess.CloseMainWindow();
-
-            if (!closeRequested)
-                return false;
-
-            // PuTTY answers WM_CLOSE with its own "Are you sure you want to close this
-            // session?" box whenever warn-on-close is enabled for the session. mRemoteNG
-            // already asked the user to confirm the disconnect, so acknowledge that box on
-            // their behalf instead of making them answer the same question twice.
-            int waitedMs = 0;
-            while (waitedMs < GracefulCloseTimeoutMs)
-            {
-                if (PuttyProcess.WaitForExit(GracefulClosePollIntervalMs))
-                    return true;
-
-                waitedMs += GracefulClosePollIntervalMs;
-                DismissPuttyExitConfirmation();
-            }
-
-            return PuttyProcess.HasExited;
         }
-
-        private void DismissPuttyExitConfirmation()
+        catch (Exception ex)
         {
-            IntPtr confirmationDialog = FindPuttyExitConfirmationDialog();
-            if (confirmationDialog == IntPtr.Zero)
-                return;
-
-            NativeMethods.PostMessage(confirmationDialog,
-                                      NativeMethods.WM_COMMAND,
-                                      (IntPtr)MessageBoxIdOk,
-                                      IntPtr.Zero);
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, "Failed to copy session output to clipboard: " + ex.Message, true);
         }
+    }
 
-        private IntPtr FindPuttyExitConfirmationDialog()
-        {
-            uint puttyProcessId;
-            try
-            {
-                if (PuttyProcess == null)
-                    return IntPtr.Zero;
+    #endregion
 
-                puttyProcessId = (uint)PuttyProcess.Id;
-            }
-            catch (InvalidOperationException)
-            {
-                return IntPtr.Zero;
-            }
-
-            IntPtr dialogHandle = IntPtr.Zero;
-
-            NativeMethods.EnumWindows((hWnd, lParam) =>
-            {
-                _ = NativeMethods.GetWindowThreadProcessId(hWnd, out uint windowProcessId);
-                if (windowProcessId != puttyProcessId)
-                    return true;
-
-                StringBuilder className = new(WindowTextBufferLength);
-                _ = NativeMethods.GetClassName(hWnd, className, className.Capacity);
-
-                StringBuilder windowTitle = new(WindowTextBufferLength);
-                _ = NativeMethods.GetWindowText(hWnd, windowTitle, windowTitle.Capacity);
-
-                if (!IsPuttyExitConfirmation(className.ToString(), windowTitle.ToString()))
-                    return true;
-
-                dialogHandle = hWnd;
-                return false;
-            }, IntPtr.Zero);
-
-            return dialogHandle;
-        }
-
-        /// <summary>
-        /// Identifies PuTTY's warn-on-close message box. Only that box may be answered
-        /// automatically - every other PuTTY dialog (host key security alert, settings)
-        /// must stay under user control.
-        /// </summary>
-        internal static bool IsPuttyExitConfirmation(string windowClassName, string windowTitle)
-        {
-            return string.Equals(windowClassName, DialogWindowClassName, StringComparison.Ordinal) &&
-                   windowTitle.Contains(PuttyExitConfirmationTitle, StringComparison.OrdinalIgnoreCase);
-        }
-
-        public override void Close()
-        {
-            if (InterfaceControl != null)
-            {
-                InterfaceControl.Resize -= Resize;
-            }
-
-            StopTerminalTitleTracking();
-            StopWindowSearch();
-            StopOpeningCommandTimer();
-            ResetPostOpenLayoutResizeState();
-
-            try
-            {
-                if (PuttyProcess?.HasExited == false)
-                {
-                    bool processExited = TryClosePuttyGracefully();
-                    if (!processExited && !IsSshTunnelSession())
-                    {
-                        PuttyProcess.Kill();
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.PuttyKillFailed + Environment.NewLine + ex.Message, true);
-            }
-
-            try
-            {
-                PuttyProcess?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.PuttyDisposeFailed + Environment.NewLine + ex.Message, true);
-            }
-
-            base.Close();
-        }
-
-        public void ShowSettingsDialog()
-        {
-            try
-            {
-                NativeMethods.PostMessage(PuttyHandle, NativeMethods.WM_SYSCOMMAND, (IntPtr)IDM_RECONF, (IntPtr)0);
-                NativeMethods.SetForegroundWindow(PuttyHandle);
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.PuttyShowSettingsDialogFailed + Environment.NewLine + ex.Message, true);
-            }
-        }
-
-        public void CopyAllToClipboard()
-        {
-            try
-            {
-                if (PuttyHandle != IntPtr.Zero)
-                {
-                    NativeMethods.PostMessage(PuttyHandle, NativeMethods.WM_SYSCOMMAND, (IntPtr)0x0170, IntPtr.Zero);
-                }
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, "Failed to copy session output to clipboard: " + ex.Message, true);
-            }
-        }
-
-        #endregion
-
-        #region Enums
+    #region Enums
 
 #pragma warning disable CA1707 // Legacy PuTTY protocol enum names; renaming would require updating all subclasses
-        protected enum Putty_Protocol
-        {
-            ssh = 0,
-            telnet = 1,
-            rlogin = 2,
-            raw = 3,
-            serial = 4
-        }
+    protected enum Putty_Protocol
+    {
+        ssh = 0,
+        telnet = 1,
+        rlogin = 2,
+        raw = 3,
+        serial = 4
+    }
 
-        protected enum Putty_SSHVersion
-        {
-            ssh1 = 1,
-            ssh2 = 2
-        }
+    protected enum Putty_SSHVersion
+    {
+        ssh1 = 1,
+        ssh2 = 2
+    }
 #pragma warning restore CA1707
 
-        #endregion
+    #endregion
 
-        #region Private Helpers
+    #region Private Helpers
 
-        private static string? FindDefaultSshKey()
-        {
-            string sshDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
-            if (!Directory.Exists(sshDir))
-                return null;
-
-            // Only auto-discover PuTTY-native .ppk keys (#108). PuTTY/plink can load an
-            // OpenSSH-format private key via -i only on v0.75+; older clients print
-            // "Unable to use key file ... (OpenSSH SSH-2 private key (new format))" and
-            // skip it, which surprises users and wastes an auth round-trip (can trip a
-            // server MaxAuthTries limit before pageant/agent auth is even tried). A .ppk
-            // is loadable by every PuTTY version, so restrict discovery to that.
-            string[] defaultKeyNames =
-            [
-                "id_ed25519.ppk", "id_rsa.ppk", "id_ecdsa.ppk"
-            ];
-            foreach (string keyName in defaultKeyNames)
-            {
-                string candidate = Path.Combine(sshDir, keyName);
-                if (File.Exists(candidate))
-                    return candidate;
-            }
+    private static string? FindDefaultSshKey()
+    {
+        string sshDir = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
+        if (!Directory.Exists(sshDir))
             return null;
-        }
 
-        #endregion
-
-        #region VaultOpenbaoUtils
-        private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
-        private static NamedPipeServerStream CreatePipeServer(string pipeName) {
-            var pipeSecurity = new PipeSecurity();
-            using var identity = WindowsIdentity.GetCurrent();
-            var sid = identity.Owner ?? identity.User ?? throw new InvalidOperationException("Unable to determine current user SID.");
-            pipeSecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
-            pipeSecurity.AddAccessRule(new PipeAccessRule(sid, PipeAccessRights.FullControl, AccessControlType.Allow));
-
-            return NamedPipeServerStreamAcl.Create(
-                pipeName: pipeName,
-                direction: PipeDirection.InOut,
-                maxNumberOfServerInstances: 1,
-                transmissionMode: PipeTransmissionMode.Byte,
-                options: PipeOptions.Asynchronous,
-                inBufferSize: 0,
-                outBufferSize: 0,
-                pipeSecurity);
-        }
-        private static new string EscapeSendKeys(string str)
+        // Only auto-discover PuTTY-native .ppk keys (#108). PuTTY/plink can load an
+        // OpenSSH-format private key via -i only on v0.75+; older clients print
+        // "Unable to use key file ... (OpenSSH SSH-2 private key (new format))" and
+        // skip it, which surprises users and wastes an auth round-trip (can trip a
+        // server MaxAuthTries limit before pageant/agent auth is even tried). A .ppk
+        // is loadable by every PuTTY version, so restrict discovery to that.
+        string[] defaultKeyNames =
+        [
+            "id_ed25519.ppk", "id_rsa.ppk", "id_ecdsa.ppk"
+        ];
+        foreach (string keyName in defaultKeyNames)
         {
-            var sb = new StringBuilder();
-            foreach (char c in str)
-            {
-                if (c == '+' || c == '^' || c == '%' || c == '~' || c == '!' ||
-                    c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']')
-                {
-                    sb.Append('{');
-                    sb.Append(c);
-                    sb.Append('}');
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-            }
-            return sb.ToString();
+            string candidate = Path.Combine(sshDir, keyName);
+            if (File.Exists(candidate))
+                return candidate;
         }
-
-        private static (string Username, string Hostname, uint Port) DeserializeData(string data) {
-            var strings = data.Split(':');
-            if (strings.Length != 3) {
-                throw new FormatException("Invalid data format");
-            }
-            return (
-                Encoding.UTF8.GetString(Convert.FromBase64String(strings[0])),
-                Encoding.UTF8.GetString(Convert.FromBase64String(strings[1])),
-                uint.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(strings[2])), CultureInfo.InvariantCulture)
-            );
-        }
-        #endregion
+        return null;
     }
+
+    #endregion
+
+    #region VaultOpenbaoUtils
+    private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+    private static NamedPipeServerStream CreatePipeServer(string pipeName) {
+        var pipeSecurity = new PipeSecurity();
+        using var identity = WindowsIdentity.GetCurrent();
+        var sid = identity.Owner ?? identity.User ?? throw new InvalidOperationException("Unable to determine current user SID.");
+        pipeSecurity.SetAccessRuleProtection(isProtected: true, preserveInheritance: false);
+        pipeSecurity.AddAccessRule(new PipeAccessRule(sid, PipeAccessRights.FullControl, AccessControlType.Allow));
+
+        return NamedPipeServerStreamAcl.Create(
+            pipeName: pipeName,
+            direction: PipeDirection.InOut,
+            maxNumberOfServerInstances: 1,
+            transmissionMode: PipeTransmissionMode.Byte,
+            options: PipeOptions.Asynchronous,
+            inBufferSize: 0,
+            outBufferSize: 0,
+            pipeSecurity);
+    }
+    private static new string EscapeSendKeys(string str)
+    {
+        var sb = new StringBuilder();
+        foreach (char c in str)
+        {
+            if (c == '+' || c == '^' || c == '%' || c == '~' || c == '!' ||
+                c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']')
+            {
+                sb.Append('{');
+                sb.Append(c);
+                sb.Append('}');
+            }
+            else
+            {
+                sb.Append(c);
+            }
+        }
+        return sb.ToString();
+    }
+
+    private static (string Username, string Hostname, uint Port) DeserializeData(string data) {
+        var strings = data.Split(':');
+        if (strings.Length != 3) {
+            throw new FormatException("Invalid data format");
+        }
+        return (
+            Encoding.UTF8.GetString(Convert.FromBase64String(strings[0])),
+            Encoding.UTF8.GetString(Convert.FromBase64String(strings[1])),
+            uint.Parse(Encoding.UTF8.GetString(Convert.FromBase64String(strings[2])), CultureInfo.InvariantCulture)
+        );
+    }
+    #endregion
 }

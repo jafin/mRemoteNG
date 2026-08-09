@@ -6,49 +6,48 @@ using mRemoteNG.Config;
 using mRemoteNG.Config.DataProviders;
 using mRemoteNG.Config.Serializers;
 
-namespace mRemoteNG.Credential.Repositories
+namespace mRemoteNG.Credential.Repositories;
+
+[SupportedOSPlatform("windows")]
+public class XmlCredentialRepositoryFactory
 {
-    [SupportedOSPlatform("windows")]
-    public class XmlCredentialRepositoryFactory
+    private readonly ISecureSerializer<IEnumerable<ICredentialRecord>, string> _serializer;
+    private readonly ISecureDeserializer<string, IEnumerable<ICredentialRecord>> _deserializer;
+
+    public XmlCredentialRepositoryFactory(ISecureSerializer<IEnumerable<ICredentialRecord>, string> serializer,
+        ISecureDeserializer<string, IEnumerable<ICredentialRecord>> deserializer)
     {
-        private readonly ISecureSerializer<IEnumerable<ICredentialRecord>, string> _serializer;
-        private readonly ISecureDeserializer<string, IEnumerable<ICredentialRecord>> _deserializer;
+        ArgumentNullException.ThrowIfNull(serializer);
+        ArgumentNullException.ThrowIfNull(deserializer);
+        _serializer = serializer;
+        _deserializer = deserializer;
+    }
 
-        public XmlCredentialRepositoryFactory(ISecureSerializer<IEnumerable<ICredentialRecord>, string> serializer,
-                                              ISecureDeserializer<string, IEnumerable<ICredentialRecord>> deserializer)
-        {
-            ArgumentNullException.ThrowIfNull(serializer);
-            ArgumentNullException.ThrowIfNull(deserializer);
-            _serializer = serializer;
-            _deserializer = deserializer;
-        }
+    public ICredentialRepository Build(ICredentialRepositoryConfig config)
+    {
+        return BuildXmlRepo(config);
+    }
 
-        public ICredentialRepository Build(ICredentialRepositoryConfig config)
+    public ICredentialRepository Build(XElement repositoryXElement)
+    {
+        string? stringId = repositoryXElement.Attribute("Id")?.Value;
+        Guid id;
+        _ = Guid.TryParse(stringId, out id);
+        if (id.Equals(Guid.Empty)) id = Guid.NewGuid();
+        CredentialRepositoryConfig config = new(id)
         {
-            return BuildXmlRepo(config);
-        }
+            TypeName = repositoryXElement.Attribute("TypeName")?.Value ?? "",
+            Title = repositoryXElement.Attribute("Title")?.Value ?? "New Credential Repository",
+            Source = repositoryXElement.Attribute("Source")?.Value ?? ""
+        };
+        return BuildXmlRepo(config);
+    }
 
-        public ICredentialRepository Build(XElement repositoryXElement)
-        {
-            string? stringId = repositoryXElement.Attribute("Id")?.Value;
-            Guid id;
-            _ = Guid.TryParse(stringId, out id);
-            if (id.Equals(Guid.Empty)) id = Guid.NewGuid();
-            CredentialRepositoryConfig config = new(id)
-            {
-                TypeName = repositoryXElement.Attribute("TypeName")?.Value ?? "",
-                Title = repositoryXElement.Attribute("Title")?.Value ?? "New Credential Repository",
-                Source = repositoryXElement.Attribute("Source")?.Value ?? ""
-            };
-            return BuildXmlRepo(config);
-        }
-
-        private ICredentialRepository BuildXmlRepo(ICredentialRepositoryConfig config)
-        {
-            FileDataProvider dataProvider = new(config.Source);
-            CredentialRecordSaver saver = new(dataProvider, _serializer);
-            CredentialRecordLoader loader = new(dataProvider, _deserializer);
-            return new XmlCredentialRepository(config, saver, loader);
-        }
+    private ICredentialRepository BuildXmlRepo(ICredentialRepositoryConfig config)
+    {
+        FileDataProvider dataProvider = new(config.Source);
+        CredentialRecordSaver saver = new(dataProvider, _serializer);
+        CredentialRecordLoader loader = new(dataProvider, _deserializer);
+        return new XmlCredentialRepository(config, saver, loader);
     }
 }

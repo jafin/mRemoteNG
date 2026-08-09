@@ -1,7 +1,6 @@
-﻿namespace mRemoteNG.Tree.ClickHandlers
+﻿namespace mRemoteNG.Tree.ClickHandlers;
+
+public interface ITreeNodeClickHandler<in T>
 {
-    public interface ITreeNodeClickHandler<in T>
-    {
-        void Execute(T clickedNode);
-    }
+    void Execute(T clickedNode);
 }

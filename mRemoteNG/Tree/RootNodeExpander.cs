@@ -1,14 +1,13 @@
 ﻿using mRemoteNG.UI.Controls.ConnectionTree;
 
 
-namespace mRemoteNG.Tree
+namespace mRemoteNG.Tree;
+
+public class RootNodeExpander : IConnectionTreeDelegate
 {
-    public class RootNodeExpander : IConnectionTreeDelegate
+    public void Execute(IConnectionTree connectionTree)
     {
-        public void Execute(IConnectionTree connectionTree)
-        {
-            Root.RootNodeInfo rootConnectionNode = connectionTree.GetRootConnectionNode();
-            connectionTree.InvokeExpand(rootConnectionNode);
-        }
+        Root.RootNodeInfo rootConnectionNode = connectionTree.GetRootConnectionNode();
+        connectionTree.InvokeExpand(rootConnectionNode);
     }
 }

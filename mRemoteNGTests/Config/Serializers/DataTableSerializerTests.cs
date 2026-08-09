@@ -1,5 +1,4 @@
 ﻿using System.Data;
-using System.Linq;
 using System.Security;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Sql;
 using mRemoteNG.Connection;

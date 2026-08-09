@@ -1,10 +1,4 @@
-﻿using Microsoft.IdentityModel.Tokens;
-
-using mRemoteNG.App.Update;
-using mRemoteNG.Config.Settings;
-using mRemoteNG.UI.Forms;
-using mRemoteNG.Resources.Language;
-using System;
+﻿using System;
 using System.Configuration;
 using System.Diagnostics;
 using System.Drawing;
@@ -16,554 +10,559 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
+using mRemoteNG.App.Update;
+using mRemoteNG.Config.Settings;
+using mRemoteNG.Resources.Language;
+using mRemoteNG.UI.Forms;
 using WeifenLuo.WinFormsUI.Docking;
 
+namespace mRemoteNG.App;
 
-
-namespace mRemoteNG.App
+[SupportedOSPlatform("windows")]
+public static class ProgramRoot
 {
-    [SupportedOSPlatform("windows")]
-    public static class ProgramRoot
+    private static Mutex? _mutex;
+    private static string customResourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Languages");
+
+    private static FrmSplashScreenNew? _splash;
+
+    [STAThread]
+    public static void Main(string[] args)
     {
-        private static Mutex? _mutex;
-        private static string customResourcePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Languages");
-
-        private static FrmSplashScreenNew? _splash;
-
-        [STAThread]
-        public static void Main(string[] args)
+        // Smoke test: --version prints version and exits immediately (no GUI)
+        if (args.Length > 0 && string.Equals(args[0], "--version", StringComparison.Ordinal))
         {
-            // Smoke test: --version prints version and exits immediately (no GUI)
-            if (args.Length > 0 && string.Equals(args[0], "--version", StringComparison.Ordinal))
-            {
-                var version = Assembly.GetExecutingAssembly()
-                    .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
-                    ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
-                    ?? "unknown";
-                Console.WriteLine(version);
-                Environment.Exit(0);
-            }
-
-            // Must be called before any other WinForms API usage so that
-            // per-monitor font scaling is initialised correctly from the very
-            // first UI operation (upstream: 193cfd5c2).
-            Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
-
-            // Initialize dev-mode verbose logging (active only if verbose.log.enable exists)
-            DevLog.Initialize();
-
-            // Ensure the real entry point is definitely STA
-            MainAsync(args).GetAwaiter().GetResult();
+            var version = Assembly.GetExecutingAssembly()
+                              .GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion
+                          ?? Assembly.GetExecutingAssembly().GetName().Version?.ToString()
+                          ?? "unknown";
+            Console.WriteLine(version);
+            Environment.Exit(0);
         }
 
-        private static Task MainAsync(string[] args)
+        // Must be called before any other WinForms API usage so that
+        // per-monitor font scaling is initialised correctly from the very
+        // first UI operation (upstream: 193cfd5c2).
+        Application.SetHighDpiMode(HighDpiMode.PerMonitorV2);
+
+        // Initialize dev-mode verbose logging (active only if verbose.log.enable exists)
+        DevLog.Initialize();
+
+        // Ensure the real entry point is definitely STA
+        MainAsync(args).GetAwaiter().GetResult();
+    }
+
+    private static Task MainAsync(string[] args)
+    {
+        System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
+        AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
+        MigrateStaleCultureFolders();
+
+        CommandLineParser commandLineParser = new(args);
+        commandLineParser.ApplySwitches();
+        args = commandLineParser.GetNormalizedArguments();
+
+        // Runtime checks only needed for framework-dependent deployments.
+        // Self-contained builds embed coreclr.dll next to the exe — skip checks.
+        var isSelfContained = File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "coreclr.dll"));
+
+        if (!isSelfContained)
         {
-            System.Text.Encoding.RegisterProvider(System.Text.CodePagesEncodingProvider.Instance);
-            AppDomain.CurrentDomain.AssemblyResolve += OnAssemblyResolve;
-            MigrateStaleCultureFolders();
+            var checkFail = false;
 
-            CommandLineParser commandLineParser = new(args);
-            commandLineParser.ApplySwitches();
-            args = commandLineParser.GetNormalizedArguments();
+            // The .NET runtime presence check was removed (#130): reaching managed
+            // code here proves the host already resolved a compatible framework per
+            // runtimeconfig.json. The old registry probe (sharedhost\Version) could
+            // only false-fail on valid installs (e.g. runtime laid down via ZIP/script
+            // that never wrote HKLM), wrongly blocking startup.
 
-            // Runtime checks only needed for framework-dependent deployments.
-            // Self-contained builds embed coreclr.dll next to the exe — skip checks.
-            bool isSelfContained = File.Exists(Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "coreclr.dll"));
-
-            if (!isSelfContained)
+            // Checking Visual C++ Redistributable version
+            if (VCppRuntimeCheck.GetInstalledVcRedistVersions() == null || VCppRuntimeCheck.GetInstalledVcRedistVersions().Count == 0)
             {
-                var checkFail = false;
-
-                // The .NET runtime presence check was removed (#130): reaching managed
-                // code here proves the host already resolved a compatible framework per
-                // runtimeconfig.json. The old registry probe (sharedhost\Version) could
-                // only false-fail on valid installs (e.g. runtime laid down via ZIP/script
-                // that never wrote HKLM), wrongly blocking startup.
-
-                // Checking Visual C++ Redistributable version
-                if (VCppRuntimeCheck.GetInstalledVcRedistVersions() == null || VCppRuntimeCheck.GetInstalledVcRedistVersions().Count == 0)
-                {
-                    var downloadUrl2 = "https://aka.ms/vs/17/release/vc_redist.x64.exe";
-                    bool validUrl2 = Uri.TryCreate(downloadUrl2, UriKind.Absolute, out var uri2) && uri2.Scheme == Uri.UriSchemeHttps;
-                    try
-                    {
-                        var result = ShowDownloadCancelDialog(
-                            $"A Visual C++ (MSVC) " + Language.MsgRuntimeIsRequired + "\n\n" +
-                            Language.MsgDownloadLatestRuntime + "\n" + downloadUrl2 + "\n\n" +
-                            Language.MsgExit + "\n\n",
-                            Language.MsgMissingRuntime + " Visual C++ Redistributable x64");
-
-                        if (result == DialogResult.OK && InternetConnection.IsPosible())
-                        {
-                            try
-                            {
-                                if (validUrl2)
-                                    Process.Start(new ProcessStartInfo(fileName: downloadUrl2) { UseShellExecute = true });
-                            }
-                            catch (Exception ex)
-                            {
-                                MessageBox.Show($"Unable to open download link: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
-                            }
-                        }
-                    }
-                    catch { }
-                    checkFail = true;
-                }
-
-                if (checkFail)
-                {
-                    Environment.Exit(0);
-                }
-            }
-
-            // Wire portable settings provider before any settings access
-            Config.Settings.Providers.PortableSettingsInitializer.EnsureInitialized();
-
-            bool singleInstance = false;
-            try
-            {
-                singleInstance = Properties.OptionsStartupExitPage.Default.SingleInstance;
-            }
-            catch (ConfigurationErrorsException ex)
-            {
-                HandleCorruptedUserConfig(ex);
-            }
-
-            if (singleInstance)
-                StartApplicationAsSingleInstance(args);
-            else
-                StartApplication(args);
-
-            return Task.CompletedTask;
-        }
-
-        // Assembly resolve handler — constrained to application directory only.
-        // Only loads assemblies from known subdirectories (Languages/, Assemblies/)
-        // under the application base path to avoid loading from arbitrary locations.
-        private static readonly string _appBaseDir = AppDomain.CurrentDomain.BaseDirectory;
-
-        private static Assembly? OnAssemblyResolve(object? sender, ResolveEventArgs args)
-        {
-            try
-            {
-                AssemblyName asmName = new(args.Name);
-                string name = asmName.Name ?? string.Empty;
-
-                if (name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase))
-                {
-                    // Satellite assemblies: probe Languages/{culture}/
-                    string? culture = asmName.CultureName;
-                    if (!string.IsNullOrEmpty(culture))
-                    {
-                        string satPath = Path.Combine(customResourcePath, culture, name + ".dll");
-                        if (File.Exists(satPath) && IsUnderAppBase(satPath))
-                            return Assembly.LoadFrom(satPath);
-                    }
-                    return null;
-                }
-
-                // Non-resource assemblies: probe Assemblies/ subfolder
-                string assemblyFile = name + ".dll";
-                string assemblyPath = Path.Combine(_appBaseDir, "Assemblies", assemblyFile);
-
-                if (File.Exists(assemblyPath) && IsUnderAppBase(assemblyPath))
-                    return Assembly.LoadFrom(assemblyPath);
-            }
-            catch
-            {
-                // Suppress resolution exceptions; return null to continue standard probing
-            }
-            return null;
-        }
-
-        /// <summary>
-        /// Validates that a resolved assembly path is under the application base directory.
-        /// Prevents loading assemblies from arbitrary/untrusted locations.
-        /// </summary>
-        private static bool IsUnderAppBase(string path)
-        {
-            string fullPath = Path.GetFullPath(path);
-            return fullPath.StartsWith(_appBaseDir, StringComparison.OrdinalIgnoreCase);
-        }
-
-        /// <summary>
-        /// Migrates satellite assemblies left in stale per-culture folders (de/, fr/, hu/ etc.)
-        /// into the Languages/ subfolder. This handles upgrades from older builds where the
-        /// MSBuild MoveSatelliteAssemblies target didn't clean up during incremental builds.
-        /// </summary>
-        private static void MigrateStaleCultureFolders()
-        {
-            try
-            {
-                string langDir = Path.Combine(_appBaseDir, "Languages");
-                foreach (string dir in Directory.GetDirectories(_appBaseDir))
-                {
-                    string folderName = Path.GetFileName(dir);
-                    // Skip known non-culture folders
-                    if (folderName is "Assemblies" or "Icons" or "Languages" or "Plugins"
-                        or "runtimes" or "Schemas" or "Settings" or "Themes"
-                        or "publish" or "ref")
-                        continue;
-
-                    // Check if this looks like a culture folder (contains .resources.dll)
-                    string[] resourceDlls = Directory.GetFiles(dir, "*.resources.dll");
-                    if (resourceDlls.Length == 0) continue;
-
-                    // Move to Languages/{culture}/
-                    string targetDir = Path.Combine(langDir, folderName);
-                    if (!Directory.Exists(targetDir))
-                        Directory.CreateDirectory(targetDir);
-
-                    foreach (string file in resourceDlls)
-                    {
-                        string dest = Path.Combine(targetDir, Path.GetFileName(file));
-                        if (!File.Exists(dest))
-                            File.Move(file, dest);
-                        else
-                            File.Delete(file); // Already migrated, just clean up
-                    }
-
-                    // Remove the stale culture folder if it's now empty
-                    if (Directory.GetFiles(dir).Length == 0 && Directory.GetDirectories(dir).Length == 0)
-                        Directory.Delete(dir);
-                }
-            }
-            catch
-            {
-                // Best-effort cleanup — don't crash on failure
-            }
-        }
-
-        private static void CheckLockalDB()
-        {
-            LocalDBManager settingsManager = new LocalDBManager(dbPath: "mRemoteNG.appSettings", useEncryption: false, schemaFilePath: "");
-        }
-
-        private static void StartApplication(string[]? args = null)
-        {
-            CatchAllUnhandledExceptions();
-
-            // Fix #2062: ensure DockPanelSuite computes drag indicators correctly
-            // across secondary monitors with different DPI/scaling.
-            PatchController.EnablePerScreenDpi = true;
-
-            Application.EnableVisualStyles();
-            Application.SetCompatibleTextRenderingDefault(false);
-
-            // Pass command-line args to Startup AFTER Application.Set* calls
-            // to avoid premature Control/handle creation (fix fork#19)
-            Startup.Instance.CommandLineArgs = args;
-
-            ShowSplashOnStaThread();
-
-            Application.Run(FrmMain.Default);
-        }
-
-        public static void CloseSingletonInstanceMutex()
-        {
-            _mutex?.Close();
-        }
-
-        private static void StartApplicationAsSingleInstance(string[] args)
-        {
-            const string mutexID = "mRemoteNG_SingleInstanceMutex";
-            _mutex = new Mutex(false, mutexID, out bool newInstanceCreated);
-            if (!newInstanceCreated)
-            {
-                SwitchToCurrentInstance(args);
-                return;
-            }
-
-            StartApplication(args);
-            GC.KeepAlive(_mutex);
-        }
-
-        private static void SwitchToCurrentInstance(string[] args)
-        {
-            IntPtr singletonInstanceWindowHandle = GetRunningSingletonInstanceWindowHandle();
-            if (singletonInstanceWindowHandle == IntPtr.Zero) return;
-            if (NativeMethods.IsIconic(singletonInstanceWindowHandle) != 0)
-                _ = NativeMethods.ShowWindow(singletonInstanceWindowHandle, (int)NativeMethods.SW_RESTORE);
-            NativeMethods.SetForegroundWindow(singletonInstanceWindowHandle);
-
-            // Always send an activate signal so the running instance can bring itself
-            // to front from its own context. SetForegroundWindow from another process
-            // is blocked by Windows focus-stealing prevention; the running instance
-            // calling SetForegroundWindow on itself is reliable.
-            SendActivateToRunningInstance(singletonInstanceWindowHandle);
-
-            if (args != null && args.Length > 0)
-            {
-                SendArgsToRunningInstance(singletonInstanceWindowHandle, args);
-            }
-        }
-
-        private static void SendActivateToRunningInstance(IntPtr hWnd)
-        {
-            NativeMethods.COPYDATASTRUCT cds;
-            cds.dwData = (IntPtr)2; // dwData == 2: "bring to front" signal
-            cds.cbData = 0;
-            cds.lpData = IntPtr.Zero;
-            NativeMethods.SendMessage(hWnd, NativeMethods.WM_COPYDATA, IntPtr.Zero, ref cds);
-        }
-
-        private static void SendArgsToRunningInstance(IntPtr hWnd, string[] args)
-        {
-            string[] normalizedArgs = new CommandLineParser(args).GetNormalizedArguments();
-            string message = string.Join("\n", normalizedArgs);
-
-            NativeMethods.COPYDATASTRUCT cds;
-            cds.dwData = (IntPtr)1; // ID for args
-            cds.cbData = (message.Length + 1) * 2;
-            cds.lpData = Marshal.StringToHGlobalUni(message);
-            
-            try
-            {
-                NativeMethods.SendMessage(hWnd, NativeMethods.WM_COPYDATA, IntPtr.Zero, ref cds);
-            }
-            finally
-            {
-                Marshal.FreeHGlobal(cds.lpData);
-            }
-        }
-
-        private static IntPtr GetRunningSingletonInstanceWindowHandle()
-        {
-            IntPtr windowHandle = IntPtr.Zero;
-            Process currentProcess = Process.GetCurrentProcess();
-            foreach (Process enumeratedProcess in Process.GetProcessesByName(currentProcess.ProcessName))
-            {
-                // Safely check for null MainModule and FileName
-                string? enumeratedFileName = null;
-                string? currentFileName = null;
+                var downloadUrl2 = "https://aka.ms/vs/17/release/vc_redist.x64.exe";
+                var validUrl2 = Uri.TryCreate(downloadUrl2, UriKind.Absolute, out var uri2) && uri2.Scheme == Uri.UriSchemeHttps;
                 try
                 {
-                    enumeratedFileName = enumeratedProcess.MainModule?.FileName;
-                    currentFileName = currentProcess.MainModule?.FileName;
+                    var result = ShowDownloadCancelDialog(
+                        $"A Visual C++ (MSVC) " + Language.MsgRuntimeIsRequired + "\n\n" +
+                        Language.MsgDownloadLatestRuntime + "\n" + downloadUrl2 + "\n\n" +
+                        Language.MsgExit + "\n\n",
+                        Language.MsgMissingRuntime + " Visual C++ Redistributable x64");
+
+                    if (result == DialogResult.OK && InternetConnection.IsPossible())
+                    {
+                        try
+                        {
+                            if (validUrl2)
+                                Process.Start(new ProcessStartInfo(fileName: downloadUrl2) { UseShellExecute = true });
+                        }
+                        catch (Exception ex)
+                        {
+                            MessageBox.Show($"Unable to open download link: {ex.Message}", "Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                        }
+                    }
                 }
                 catch
                 {
-                    // Access to MainModule can throw exceptions for some processes; ignore and continue
+                    // ignored
+                }
+
+                checkFail = true;
+            }
+
+            if (checkFail)
+            {
+                Environment.Exit(0);
+            }
+        }
+
+        // Wire portable settings provider before any settings access
+        Config.Settings.Providers.PortableSettingsInitializer.EnsureInitialized();
+
+        var singleInstance = false;
+        try
+        {
+            singleInstance = Properties.OptionsStartupExitPage.Default.SingleInstance;
+        }
+        catch (ConfigurationErrorsException ex)
+        {
+            HandleCorruptedUserConfig(ex);
+        }
+
+        if (singleInstance)
+            StartApplicationAsSingleInstance(args);
+        else
+            StartApplication(args);
+
+        return Task.CompletedTask;
+    }
+
+    // Assembly resolve handler — constrained to application directory only.
+    // Only loads assemblies from known subdirectories (Languages/, Assemblies/)
+    // under the application base path to avoid loading from arbitrary locations.
+    private static readonly string _appBaseDir = AppDomain.CurrentDomain.BaseDirectory;
+
+    private static Assembly? OnAssemblyResolve(object? sender, ResolveEventArgs args)
+    {
+        try
+        {
+            AssemblyName asmName = new(args.Name);
+            var name = asmName.Name ?? string.Empty;
+
+            if (name.EndsWith(".resources", StringComparison.OrdinalIgnoreCase))
+            {
+                // Satellite assemblies: probe Languages/{culture}/
+                var culture = asmName.CultureName;
+                if (!string.IsNullOrEmpty(culture))
+                {
+                    var satPath = Path.Combine(customResourcePath, culture, name + ".dll");
+                    if (File.Exists(satPath) && IsUnderAppBase(satPath))
+                        return Assembly.LoadFrom(satPath);
+                }
+                return null;
+            }
+
+            // Non-resource assemblies: probe Assemblies/ subfolder
+            var assemblyFile = name + ".dll";
+            var assemblyPath = Path.Combine(_appBaseDir, "Assemblies", assemblyFile);
+
+            if (File.Exists(assemblyPath) && IsUnderAppBase(assemblyPath))
+                return Assembly.LoadFrom(assemblyPath);
+        }
+        catch
+        {
+            // Suppress resolution exceptions; return null to continue standard probing
+        }
+        return null;
+    }
+
+    /// <summary>
+    /// Validates that a resolved assembly path is under the application base directory.
+    /// Prevents loading assemblies from arbitrary/untrusted locations.
+    /// </summary>
+    private static bool IsUnderAppBase(string path)
+    {
+        var fullPath = Path.GetFullPath(path);
+        return fullPath.StartsWith(_appBaseDir, StringComparison.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Migrates satellite assemblies left in stale per-culture folders (de/, fr/, hu/ etc.)
+    /// into the Languages/ subfolder. This handles upgrades from older builds where the
+    /// MSBuild MoveSatelliteAssemblies target didn't clean up during incremental builds.
+    /// </summary>
+    private static void MigrateStaleCultureFolders()
+    {
+        try
+        {
+            var langDir = Path.Combine(_appBaseDir, "Languages");
+            foreach (var dir in Directory.GetDirectories(_appBaseDir))
+            {
+                var folderName = Path.GetFileName(dir);
+                // Skip known non-culture folders
+                if (folderName is "Assemblies" or "Icons" or "Languages" or "Plugins"
+                    or "runtimes" or "Schemas" or "Settings" or "Themes"
+                    or "publish" or "ref")
                     continue;
+
+                // Check if this looks like a culture folder (contains .resources.dll)
+                var resourceDlls = Directory.GetFiles(dir, "*.resources.dll");
+                if (resourceDlls.Length == 0) continue;
+
+                // Move to Languages/{culture}/
+                var targetDir = Path.Combine(langDir, folderName);
+                if (!Directory.Exists(targetDir))
+                    Directory.CreateDirectory(targetDir);
+
+                foreach (var file in resourceDlls)
+                {
+                    var dest = Path.Combine(targetDir, Path.GetFileName(file));
+                    if (!File.Exists(dest))
+                        File.Move(file, dest);
+                    else
+                        File.Delete(file); // Already migrated, just clean up
                 }
 
-                if (enumeratedProcess.Id != currentProcess.Id &&
-                    !string.IsNullOrEmpty(enumeratedFileName) &&
-                    !string.IsNullOrEmpty(currentFileName) &&
-                    enumeratedFileName == currentFileName &&
-                    enumeratedProcess.MainWindowHandle != IntPtr.Zero)
-                    windowHandle = enumeratedProcess.MainWindowHandle;
+                // Remove the stale culture folder if it's now empty
+                if (Directory.GetFiles(dir).Length == 0 && Directory.GetDirectories(dir).Length == 0)
+                    Directory.Delete(dir);
             }
+        }
+        catch
+        {
+            // Best-effort cleanup — don't crash on failure
+        }
+    }
 
-            return windowHandle;
+    private static void CheckLockalDB()
+    {
+        var settingsManager = new LocalDBManager(dbPath: "mRemoteNG.appSettings", useEncryption: false, schemaFilePath: "");
+    }
+
+    private static void StartApplication(string[]? args = null)
+    {
+        CatchAllUnhandledExceptions();
+
+        // Fix #2062: ensure DockPanelSuite computes drag indicators correctly
+        // across secondary monitors with different DPI/scaling.
+        PatchController.EnablePerScreenDpi = true;
+
+        Application.EnableVisualStyles();
+        Application.SetCompatibleTextRenderingDefault(false);
+
+        // Pass command-line args to Startup AFTER Application.Set* calls
+        // to avoid premature Control/handle creation (fix fork#19)
+        Startup.Instance.CommandLineArgs = args;
+
+        ShowSplashOnStaThread();
+
+        Application.Run(FrmMain.Default);
+    }
+
+    public static void CloseSingletonInstanceMutex()
+    {
+        _mutex?.Close();
+    }
+
+    private static void StartApplicationAsSingleInstance(string[] args)
+    {
+        const string mutexID = "mRemoteNG_SingleInstanceMutex";
+        _mutex = new Mutex(false, mutexID, out var newInstanceCreated);
+        if (!newInstanceCreated)
+        {
+            SwitchToCurrentInstance(args);
+            return;
         }
 
-        /// <summary>
-        /// Handles a corrupted user.config file by logging diagnostics, backing up the
-        /// corrupted file, and deleting it so the application can continue with defaults.
-        /// </summary>
-        internal static void HandleCorruptedUserConfig(ConfigurationErrorsException ex)
-        {
-            string configPath = GetConfigFilePathFromException(ex);
-            string logPath = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                Application.ProductName ?? "mRemoteNG",
-                "user.config-error.log");
+        StartApplication(args);
+        GC.KeepAlive(_mutex);
+    }
 
+    private static void SwitchToCurrentInstance(string[] args)
+    {
+        var singletonInstanceWindowHandle = GetRunningSingletonInstanceWindowHandle();
+        if (singletonInstanceWindowHandle == IntPtr.Zero) return;
+        if (NativeMethods.IsIconic(singletonInstanceWindowHandle) != 0)
+            _ = NativeMethods.ShowWindow(singletonInstanceWindowHandle, (int)NativeMethods.SW_RESTORE);
+        NativeMethods.SetForegroundWindow(singletonInstanceWindowHandle);
+
+        // Always send an activate signal so the running instance can bring itself
+        // to front from its own context. SetForegroundWindow from another process
+        // is blocked by Windows focus-stealing prevention; the running instance
+        // calling SetForegroundWindow on itself is reliable.
+        SendActivateToRunningInstance(singletonInstanceWindowHandle);
+
+        if (args != null && args.Length > 0)
+        {
+            SendArgsToRunningInstance(singletonInstanceWindowHandle, args);
+        }
+    }
+
+    private static void SendActivateToRunningInstance(IntPtr hWnd)
+    {
+        NativeMethods.COPYDATASTRUCT cds;
+        cds.dwData = (IntPtr)2; // dwData == 2: "bring to front" signal
+        cds.cbData = 0;
+        cds.lpData = IntPtr.Zero;
+        NativeMethods.SendMessage(hWnd, NativeMethods.WM_COPYDATA, IntPtr.Zero, ref cds);
+    }
+
+    private static void SendArgsToRunningInstance(IntPtr hWnd, string[] args)
+    {
+        var normalizedArgs = new CommandLineParser(args).GetNormalizedArguments();
+        var message = string.Join("\n", normalizedArgs);
+
+        NativeMethods.COPYDATASTRUCT cds;
+        cds.dwData = (IntPtr)1; // ID for args
+        cds.cbData = (message.Length + 1) * 2;
+        cds.lpData = Marshal.StringToHGlobalUni(message);
+
+        try
+        {
+            NativeMethods.SendMessage(hWnd, NativeMethods.WM_COPYDATA, IntPtr.Zero, ref cds);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(cds.lpData);
+        }
+    }
+
+    private static IntPtr GetRunningSingletonInstanceWindowHandle()
+    {
+        var windowHandle = IntPtr.Zero;
+        var currentProcess = Process.GetCurrentProcess();
+        foreach (var enumeratedProcess in Process.GetProcessesByName(currentProcess.ProcessName))
+        {
+            // Safely check for null MainModule and FileName
+            string? enumeratedFileName = null;
+            string? currentFileName = null;
             try
             {
-                string? logDir = Path.GetDirectoryName(logPath);
-                if (!string.IsNullOrEmpty(logDir))
-                    Directory.CreateDirectory(logDir);
+                enumeratedFileName = enumeratedProcess.MainModule?.FileName;
+                currentFileName = currentProcess.MainModule?.FileName;
             }
-            catch { /* best effort */ }
-
-            string logEntry =
-                $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] user.config load failed{Environment.NewLine}" +
-                $"  Config file: {configPath}{Environment.NewLine}" +
-                $"  Error: {ex.Message}{Environment.NewLine}" +
-                $"  Inner: {ex.InnerException?.Message}{Environment.NewLine}" +
-                $"  Stack: {ex.Demystify().StackTrace}{Environment.NewLine}{Environment.NewLine}";
-
-            try { File.AppendAllText(logPath, logEntry); }
-            catch { /* best effort */ }
-
-            if (!string.IsNullOrEmpty(configPath) && File.Exists(configPath))
+            catch
             {
-                try
-                {
-                    string backup = configPath + ".corrupted." + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
-                    File.Copy(configPath, backup, true);
-                    File.Delete(configPath);
-                }
-                catch { /* best effort */ }
+                // Access to MainModule can throw exceptions for some processes; ignore and continue
+                continue;
             }
 
-            MessageBox.Show(
-                $"Your settings file was corrupted and could not be loaded.{Environment.NewLine}{Environment.NewLine}" +
-                $"File: {configPath}{Environment.NewLine}" +
-                $"Error: {ex.InnerException?.Message ?? ex.Message}{Environment.NewLine}{Environment.NewLine}" +
-                $"The corrupted file has been backed up and settings have been reset to defaults.{Environment.NewLine}" +
-                $"Diagnostic details logged to: {logPath}",
-                "mRemoteNG - Settings Reset",
-                MessageBoxButtons.OK,
-                MessageBoxIcon.Warning);
+            if (enumeratedProcess.Id != currentProcess.Id &&
+                !string.IsNullOrEmpty(enumeratedFileName) &&
+                !string.IsNullOrEmpty(currentFileName) &&
+                enumeratedFileName == currentFileName &&
+                enumeratedProcess.MainWindowHandle != IntPtr.Zero)
+                windowHandle = enumeratedProcess.MainWindowHandle;
         }
 
-        private static string GetConfigFilePathFromException(ConfigurationErrorsException ex)
+        return windowHandle;
+    }
+
+    /// <summary>
+    /// Handles a corrupted user.config file by logging diagnostics, backing up the
+    /// corrupted file, and deleting it so the application can continue with defaults.
+    /// </summary>
+    internal static void HandleCorruptedUserConfig(ConfigurationErrorsException ex)
+    {
+        var configPath = GetConfigFilePathFromException(ex);
+        var logPath = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            Application.ProductName ?? "mRemoteNG",
+            "user.config-error.log");
+
+        try
         {
-            if (!string.IsNullOrEmpty(ex.Filename))
-                return ex.Filename;
-            if (ex.InnerException is ConfigurationErrorsException inner && !string.IsNullOrEmpty(inner.Filename))
-                return inner.Filename;
-            try { return Info.SettingsFileInfo.UserSettingsFilePath; }
-            catch { return "(unknown path)"; }
+            var logDir = Path.GetDirectoryName(logPath);
+            if (!string.IsNullOrEmpty(logDir))
+                Directory.CreateDirectory(logDir);
+        }
+        catch { /* best effort */ }
+
+        var logEntry =
+            $"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] user.config load failed{Environment.NewLine}" +
+            $"  Config file: {configPath}{Environment.NewLine}" +
+            $"  Error: {ex.Message}{Environment.NewLine}" +
+            $"  Inner: {ex.InnerException?.Message}{Environment.NewLine}" +
+            $"  Stack: {ex.Demystify().StackTrace}{Environment.NewLine}{Environment.NewLine}";
+
+        try { File.AppendAllText(logPath, logEntry); }
+        catch { /* best effort */ }
+
+        if (!string.IsNullOrEmpty(configPath) && File.Exists(configPath))
+        {
+            try
+            {
+                var backup = configPath + ".corrupted." + DateTime.Now.ToString("yyyyMMdd_HHmmss", CultureInfo.InvariantCulture);
+                File.Copy(configPath, backup, true);
+                File.Delete(configPath);
+            }
+            catch { /* best effort */ }
         }
 
-        private static void CatchAllUnhandledExceptions()
+        MessageBox.Show(
+            $"Your settings file was corrupted and could not be loaded.{Environment.NewLine}{Environment.NewLine}" +
+            $"File: {configPath}{Environment.NewLine}" +
+            $"Error: {ex.InnerException?.Message ?? ex.Message}{Environment.NewLine}{Environment.NewLine}" +
+            $"The corrupted file has been backed up and settings have been reset to defaults.{Environment.NewLine}" +
+            $"Diagnostic details logged to: {logPath}",
+            "mRemoteNG - Settings Reset",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+    }
+
+    private static string GetConfigFilePathFromException(ConfigurationErrorsException ex)
+    {
+        if (!string.IsNullOrEmpty(ex.Filename))
+            return ex.Filename;
+        if (ex.InnerException is ConfigurationErrorsException inner && !string.IsNullOrEmpty(inner.Filename))
+            return inner.Filename;
+        try { return Info.SettingsFileInfo.UserSettingsFilePath; }
+        catch { return "(unknown path)"; }
+    }
+
+    private static void CatchAllUnhandledExceptions()
+    {
+        Application.ThreadException += ApplicationOnThreadException;
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        AppDomain.CurrentDomain.UnhandledException += CurrentDomainOnUnhandledException;
+    }
+
+    private static void ApplicationOnThreadException(object sender, ThreadExceptionEventArgs e)
+    {
+        // AxHost.PreProcessMessage can race with COM RCW disposal during RDP
+        // disconnect/close — the message pump delivers a message to the ActiveX
+        // control after Marshal.FinalReleaseComObject detached the RCW.
+        // This is benign (the control is being torn down) so suppress the crash dialog.
+        if (e.Exception is System.Runtime.InteropServices.InvalidComObjectException)
+            return;
+
+        CloseSplash();
+        if (FrmMain.Default.IsDisposed) return;
+        FrmUnhandledException window = new(e.Exception, false);
+        window.ShowDialog(FrmMain.Default);
+    }
+
+    private static void CurrentDomainOnUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    {
+        FrmUnhandledException window = new(e.ExceptionObject as Exception ?? new InvalidOperationException(e.ExceptionObject?.ToString()), e.IsTerminating);
+        window.ShowDialog(FrmMain.Default);
+    }
+
+    private static void ShowSplashOnStaThread()
+    {
+        _splash = FrmSplashScreenNew.GetInstance();
+        _splash.Show();
+    }
+
+    public static void CloseSplash()
+    {
+        if (_splash == null) return;
+
+        try
         {
-            Application.ThreadException += ApplicationOnThreadException;
-            Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
-            AppDomain.CurrentDomain.UnhandledException += CurrentDomainOnUnhandledException;
+            if (!_splash.IsDisposed)
+                _splash.Close();
+        }
+        catch { /* Intentionally empty */ }
+        finally
+        {
+            _splash = null;
+        }
+    }
+
+    // Helper to show a dialog with "Download" and "Cancel" buttons.
+    // Returns DialogResult.OK if Download clicked, otherwise DialogResult.Cancel.
+    private static DialogResult ShowDownloadCancelDialog(string message, string caption)
+    {
+        using var dialog = new Form()
+        {
+            Text = caption,
+            StartPosition = FormStartPosition.CenterScreen,
+            FormBorderStyle = FormBorderStyle.FixedDialog,
+            MinimizeBox = false,
+            MaximizeBox = false,
+            ShowInTaskbar = false,
+            ClientSize = new Size(560, 200),
+            Icon = SystemIcons.Information
+        };
+
+        // Try to find a URL in the message (very simple heuristic: first "http" until whitespace/newline)
+        var urlStart = message.IndexOf("http", StringComparison.OrdinalIgnoreCase);
+        string? url = null;
+        if (urlStart >= 0)
+        {
+            var urlEnd = message.IndexOfAny(new char[] { ' ', '\r', '\n', '\t' }, urlStart);
+            if (urlEnd == -1) urlEnd = message.Length;
+            url = message.Substring(urlStart, urlEnd - urlStart);
         }
 
-        private static void ApplicationOnThreadException(object sender, ThreadExceptionEventArgs e)
+        var lbl = new LinkLabel()
         {
-            // AxHost.PreProcessMessage can race with COM RCW disposal during RDP
-            // disconnect/close — the message pump delivers a message to the ActiveX
-            // control after Marshal.FinalReleaseComObject detached the RCW.
-            // This is benign (the control is being torn down) so suppress the crash dialog.
-            if (e.Exception is System.Runtime.InteropServices.InvalidComObjectException)
+            AutoSize = false,
+            Text = message,
+            Location = new Point(12, 12),
+            Size = new Size(dialog.ClientSize.Width - 24, dialog.ClientSize.Height - 60),
+            TextAlign = ContentAlignment.TopLeft,
+            LinkBehavior = LinkBehavior.SystemDefault
+        };
+        lbl.MaximumSize = new Size(dialog.ClientSize.Width - 24, 0);
+
+        if (!string.IsNullOrEmpty(url) && urlStart >= 0)
+        {
+            // Ensure link indices are within bounds of the LinkLabel text
+            var linkStartInLabel = urlStart;
+            var linkLength = url.Length;
+            if (linkStartInLabel + linkLength <= lbl.Text.Length)
+            {
+                lbl.Links.Add(linkStartInLabel, linkLength, url);
+            }
+        }
+
+        lbl.LinkClicked += (s, e) =>
+        {
+            var linkUrl = e.Link?.LinkData as string;
+            if (string.IsNullOrEmpty(linkUrl))
                 return;
-
-            CloseSplash();
-            if (FrmMain.Default.IsDisposed) return;
-            FrmUnhandledException window = new(e.Exception, false);
-            window.ShowDialog(FrmMain.Default);
-        }
-
-        private static void CurrentDomainOnUnhandledException(object sender, UnhandledExceptionEventArgs e)
-        {
-            FrmUnhandledException window = new(e.ExceptionObject as Exception ?? new InvalidOperationException(e.ExceptionObject?.ToString()), e.IsTerminating);
-            window.ShowDialog(FrmMain.Default);
-        }
-
-        private static void ShowSplashOnStaThread()
-        {
-            _splash = FrmSplashScreenNew.GetInstance();
-            _splash.Show();
-        }
-
-        public static void CloseSplash()
-        {
-            if (_splash == null) return;
-
-            try
+            if (!InternetConnection.IsPossible())
             {
-                if (!_splash.IsDisposed)
-                    _splash.Close();
-            }
-            catch { /* Intentionally empty */ }
-            finally
-            {
-                _splash = null;
-            }
-        }
-
-        // Helper to show a dialog with "Download" and "Cancel" buttons.
-        // Returns DialogResult.OK if Download clicked, otherwise DialogResult.Cancel.
-        private static DialogResult ShowDownloadCancelDialog(string message, string caption)
-        {
-            using Form dialog = new Form()
-            {
-                Text = caption,
-                StartPosition = FormStartPosition.CenterScreen,
-                FormBorderStyle = FormBorderStyle.FixedDialog,
-                MinimizeBox = false,
-                MaximizeBox = false,
-                ShowInTaskbar = false,
-                ClientSize = new Size(560, 200),
-                Icon = SystemIcons.Information
-            };
-
-            // Try to find a URL in the message (very simple heuristic: first "http" until whitespace/newline)
-            int urlStart = message.IndexOf("http", StringComparison.OrdinalIgnoreCase);
-            string? url = null;
-            if (urlStart >= 0)
-            {
-                int urlEnd = message.IndexOfAny(new char[] { ' ', '\r', '\n', '\t' }, urlStart);
-                if (urlEnd == -1) urlEnd = message.Length;
-                url = message.Substring(urlStart, urlEnd - urlStart);
+                MessageBox.Show("No internet connection is available.", "Network", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
             }
 
-            LinkLabel lbl = new LinkLabel()
-            {
-                AutoSize = false,
-                Text = message,
-                Location = new Point(12, 12),
-                Size = new Size(dialog.ClientSize.Width - 24, dialog.ClientSize.Height - 60),
-                TextAlign = ContentAlignment.TopLeft,
-                LinkBehavior = LinkBehavior.SystemDefault
-            };
-            lbl.MaximumSize = new Size(dialog.ClientSize.Width - 24, 0);
+            // Treat clicking the link the same as clicking the "Download" button:
+            // set DialogResult to OK so the caller receives DialogResult.OK and can proceed to open the download URL.
+            dialog.DialogResult = DialogResult.OK;
+            // Do not call Process.Start here to avoid duplicate launches; caller already opens the URL when it sees DialogResult.OK.
+        };
 
-            if (!string.IsNullOrEmpty(url) && urlStart >= 0)
-            {
-                // Ensure link indices are within bounds of the LinkLabel text
-                int linkStartInLabel = urlStart;
-                int linkLength = url.Length;
-                if (linkStartInLabel + linkLength <= lbl.Text.Length)
-                {
-                    lbl.Links.Add(linkStartInLabel, linkLength, url);
-                }
-            }
+        var btnDownload = new Button()
+        {
+            Text = "Download",
+            DialogResult = DialogResult.OK,
+            Size = new Size(100, 28),
+        };
+        var btnCancel = new Button()
+        {
+            Text = "Cancel",
+            DialogResult = DialogResult.Cancel,
+            Size = new Size(100, 28),
+        };
 
-            lbl.LinkClicked += (s, e) =>
-            {
-                string? linkUrl = e.Link?.LinkData as string;
-                if (string.IsNullOrEmpty(linkUrl))
-                    return;
-                if (!InternetConnection.IsPosible())
-                {
-                    MessageBox.Show("No internet connection is available.", "Network", MessageBoxButtons.OK, MessageBoxIcon.Warning);
-                    return;
-                }
+        // Position buttons
+        var padding = 12;
+        btnCancel.Location = new Point(dialog.ClientSize.Width - padding - btnCancel.Width, dialog.ClientSize.Height - padding - btnCancel.Height);
+        btnDownload.Location = new Point(btnCancel.Left - 8 - btnDownload.Width, btnCancel.Top);
 
-                // Treat clicking the link the same as clicking the "Download" button:
-                // set DialogResult to OK so the caller receives DialogResult.OK and can proceed to open the download URL.
-                dialog.DialogResult = DialogResult.OK;
-                // Do not call Process.Start here to avoid duplicate launches; caller already opens the URL when it sees DialogResult.OK.
-            };
+        // Set dialog defaults
+        dialog.Controls.Add(lbl);
+        dialog.Controls.Add(btnDownload);
+        dialog.Controls.Add(btnCancel);
+        dialog.AcceptButton = btnDownload;
+        dialog.CancelButton = btnCancel;
 
-            Button btnDownload = new Button()
-            {
-                Text = "Download",
-                DialogResult = DialogResult.OK,
-                Size = new Size(100, 28),
-            };
-            Button btnCancel = new Button()
-            {
-                Text = "Cancel",
-                DialogResult = DialogResult.Cancel,
-                Size = new Size(100, 28),
-            };
+        // Adjust label height to wrap text properly
+        lbl.Height = btnCancel.Top - lbl.Top - 8;
 
-            // Position buttons
-            int padding = 12;
-            btnCancel.Location = new Point(dialog.ClientSize.Width - padding - btnCancel.Width, dialog.ClientSize.Height - padding - btnCancel.Height);
-            btnDownload.Location = new Point(btnCancel.Left - 8 - btnDownload.Width, btnCancel.Top);
-
-            // Set dialog defaults
-            dialog.Controls.Add(lbl);
-            dialog.Controls.Add(btnDownload);
-            dialog.Controls.Add(btnCancel);
-            dialog.AcceptButton = btnDownload;
-            dialog.CancelButton = btnCancel;
-
-            // Adjust label height to wrap text properly
-            lbl.Height = btnCancel.Top - lbl.Top - 8;
-
-            return dialog.ShowDialog();
-        }
+        return dialog.ShowDialog();
     }
 }

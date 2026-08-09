@@ -89,7 +89,7 @@ public class FileDataProviderTests
         // The method catches the exception internally, so we need to verify it doesn't move the file
         _dataProvider.Save("test");
         _dataProvider.MoveTo(maliciousPath);
-        
+
         // Verify the file wasn't moved to the malicious path
         Assert.That(File.Exists(maliciousPath), Is.False);
         // Verify the original file still exists

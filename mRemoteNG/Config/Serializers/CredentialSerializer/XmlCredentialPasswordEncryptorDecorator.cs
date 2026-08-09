@@ -5,53 +5,52 @@ using System.Xml.Linq;
 using mRemoteNG.Credential;
 using mRemoteNG.Security;
 
-namespace mRemoteNG.Config.Serializers.CredentialSerializer
+namespace mRemoteNG.Config.Serializers.CredentialSerializer;
+
+public class XmlCredentialPasswordEncryptorDecorator : ISecureSerializer<IEnumerable<ICredentialRecord>, string>
 {
-    public class XmlCredentialPasswordEncryptorDecorator : ISecureSerializer<IEnumerable<ICredentialRecord>, string>
+    private readonly ISerializer<IEnumerable<ICredentialRecord>, string> _baseSerializer;
+    private readonly ICryptographyProvider _cryptographyProvider;
+
+    public XmlCredentialPasswordEncryptorDecorator(ICryptographyProvider cryptographyProvider, ISerializer<IEnumerable<ICredentialRecord>, string> baseSerializer)
     {
-        private readonly ISerializer<IEnumerable<ICredentialRecord>, string> _baseSerializer;
-        private readonly ICryptographyProvider _cryptographyProvider;
+        ArgumentNullException.ThrowIfNull(baseSerializer);
+        ArgumentNullException.ThrowIfNull(cryptographyProvider);
 
-        public XmlCredentialPasswordEncryptorDecorator(ICryptographyProvider cryptographyProvider, ISerializer<IEnumerable<ICredentialRecord>, string> baseSerializer)
+        _baseSerializer = baseSerializer;
+        _cryptographyProvider = cryptographyProvider;
+    }
+
+
+    public string Serialize(IEnumerable<ICredentialRecord> credentialRecords, SecureString key)
+    {
+        ArgumentNullException.ThrowIfNull(credentialRecords);
+
+        string baseReturn = _baseSerializer.Serialize(credentialRecords);
+        string encryptedReturn = EncryptPasswordAttributes(baseReturn, key);
+        return encryptedReturn;
+    }
+
+    private string EncryptPasswordAttributes(string xml, SecureString encryptionKey)
+    {
+        XDocument xdoc = XDocument.Parse(xml);
+        SetEncryptionAttributes(xdoc, encryptionKey);
+        foreach (XElement element in xdoc.Descendants())
         {
-            ArgumentNullException.ThrowIfNull(baseSerializer);
-            ArgumentNullException.ThrowIfNull(cryptographyProvider);
-
-            _baseSerializer = baseSerializer;
-            _cryptographyProvider = cryptographyProvider;
+            XAttribute? passwordAttribute = element.Attribute("Password");
+            if (passwordAttribute == null) continue;
+            string encryptedPassword = _cryptographyProvider.Encrypt(passwordAttribute.Value, encryptionKey);
+            passwordAttribute.Value = encryptedPassword;
         }
 
+        return xdoc.Declaration + Environment.NewLine + xdoc;
+    }
 
-        public string Serialize(IEnumerable<ICredentialRecord> credentialRecords, SecureString key)
-        {
-            ArgumentNullException.ThrowIfNull(credentialRecords);
-
-            string baseReturn = _baseSerializer.Serialize(credentialRecords);
-            string encryptedReturn = EncryptPasswordAttributes(baseReturn, key);
-            return encryptedReturn;
-        }
-
-        private string EncryptPasswordAttributes(string xml, SecureString encryptionKey)
-        {
-            XDocument xdoc = XDocument.Parse(xml);
-            SetEncryptionAttributes(xdoc, encryptionKey);
-            foreach (XElement element in xdoc.Descendants())
-            {
-                XAttribute? passwordAttribute = element.Attribute("Password");
-                if (passwordAttribute == null) continue;
-                string encryptedPassword = _cryptographyProvider.Encrypt(passwordAttribute.Value, encryptionKey);
-                passwordAttribute.Value = encryptedPassword;
-            }
-
-            return xdoc.Declaration + Environment.NewLine + xdoc;
-        }
-
-        private void SetEncryptionAttributes(XDocument xdoc, SecureString encryptionKey)
-        {
-            xdoc.Root?.SetAttributeValue("EncryptionEngine", _cryptographyProvider.CipherEngine);
-            xdoc.Root?.SetAttributeValue("BlockCipherMode", _cryptographyProvider.CipherMode);
-            xdoc.Root?.SetAttributeValue("KdfIterations", _cryptographyProvider.KeyDerivationIterations);
-            xdoc.Root?.SetAttributeValue("Auth", _cryptographyProvider.Encrypt(RandomGenerator.RandomString(20), encryptionKey));
-        }
+    private void SetEncryptionAttributes(XDocument xdoc, SecureString encryptionKey)
+    {
+        xdoc.Root?.SetAttributeValue("EncryptionEngine", _cryptographyProvider.CipherEngine);
+        xdoc.Root?.SetAttributeValue("BlockCipherMode", _cryptographyProvider.CipherMode);
+        xdoc.Root?.SetAttributeValue("KdfIterations", _cryptographyProvider.KeyDerivationIterations);
+        xdoc.Root?.SetAttributeValue("Auth", _cryptographyProvider.Encrypt(RandomGenerator.RandomString(20), encryptionKey));
     }
 }

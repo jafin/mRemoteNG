@@ -1,9 +1,8 @@
 ﻿using mRemoteNG.Tree;
 
-namespace mRemoteNG.Config.Connections
+namespace mRemoteNG.Config.Connections;
+
+public interface IConnectionsLoader
 {
-    public interface IConnectionsLoader
-    {
-        ConnectionTreeModel Load();
-    }
+    ConnectionTreeModel Load();
 }

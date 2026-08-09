@@ -1,31 +1,31 @@
+using System;
+using System.Runtime.Versioning;
 using mRemoteNG.App;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
-using System;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.Config.Serializers.Versioning
+namespace mRemoteNG.Config.Serializers.Versioning;
+
+[SupportedOSPlatform("windows")]
+public class SqlVersion30To31Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlVersion30To31Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
+    private readonly Version _version = new(3, 1);
+    private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+
+    public bool CanUpgrade(Version currentVersion)
     {
-        private readonly Version _version = new(3, 1);
-        private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
-
-        public bool CanUpgrade(Version currentVersion)
-        {
-            return currentVersion == new Version(3, 0) ||
-                // Support upgrading during dev revisions, 3.0.1, 3.0.2, etc...
-                (currentVersion <= new Version(3, 1) &&
+        return currentVersion == new Version(3, 0) ||
+               // Support upgrading during dev revisions, 3.0.1, 3.0.2, etc...
+               (currentVersion <= new Version(3, 1) &&
                 currentVersion < _version);
-        }
+    }
 
-        public Version Upgrade()
-        {
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                $"Upgrading database to version {_version}.");
+    public Version Upgrade()
+    {
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+            $"Upgrading database to version {_version}.");
 
-            const string mySqlAlter = @"
+        const string mySqlAlter = @"
 CREATE TABLE IF NOT EXISTS `tblExternalTools` (
     `ID` int NOT NULL AUTO_INCREMENT,
     `DisplayName` varchar(256) NOT NULL,
@@ -43,7 +43,7 @@ CREATE TABLE IF NOT EXISTS `tblExternalTools` (
 ) ENGINE=InnoDB DEFAULT CHARSET=latin1;
 ";
 
-            const string msSqlAlter = @"
+        const string msSqlAlter = @"
 IF NOT EXISTS (SELECT * FROM dbo.sysobjects WHERE id = object_id(N'[dbo].[tblExternalTools]') AND OBJECTPROPERTY(id, N'IsUserTable') = 1)
 CREATE TABLE [dbo].[tblExternalTools] (
     [ID] int NOT NULL IDENTITY(1,1),
@@ -61,8 +61,7 @@ CREATE TABLE [dbo].[tblExternalTools] (
 )
 ";
 
-            SqlMigrationHelper.ExecuteMigration(_databaseConnector, _version, msSqlAlter, mySqlAlter);
-            return _version;
-        }
+        SqlMigrationHelper.ExecuteMigration(_databaseConnector, _version, msSqlAlter, mySqlAlter);
+        return _version;
     }
 }

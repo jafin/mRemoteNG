@@ -1,12 +1,11 @@
-﻿namespace mRemoteNG.Config.Connections
+﻿namespace mRemoteNG.Config.Connections;
+
+public enum SaveFormat
 {
-    public enum SaveFormat
-    {
-        None,
-        mRXML,
-        mRCSV,
-        mRJSON,
-        SQL,
-        RDP
-    }
+    None,
+    mRXML,
+    mRCSV,
+    mRJSON,
+    SQL,
+    RDP
 }

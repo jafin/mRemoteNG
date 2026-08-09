@@ -3,33 +3,32 @@ using System.Runtime.Versioning;
 using System.Windows.Forms;
 using mRemoteNG.Themes;
 
-namespace mRemoteNG.UI.Controls
+namespace mRemoteNG.UI.Controls;
+
+[SupportedOSPlatform("windows")]
+public partial class MrngPictureBox : PictureBox
 {
-    [SupportedOSPlatform("windows")]
-    public partial class MrngPictureBox : PictureBox
+    private ThemeManager? _themeManager;
+
+    public MrngPictureBox()
     {
-        private ThemeManager? _themeManager;
+        ThemeManager.getInstance().ThemeChanged += OnCreateControl;
+    }
 
-        public MrngPictureBox()
-        {
-            ThemeManager.getInstance().ThemeChanged += OnCreateControl;
-        }
+    public MrngPictureBox(IContainer container)
+    {
+        container.Add(this);
 
-        public MrngPictureBox(IContainer container)
-        {
-            container.Add(this);
+        InitializeComponent();
+    }
 
-            InitializeComponent();
-        }
-
-        protected override void OnCreateControl()
-        {
-            base.OnCreateControl();
-            _themeManager = ThemeManager.getInstance();
-            if (!_themeManager.ActiveAndExtended) return;
-            ForeColor = _themeManager.ActiveTheme.ExtendedPalette?.getColor("TextBox_Foreground") ?? ForeColor;
-            BackColor = _themeManager.ActiveTheme.ExtendedPalette?.getColor("TextBox_Background") ?? BackColor;
-            Invalidate();
-        }
+    protected override void OnCreateControl()
+    {
+        base.OnCreateControl();
+        _themeManager = ThemeManager.getInstance();
+        if (!_themeManager.ActiveAndExtended) return;
+        ForeColor = _themeManager.ActiveTheme.ExtendedPalette?.getColor("TextBox_Foreground") ?? ForeColor;
+        BackColor = _themeManager.ActiveTheme.ExtendedPalette?.getColor("TextBox_Background") ?? BackColor;
+        Invalidate();
     }
 }

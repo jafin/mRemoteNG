@@ -1,29 +1,29 @@
-﻿using mRemoteNG.App;
+﻿using System;
+using System.Runtime.Versioning;
+using Microsoft.Data.SqlClient;
+using mRemoteNG.App;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
-using System;
-using Microsoft.Data.SqlClient;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.Config.Serializers.Versioning
+namespace mRemoteNG.Config.Serializers.Versioning;
+
+[SupportedOSPlatform("windows")]
+public class SqlVersion26To27Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlVersion26To27Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
+    private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+
+    public bool CanUpgrade(Version currentVersion)
     {
-        private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+        return currentVersion.CompareTo(new Version(2, 6)) == 0;
+    }
 
-        public bool CanUpgrade(Version currentVersion)
+    public Version Upgrade()
+    {
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+            "Upgrading database from version 2.6 to version 2.7.");
+        try
         {
-            return currentVersion.CompareTo(new Version(2, 6)) == 0;
-        }
-
-        public Version Upgrade()
-        {
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                                                "Upgrading database from version 2.6 to version 2.7.");
-            try
-            {
-                const string sqlText = @"
+            const string sqlText = @"
 ALTER TABLE tblCons
 ADD RedirectClipboard bit NOT NULL,
 	InheritRedirectClipboard bit NOT NULL,
@@ -39,15 +39,14 @@ ADD RedirectClipboard bit NOT NULL,
     InheritUseEnhancedMode bit NOT NULL;
 UPDATE tblRoot
     SET ConfVersion='2.7'";
-                System.Data.Common.DbCommand dbCommand = _databaseConnector.DbCommand(sqlText);
-                dbCommand.ExecuteNonQuery();
-            }
-            catch (SqlException)
-            {
-                // no-op
-            }
-
-            return new Version(2, 7);
+            System.Data.Common.DbCommand dbCommand = _databaseConnector.DbCommand(sqlText);
+            dbCommand.ExecuteNonQuery();
         }
+        catch (SqlException)
+        {
+            // no-op
+        }
+
+        return new Version(2, 7);
     }
 }

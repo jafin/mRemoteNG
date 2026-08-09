@@ -1,24 +1,21 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Security;
-using mRemoteNG.App;
+using System.Text;
+using System.Xml;
+using System.Xml.Linq;
 using mRemoteNG.Config.Connections;
-using mRemoteNG.Config.Serializers; 
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
+using mRemoteNG.Connection;
 using mRemoteNG.Messages;
+using mRemoteNG.Security;
+using mRemoteNG.Security.SymmetricEncryption;
+using mRemoteNG.Tools;
 using mRemoteNG.Tree.Root;
 using mRemoteNGTests.TestHelpers;
 using NSubstitute;
 using NUnit.Framework;
-using System.Linq; 
-using mRemoteNG.Security; 
-using mRemoteNG.Security.SymmetricEncryption; 
-using System.Xml; 
-using System.Xml.Linq;
-using mRemoteNG.Connection;
-using mRemoteNG.Tools; 
-using System.Text;
-using System.Collections.Generic; 
 
 namespace mRemoteNGTests.Config.Connections;
 
@@ -102,7 +99,7 @@ public class XmlConnectionsLoaderIntegrationTests
                 Substitute.For<Func<string, Optional<SecureString>>>();
             mockPasswordRequestor
                 .Invoke(Arg.Any<string>())
-                .Returns(new Optional<SecureString>(masterPassword)); 
+                .Returns(new Optional<SecureString>(masterPassword));
 
             var loader = new XmlConnectionsLoader(filePath, _messageCollector, mockPasswordRequestor);
 
@@ -114,7 +111,7 @@ public class XmlConnectionsLoaderIntegrationTests
             Assert.That(loadedTree.RootNodes.Count, Is.EqualTo(1));
             Assert.That(loadedTree.RootNodes[0].Children.Count, Is.EqualTo(1));
             Assert.That(loadedTree.RootNodes[0].Children[0].Hostname, Is.EqualTo("encryptedhost"));
-            Assert.That(loadedTree.RootNodes[0].Children[0].Password, Is.EqualTo("somepassword")); 
+            Assert.That(loadedTree.RootNodes[0].Children[0].Password, Is.EqualTo("somepassword"));
             mockPasswordRequestor.Received(1).Invoke(Path.GetFileName(filePath));
         }
     }
@@ -176,7 +173,7 @@ public class XmlConnectionsLoaderIntegrationTests
                 Substitute.For<Func<string, Optional<SecureString>>>();
             mockPasswordRequestor
                 .Invoke(Arg.Any<string>())
-                .Returns(Optional<SecureString>.Empty); 
+                .Returns(Optional<SecureString>.Empty);
 
             var loader = new XmlConnectionsLoader(filePath, _messageCollector, mockPasswordRequestor);
 
@@ -185,7 +182,7 @@ public class XmlConnectionsLoaderIntegrationTests
 
             // Assert
             Assert.That(loadedTree, Is.Null); // Expect null when no password is provided
-            mockPasswordRequestor.Received(1).Invoke(Path.GetFileName(filePath)); 
+            mockPasswordRequestor.Received(1).Invoke(Path.GetFileName(filePath));
         }
     }
 }

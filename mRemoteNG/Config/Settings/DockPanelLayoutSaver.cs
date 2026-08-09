@@ -8,82 +8,81 @@ using mRemoteNG.Config.Serializers;
 using mRemoteNG.UI.Forms;
 using WeifenLuo.WinFormsUI.Docking;
 
-namespace mRemoteNG.Config.Settings
+namespace mRemoteNG.Config.Settings;
+
+[SupportedOSPlatform("windows")]
+public class DockPanelLayoutSaver
 {
-    [SupportedOSPlatform("windows")]
-    public class DockPanelLayoutSaver
+    private readonly ISerializer<DockPanel, string> _dockPanelSerializer;
+    private readonly IDataProvider<string> _dataProvider;
+
+    public DockPanelLayoutSaver(ISerializer<DockPanel, string> dockPanelSerializer,
+        IDataProvider<string> dataProvider)
     {
-        private readonly ISerializer<DockPanel, string> _dockPanelSerializer;
-        private readonly IDataProvider<string> _dataProvider;
+        ArgumentNullException.ThrowIfNull(dockPanelSerializer);
+        ArgumentNullException.ThrowIfNull(dataProvider);
+        _dockPanelSerializer = dockPanelSerializer;
+        _dataProvider = dataProvider;
+    }
 
-        public DockPanelLayoutSaver(ISerializer<DockPanel, string> dockPanelSerializer,
-                                    IDataProvider<string> dataProvider)
+    public void Save()
+    {
+        try
         {
-            ArgumentNullException.ThrowIfNull(dockPanelSerializer);
-            ArgumentNullException.ThrowIfNull(dataProvider);
-            _dockPanelSerializer = dockPanelSerializer;
-            _dataProvider = dataProvider;
+            if (Directory.Exists(SettingsFileInfo.SettingsPath) == false)
+            {
+                Directory.CreateDirectory(SettingsFileInfo.SettingsPath);
+            }
+
+            string serializedLayout = _dockPanelSerializer.Serialize(FrmMain.Default.pnlDock);
+            _dataProvider.Save(serializedLayout);
         }
-
-        public void Save()
+        catch (Exception ex)
         {
-            try
-            {
-                if (Directory.Exists(SettingsFileInfo.SettingsPath) == false)
-                {
-                    Directory.CreateDirectory(SettingsFileInfo.SettingsPath);
-                }
+            Runtime.MessageCollector.AddExceptionStackTrace("SavePanelsToXML failed", ex);
+        }
+    }
 
-                string serializedLayout = _dockPanelSerializer.Serialize(FrmMain.Default.pnlDock);
-                _dataProvider.Save(serializedLayout);
-            }
-            catch (Exception ex)
+    public void SaveLayout(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Layout name cannot be empty", nameof(name));
+
+        try
+        {
+            string layoutsDir = Path.Combine(SettingsFileInfo.SettingsPath, "Layouts");
+            if (!Directory.Exists(layoutsDir))
             {
-                Runtime.MessageCollector.AddExceptionStackTrace("SavePanelsToXML failed", ex);
+                Directory.CreateDirectory(layoutsDir);
+            }
+
+            string filePath = Path.Combine(layoutsDir, name + ".xml");
+            string serializedLayout = _dockPanelSerializer.Serialize(FrmMain.Default.pnlDock);
+            File.WriteAllText(filePath, serializedLayout);
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddExceptionStackTrace($"Failed to save layout '{name}'", ex);
+        }
+    }
+
+    public static void DeleteLayout(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            throw new ArgumentException("Layout name cannot be empty", nameof(name));
+
+        try
+        {
+            string layoutsDir = Path.Combine(SettingsFileInfo.SettingsPath, "Layouts");
+            string filePath = Path.Combine(layoutsDir, name + ".xml");
+            if (File.Exists(filePath))
+            {
+                File.Delete(filePath);
             }
         }
-
-        public void SaveLayout(string name)
+        catch (Exception ex)
         {
-            if (string.IsNullOrWhiteSpace(name))
-                throw new ArgumentException("Layout name cannot be empty", nameof(name));
-
-            try
-            {
-                string layoutsDir = Path.Combine(SettingsFileInfo.SettingsPath, "Layouts");
-                if (!Directory.Exists(layoutsDir))
-                {
-                    Directory.CreateDirectory(layoutsDir);
-                }
-
-                string filePath = Path.Combine(layoutsDir, name + ".xml");
-                string serializedLayout = _dockPanelSerializer.Serialize(FrmMain.Default.pnlDock);
-                File.WriteAllText(filePath, serializedLayout);
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace($"Failed to save layout '{name}'", ex);
-            }
-        }
-
-        public static void DeleteLayout(string name)
-        {
-            if (string.IsNullOrWhiteSpace(name))
-                throw new ArgumentException("Layout name cannot be empty", nameof(name));
-
-            try
-            {
-                string layoutsDir = Path.Combine(SettingsFileInfo.SettingsPath, "Layouts");
-                string filePath = Path.Combine(layoutsDir, name + ".xml");
-                if (File.Exists(filePath))
-                {
-                    File.Delete(filePath);
-                }
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace($"Failed to delete layout '{name}'", ex);
-            }
+            Runtime.MessageCollector.AddExceptionStackTrace($"Failed to delete layout '{name}'", ex);
         }
     }
 }

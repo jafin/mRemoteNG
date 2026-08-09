@@ -1,107 +1,106 @@
 ﻿using System;
 using System.Diagnostics;
-using mRemoteNG.Connection.Protocol;
 using System.IO;
 using System.Runtime.Versioning;
+using mRemoteNG.Connection.Protocol;
 
-namespace mRemoteNG.Tools
+namespace mRemoteNG.Tools;
+
+[SupportedOSPlatform("windows")]
+public static class PuttyTypeDetector
 {
-    [SupportedOSPlatform("windows")]
-    public static class PuttyTypeDetector
+    public static PuttyType GetPuttyType()
     {
-        public static PuttyType GetPuttyType()
+        return GetPuttyType(PuttyBase.PuttyPath ?? string.Empty);
+    }
+
+    public static PuttyType GetPuttyType(string filename)
+    {
+        if (IsPuttyNg(filename))
         {
-            return GetPuttyType(PuttyBase.PuttyPath ?? string.Empty);
+            return PuttyType.PuttyNg;
         }
 
-        public static PuttyType GetPuttyType(string filename)
+        if (IsKitty(filename))
         {
-            if (IsPuttyNg(filename))
-            {
-                return PuttyType.PuttyNg;
-            }
-
-            if (IsKitty(filename))
-            {
-                return PuttyType.Kitty;
-            }
-
-            if (IsXming(filename))
-            {
-                return PuttyType.Xming;
-            }
-
-            // Check this last
-            if (IsPutty(filename))
-            {
-                return PuttyType.Putty;
-            }
-
-            return PuttyType.Unknown;
+            return PuttyType.Kitty;
         }
 
-        public static Version GetPuttyVersion(string filename)
+        if (IsXming(filename))
         {
-            if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
-            {
-                return new Version(0, 0);
-            }
-
-            try
-            {
-                var versionInfo = FileVersionInfo.GetVersionInfo(filename);
-                return new Version(versionInfo.FileMajorPart, versionInfo.FileMinorPart, versionInfo.FileBuildPart, versionInfo.FilePrivatePart);
-            }
-            catch
-            {
-                return new Version(0, 0);
-            }
+            return PuttyType.Xming;
         }
 
-        private static bool IsPutty(string filename)
+        // Check this last
+        if (IsPutty(filename))
         {
-            return !string.IsNullOrEmpty(filename) && File.Exists(filename) &&
-                   (FileVersionInfo.GetVersionInfo(filename).InternalName?.Contains("PuTTY", StringComparison.Ordinal) == true);
+            return PuttyType.Putty;
         }
 
-        private static bool IsPuttyNg(string filename)
+        return PuttyType.Unknown;
+    }
+
+    public static Version GetPuttyVersion(string filename)
+    {
+        if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
         {
-            if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
-                return false;
+            return new Version(0, 0);
+        }
+
+        try
+        {
             var versionInfo = FileVersionInfo.GetVersionInfo(filename);
-            // Only detect as PuTTYNG when InternalName explicitly contains "PuTTYNG".
-            // The bundled PuTTYNG 0.83 has InternalName="PuTTY" with "mRemoteNG" in
-            // ProductVersion but does NOT support -hwndparent. Using the lenient check
-            // caused "unknown option: -hwndparent" errors (#80). The fallback SetParent
-            // embedding works correctly for all PuTTY variants.
-            return versionInfo.InternalName?.Contains("PuTTYNG", StringComparison.Ordinal) == true;
+            return new Version(versionInfo.FileMajorPart, versionInfo.FileMinorPart, versionInfo.FileBuildPart, versionInfo.FilePrivatePart);
         }
-
-        private static bool IsKitty(string filename)
+        catch
         {
-            if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
-                return false;
-            var versionInfo = FileVersionInfo.GetVersionInfo(filename);
-            return versionInfo.InternalName?.Contains("PuTTY", StringComparison.Ordinal) == true &&
-                   versionInfo.Comments?.Contains("KiTTY", StringComparison.Ordinal) == true;
+            return new Version(0, 0);
         }
+    }
 
-        private static bool IsXming(string filename)
-        {
-            if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
-                return false;
-            var versionInfo = FileVersionInfo.GetVersionInfo(filename);
-            return versionInfo.InternalName?.Contains("PuTTY", StringComparison.Ordinal) == true &&
-                   versionInfo.ProductVersion?.Contains("Xming", StringComparison.Ordinal) == true;
-        }
+    private static bool IsPutty(string filename)
+    {
+        return !string.IsNullOrEmpty(filename) && File.Exists(filename) &&
+               (FileVersionInfo.GetVersionInfo(filename).InternalName?.Contains("PuTTY", StringComparison.Ordinal) == true);
+    }
 
-        public enum PuttyType
-        {
-            Unknown = 0,
-            Putty,
-            PuttyNg,
-            Kitty,
-            Xming
-        }
+    private static bool IsPuttyNg(string filename)
+    {
+        if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
+            return false;
+        var versionInfo = FileVersionInfo.GetVersionInfo(filename);
+        // Only detect as PuTTYNG when InternalName explicitly contains "PuTTYNG".
+        // The bundled PuTTYNG 0.83 has InternalName="PuTTY" with "mRemoteNG" in
+        // ProductVersion but does NOT support -hwndparent. Using the lenient check
+        // caused "unknown option: -hwndparent" errors (#80). The fallback SetParent
+        // embedding works correctly for all PuTTY variants.
+        return versionInfo.InternalName?.Contains("PuTTYNG", StringComparison.Ordinal) == true;
+    }
+
+    private static bool IsKitty(string filename)
+    {
+        if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
+            return false;
+        var versionInfo = FileVersionInfo.GetVersionInfo(filename);
+        return versionInfo.InternalName?.Contains("PuTTY", StringComparison.Ordinal) == true &&
+               versionInfo.Comments?.Contains("KiTTY", StringComparison.Ordinal) == true;
+    }
+
+    private static bool IsXming(string filename)
+    {
+        if (string.IsNullOrEmpty(filename) || !File.Exists(filename))
+            return false;
+        var versionInfo = FileVersionInfo.GetVersionInfo(filename);
+        return versionInfo.InternalName?.Contains("PuTTY", StringComparison.Ordinal) == true &&
+               versionInfo.ProductVersion?.Contains("Xming", StringComparison.Ordinal) == true;
+    }
+
+    public enum PuttyType
+    {
+        Unknown = 0,
+        Putty,
+        PuttyNg,
+        Kitty,
+        Xming
     }
 }

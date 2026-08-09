@@ -46,7 +46,7 @@ public class FileBackupPrunerTests
     {
         // Create the test file
         File.WriteAllText(_testFilePath, "test");
-        
+
         Assert.DoesNotThrow(() => FileBackupPruner.PruneBackupFiles(_testFilePath, 5));
     }
 }

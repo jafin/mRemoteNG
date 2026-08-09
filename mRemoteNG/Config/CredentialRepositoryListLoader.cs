@@ -5,26 +5,25 @@ using mRemoteNG.Config.DataProviders;
 using mRemoteNG.Config.Serializers.CredentialProviderSerializer;
 using mRemoteNG.Credential;
 
-namespace mRemoteNG.Config
+namespace mRemoteNG.Config;
+
+public class CredentialRepositoryListLoader : ILoader<IEnumerable<ICredentialRepository>>
 {
-    public class CredentialRepositoryListLoader : ILoader<IEnumerable<ICredentialRepository>>
+    private readonly IDataProvider<string> _dataProvider;
+    private readonly CredentialRepositoryListDeserializer _deserializer;
+
+    public CredentialRepositoryListLoader(IDataProvider<string> dataProvider, CredentialRepositoryListDeserializer deserializer)
     {
-        private readonly IDataProvider<string> _dataProvider;
-        private readonly CredentialRepositoryListDeserializer _deserializer;
+        ArgumentNullException.ThrowIfNull(dataProvider);
+        ArgumentNullException.ThrowIfNull(deserializer);
+        _dataProvider = dataProvider;
+        _deserializer = deserializer;
+    }
 
-        public CredentialRepositoryListLoader(IDataProvider<string> dataProvider, CredentialRepositoryListDeserializer deserializer)
-        {
-            ArgumentNullException.ThrowIfNull(dataProvider);
-            ArgumentNullException.ThrowIfNull(deserializer);
-            _dataProvider = dataProvider;
-            _deserializer = deserializer;
-        }
-
-        [SupportedOSPlatform("windows")]
-        public IEnumerable<ICredentialRepository> Load()
-        {
-            string data = _dataProvider.Load();
-            return _deserializer.Deserialize(data);
-        }
+    [SupportedOSPlatform("windows")]
+    public IEnumerable<ICredentialRepository> Load()
+    {
+        string data = _dataProvider.Load();
+        return _deserializer.Deserialize(data);
     }
 }

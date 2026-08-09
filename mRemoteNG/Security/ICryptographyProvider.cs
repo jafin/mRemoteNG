@@ -1,19 +1,18 @@
 ﻿using System.Security;
 
-namespace mRemoteNG.Security
+namespace mRemoteNG.Security;
+
+public interface ICryptographyProvider
 {
-    public interface ICryptographyProvider
-    {
-        int BlockSizeInBytes { get; }
+    int BlockSizeInBytes { get; }
 
-        BlockCipherEngines CipherEngine { get; }
+    BlockCipherEngines CipherEngine { get; }
 
-        BlockCipherModes CipherMode { get; }
+    BlockCipherModes CipherMode { get; }
 
-        int KeyDerivationIterations { get; set; }
+    int KeyDerivationIterations { get; set; }
 
-        string Encrypt(string plainText, SecureString encryptionKey);
+    string Encrypt(string plainText, SecureString encryptionKey);
 
-        string Decrypt(string cipherText, SecureString decryptionKey);
-    }
+    string Decrypt(string cipherText, SecureString decryptionKey);
 }

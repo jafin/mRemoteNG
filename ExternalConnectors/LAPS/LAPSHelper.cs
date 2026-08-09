@@ -1,4 +1,3 @@
-using System;
 using System.DirectoryServices;
 using System.Runtime.Versioning;
 using System.Text.Json;
@@ -12,9 +11,9 @@ namespace ExternalConnectors.LAPS;
 [SupportedOSPlatform("windows")]
 public static class LAPSHelper
 {
-    private const string LegacyLAPSAttribute = "ms-Mcs-AdmPwd";
-    private const string WindowsLAPSAttribute = "ms-LAPS-Password";
-    private const string WindowsLAPSEncryptedAttribute = "ms-LAPS-EncryptedPassword";
+    private const string LegacyLapsAttribute = "ms-Mcs-AdmPwd";
+    private const string WindowsLapsAttribute = "ms-LAPS-Password";
+    private const string WindowsLapsEncryptedAttribute = "ms-LAPS-EncryptedPassword";
 
     /// <summary>
     /// Queries AD for the LAPS-managed local administrator password of the specified computer.
@@ -30,47 +29,47 @@ public static class LAPSHelper
         domain = string.Empty;
 
         if (string.IsNullOrWhiteSpace(hostname))
-            throw new LAPSException("Hostname is empty. Cannot query LAPS without a target computer name.");
+            throw new LapsException("Hostname is empty. Cannot query LAPS without a target computer name.");
 
-        string computerName = hostname.Trim();
+        var computerName = hostname.Trim();
 
         // Search for the computer object in AD
         using DirectorySearcher searcher = new();
         searcher.Filter = $"(&(objectClass=computer)(cn={EscapeLdapFilter(computerName)}))";
-        searcher.PropertiesToLoad.AddRange([LegacyLAPSAttribute, WindowsLAPSAttribute, WindowsLAPSEncryptedAttribute, "cn", "dNSHostName"]);
+        searcher.PropertiesToLoad.AddRange([LegacyLapsAttribute, WindowsLapsAttribute, WindowsLapsEncryptedAttribute, "cn", "dNSHostName"]);
         searcher.SearchScope = SearchScope.Subtree;
 
-        SearchResult? result = searcher.FindOne();
+        var result = searcher.FindOne();
         if (result == null)
-            throw new LAPSException($"Computer '{computerName}' not found in Active Directory.");
+            throw new LapsException($"Computer '{computerName}' not found in Active Directory.");
 
         // Try Windows LAPS first (ms-LAPS-Password), then legacy LAPS (ms-Mcs-AdmPwd)
         string? lapsPassword = null;
-        string lapsUserName = "Administrator";
+        var lapsUserName = "Administrator";
 
         // Windows LAPS stores JSON: {"n":"Administrator","t":"...","p":"password"}
-        if (result.Properties[WindowsLAPSAttribute]?.Count > 0)
+        if (result.Properties[WindowsLapsAttribute].Count > 0)
         {
-            string? jsonValue = result.Properties[WindowsLAPSAttribute][0]?.ToString();
+            var jsonValue = result.Properties[WindowsLapsAttribute][0].ToString();
             if (!string.IsNullOrEmpty(jsonValue))
             {
-                (lapsUserName, lapsPassword) = ParseWindowsLAPSJson(jsonValue);
+                (lapsUserName, lapsPassword) = ParseWindowsLapsJson(jsonValue);
             }
         }
 
         // Fall back to legacy LAPS (plain text password in ms-Mcs-AdmPwd)
-        if (string.IsNullOrEmpty(lapsPassword) && result.Properties[LegacyLAPSAttribute]?.Count > 0)
+        if (string.IsNullOrEmpty(lapsPassword) && result.Properties[LegacyLapsAttribute].Count > 0)
         {
-            lapsPassword = result.Properties[LegacyLAPSAttribute][0]?.ToString();
+            lapsPassword = result.Properties[LegacyLapsAttribute][0].ToString();
         }
 
         if (string.IsNullOrEmpty(lapsPassword))
         {
             // Check if encrypted LAPS attribute exists (we can't decrypt it, but we can inform the user)
-            if (result.Properties[WindowsLAPSEncryptedAttribute]?.Count > 0)
-                throw new LAPSException($"Computer '{computerName}' has encrypted LAPS password (ms-LAPS-EncryptedPassword). Only unencrypted LAPS passwords are supported. Check your LAPS policy configuration.");
+            if (result.Properties[WindowsLapsEncryptedAttribute].Count > 0)
+                throw new LapsException($"Computer '{computerName}' has encrypted LAPS password (ms-LAPS-EncryptedPassword). Only unencrypted LAPS passwords are supported. Check your LAPS policy configuration.");
 
-            throw new LAPSException($"No LAPS password found for computer '{computerName}'. Ensure LAPS is configured and the current user has permission to read the LAPS password attribute.");
+            throw new LapsException($"No LAPS password found for computer '{computerName}'. Ensure LAPS is configured and the current user has permission to read the LAPS password attribute.");
         }
 
         userName = lapsUserName;
@@ -81,15 +80,15 @@ public static class LAPSHelper
     /// <summary>
     /// Parses the Windows LAPS JSON format: {"n":"AccountName","t":"hex-timestamp","p":"password"}
     /// </summary>
-    private static (string userName, string password) ParseWindowsLAPSJson(string json)
+    private static (string userName, string password) ParseWindowsLapsJson(string json)
     {
         try
         {
-            using JsonDocument doc = JsonDocument.Parse(json);
-            JsonElement root = doc.RootElement;
+            using var doc = JsonDocument.Parse(json);
+            var root = doc.RootElement;
 
-            string name = root.TryGetProperty("n", out JsonElement nProp) ? nProp.GetString() ?? "Administrator" : "Administrator";
-            string pwd = root.TryGetProperty("p", out JsonElement pProp) ? pProp.GetString() ?? string.Empty : string.Empty;
+            var name = root.TryGetProperty("n", out var nProp) ? nProp.GetString() ?? "Administrator" : "Administrator";
+            var pwd = root.TryGetProperty("p", out var pProp) ? pProp.GetString() ?? string.Empty : string.Empty;
 
             return (name, pwd);
         }
@@ -114,4 +113,4 @@ public static class LAPSHelper
     }
 }
 
-public class LAPSException(string message) : Exception(message);
+public class LapsException(string message) : Exception(message);

@@ -38,278 +38,276 @@ using System.Collections;
 using System.Collections.Generic;
 using System.Windows.Forms;
 
-namespace BrightIdeasSoftware
+namespace BrightIdeasSoftware;
+
+/// <summary>
+/// ColumnComparer is the workhorse for all comparison between two values of a particular column.
+/// If the column has a specific comparer, use that to compare the values. Otherwise, do
+/// a case insensitive string compare of the string representations of the values.
+/// </summary>
+/// <remarks><para>This class inherits from both IComparer and its generic counterpart
+/// so that it can be used on untyped and typed collections.</para>
+/// <para>This is used by normal (non-virtual) ObjectListViews. Virtual lists use
+/// ModelObjectComparer</para>
+/// </remarks>
+/// <remarks>
+/// Create a ColumnComparer that will order the rows in a list view according
+/// to the values in a given column
+/// </remarks>
+/// <param name="col">The column whose values will be compared</param>
+/// <param name="order">The ordering for column values</param>
+public class ColumnComparer(OLVColumn col, SortOrder order) : IComparer, IComparer<OLVListItem>
 {
     /// <summary>
-    /// ColumnComparer is the workhorse for all comparison between two values of a particular column.
-    /// If the column has a specific comparer, use that to compare the values. Otherwise, do
-    /// a case insensitive string compare of the string representations of the values.
+    /// Gets or sets the method that will be used to compare two strings.
+    /// The default is to compare on the current culture, case-insensitive
     /// </summary>
-    /// <remarks><para>This class inherits from both IComparer and its generic counterpart
-    /// so that it can be used on untyped and typed collections.</para>
-    /// <para>This is used by normal (non-virtual) ObjectListViews. Virtual lists use
-    /// ModelObjectComparer</para>
-    /// </remarks>
-    /// <remarks>
+    public static StringCompareDelegate StringComparer
+    {
+        get { return stringComparer; }
+        set { stringComparer = value; }
+    }
+    private static StringCompareDelegate stringComparer;
+
+    /// <summary>
     /// Create a ColumnComparer that will order the rows in a list view according
-    /// to the values in a given column
-    /// </remarks>
+    /// to the values in a given column, and by a secondary column if the primary
+    /// column is equal.
+    /// </summary>
     /// <param name="col">The column whose values will be compared</param>
     /// <param name="order">The ordering for column values</param>
-    public class ColumnComparer(OLVColumn col, SortOrder order) : IComparer, IComparer<OLVListItem>
+    /// <param name="col2">The column whose values will be compared for secondary sorting</param>
+    /// <param name="order2">The ordering for secondary column values</param>
+    public ColumnComparer(OLVColumn col, SortOrder order, OLVColumn col2, SortOrder order2)
+        : this(col, order)
     {
-        /// <summary>
-        /// Gets or sets the method that will be used to compare two strings.
-        /// The default is to compare on the current culture, case-insensitive
-        /// </summary>
-        public static StringCompareDelegate StringComparer
-        {
-            get { return stringComparer; }
-            set { stringComparer = value; }
-        }
-        private static StringCompareDelegate stringComparer;
-
-        /// <summary>
-        /// Create a ColumnComparer that will order the rows in a list view according
-        /// to the values in a given column, and by a secondary column if the primary
-        /// column is equal.
-        /// </summary>
-        /// <param name="col">The column whose values will be compared</param>
-        /// <param name="order">The ordering for column values</param>
-        /// <param name="col2">The column whose values will be compared for secondary sorting</param>
-        /// <param name="order2">The ordering for secondary column values</param>
-        public ColumnComparer(OLVColumn col, SortOrder order, OLVColumn col2, SortOrder order2)
-            : this(col, order)
-        {
-            // There is no point in secondary sorting on the same column
-            if (col != col2)
-                this.secondComparer = new ColumnComparer(col2, order2);
-        }
-
-        /// <summary>
-        /// Compare two rows
-        /// </summary>
-        /// <param name="x">row1</param>
-        /// <param name="y">row2</param>
-        /// <returns>An ordering indication: -1, 0, 1</returns>
-        public int Compare(object x, object y)
-        {
-            return this.Compare((OLVListItem)x, (OLVListItem)y);
-        }
-
-        /// <summary>
-        /// Compare two rows
-        /// </summary>
-        /// <param name="x">row1</param>
-        /// <param name="y">row2</param>
-        /// <returns>An ordering indication: -1, 0, 1</returns>
-        public int Compare(OLVListItem x, OLVListItem y)
-        {
-            if (this.sortOrder == SortOrder.None)
-                return 0;
-
-            int result = 0;
-            object x1 = this.column.GetValue(x.RowObject);
-            object y1 = this.column.GetValue(y.RowObject);
-
-            // Handle nulls. Null values come last
-            bool xIsNull = (x1 == null || x1 == System.DBNull.Value);
-            bool yIsNull = (y1 == null || y1 == System.DBNull.Value);
-            if (xIsNull || yIsNull) {
-                if (xIsNull && yIsNull)
-                    result = 0;
-                else
-                    result = (xIsNull ? -1 : 1);
-            } else {
-                result = CompareValues(x1, y1);
-            }
-
-            if (this.sortOrder == SortOrder.Descending)
-                result = 0 - result;
-
-            // If the result was equality, use the secondary comparer to resolve it
-            if (result == 0 && this.secondComparer != null)
-                result = this.secondComparer.Compare(x, y);
-
-            return result;
-        }
-
-        /// <summary>
-        /// Compare the actual values to be used for sorting
-        /// </summary>
-        /// <param name="x">The aspect extracted from the first row</param>
-        /// <param name="y">The aspect extracted from the second row</param>
-        /// <returns>An ordering indication: -1, 0, 1</returns>
-        public static int CompareValues(object x, object y)
-        {
-            // Force case insensitive compares on strings
-            String xAsString = x as String;
-            if (xAsString != null)
-                return CompareStrings(xAsString, y as String);
-
-            IComparable comparable = x as IComparable;
-            return comparable != null ? comparable.CompareTo(y) : 0;
-        }
-
-        private static int CompareStrings(string x, string y)
-        {
-            if (StringComparer == null)
-                return String.Compare(x, y, StringComparison.OrdinalIgnoreCase);
-            else
-                return StringComparer(x, y);
-        }
-
-        private OLVColumn column = col;
-        private SortOrder sortOrder = order;
-        private ColumnComparer secondComparer;
+        // There is no point in secondary sorting on the same column
+        if (col != col2)
+            this.secondComparer = new ColumnComparer(col2, order2);
     }
 
+    /// <summary>
+    /// Compare two rows
+    /// </summary>
+    /// <param name="x">row1</param>
+    /// <param name="y">row2</param>
+    /// <returns>An ordering indication: -1, 0, 1</returns>
+    public int Compare(object x, object y)
+    {
+        return this.Compare((OLVListItem)x, (OLVListItem)y);
+    }
 
     /// <summary>
-    /// This comparer sort list view groups. OLVGroups have a "SortValue" property,
+    /// Compare two rows
+    /// </summary>
+    /// <param name="x">row1</param>
+    /// <param name="y">row2</param>
+    /// <returns>An ordering indication: -1, 0, 1</returns>
+    public int Compare(OLVListItem x, OLVListItem y)
+    {
+        if (this.sortOrder == SortOrder.None)
+            return 0;
+
+        int result = 0;
+        object x1 = this.column.GetValue(x.RowObject);
+        object y1 = this.column.GetValue(y.RowObject);
+
+        // Handle nulls. Null values come last
+        bool xIsNull = (x1 == null || x1 == System.DBNull.Value);
+        bool yIsNull = (y1 == null || y1 == System.DBNull.Value);
+        if (xIsNull || yIsNull) {
+            if (xIsNull && yIsNull)
+                result = 0;
+            else
+                result = (xIsNull ? -1 : 1);
+        } else {
+            result = CompareValues(x1, y1);
+        }
+
+        if (this.sortOrder == SortOrder.Descending)
+            result = 0 - result;
+
+        // If the result was equality, use the secondary comparer to resolve it
+        if (result == 0 && this.secondComparer != null)
+            result = this.secondComparer.Compare(x, y);
+
+        return result;
+    }
+
+    /// <summary>
+    /// Compare the actual values to be used for sorting
+    /// </summary>
+    /// <param name="x">The aspect extracted from the first row</param>
+    /// <param name="y">The aspect extracted from the second row</param>
+    /// <returns>An ordering indication: -1, 0, 1</returns>
+    public static int CompareValues(object x, object y)
+    {
+        // Force case insensitive compares on strings
+        String xAsString = x as String;
+        if (xAsString != null)
+            return CompareStrings(xAsString, y as String);
+
+        IComparable comparable = x as IComparable;
+        return comparable != null ? comparable.CompareTo(y) : 0;
+    }
+
+    private static int CompareStrings(string x, string y)
+    {
+        if (StringComparer == null)
+            return String.Compare(x, y, StringComparison.OrdinalIgnoreCase);
+        else
+            return StringComparer(x, y);
+    }
+
+    private OLVColumn column = col;
+    private SortOrder sortOrder = order;
+    private ColumnComparer secondComparer;
+}
+
+
+/// <summary>
+/// This comparer sort list view groups. OLVGroups have a "SortValue" property,
+/// which is used if present. Otherwise, the titles of the groups will be compared.
+/// </summary>
+/// <remarks>
+/// Create a group comparer
+/// </remarks>
+/// <param name="order">The ordering for column values</param>
+public class OLVGroupComparer(SortOrder order) : IComparer<OLVGroup>
+{
+
+    /// <summary>
+    /// Compare the two groups. OLVGroups have a "SortValue" property,
     /// which is used if present. Otherwise, the titles of the groups will be compared.
     /// </summary>
-    /// <remarks>
-    /// Create a group comparer
-    /// </remarks>
-    /// <param name="order">The ordering for column values</param>
-    public class OLVGroupComparer(SortOrder order) : IComparer<OLVGroup>
+    /// <param name="x">group1</param>
+    /// <param name="y">group2</param>
+    /// <returns>An ordering indication: -1, 0, 1</returns>
+    public int Compare(OLVGroup x, OLVGroup y) {
+        // If we can compare the sort values, do that.
+        // Otherwise do a case insensitive compare on the group header.
+        int result;
+        if (x.SortValue != null && y.SortValue != null)
+            result = x.SortValue.CompareTo(y.SortValue);
+        else
+            result = String.Compare(x.Header, y.Header, StringComparison.OrdinalIgnoreCase);
+
+        if (this.sortOrder == SortOrder.Descending)
+            result = 0 - result;
+
+        return result;
+    }
+
+    private SortOrder sortOrder = order;
+}
+
+/// <summary>
+/// This comparer can be used to sort a collection of model objects by a given column
+/// </summary>
+/// <remarks>
+/// <para>This is used by virtual ObjectListViews. Non-virtual lists use
+/// ColumnComparer</para>
+/// </remarks>
+/// <remarks>
+/// Create a model object comparer
+/// </remarks>
+/// <param name="col"></param>
+/// <param name="order"></param>
+public class ModelObjectComparer(OLVColumn col, SortOrder order) : IComparer, IComparer<object>
+{
+    /// <summary>
+    /// Gets or sets the method that will be used to compare two strings.
+    /// The default is to compare on the current culture, case-insensitive
+    /// </summary>
+    public static StringCompareDelegate StringComparer
     {
+        get { return stringComparer; }
+        set { stringComparer = value; }
+    }
+    private static StringCompareDelegate stringComparer;
 
-        /// <summary>
-        /// Compare the two groups. OLVGroups have a "SortValue" property,
-        /// which is used if present. Otherwise, the titles of the groups will be compared.
-        /// </summary>
-        /// <param name="x">group1</param>
-        /// <param name="y">group2</param>
-        /// <returns>An ordering indication: -1, 0, 1</returns>
-        public int Compare(OLVGroup x, OLVGroup y) {
-            // If we can compare the sort values, do that.
-            // Otherwise do a case insensitive compare on the group header.
-            int result;
-            if (x.SortValue != null && y.SortValue != null)
-                result = x.SortValue.CompareTo(y.SortValue);
-            else
-                result = String.Compare(x.Header, y.Header, StringComparison.OrdinalIgnoreCase);
-
-            if (this.sortOrder == SortOrder.Descending)
-                result = 0 - result;
-
-            return result;
-        }
-
-        private SortOrder sortOrder = order;
+    /// <summary>
+    /// Create a model object comparer with a secondary sorting column
+    /// </summary>
+    /// <param name="col"></param>
+    /// <param name="order"></param>
+    /// <param name="col2"></param>
+    /// <param name="order2"></param>
+    public ModelObjectComparer(OLVColumn col, SortOrder order, OLVColumn col2, SortOrder order2)
+        : this(col, order)
+    {
+        // There is no point in secondary sorting on the same column
+        if (col != col2 && col2 != null && order2 != SortOrder.None)
+            this.secondComparer = new ModelObjectComparer(col2, order2);
     }
 
     /// <summary>
-    /// This comparer can be used to sort a collection of model objects by a given column
+    /// Compare the two model objects
     /// </summary>
-    /// <remarks>
-    /// <para>This is used by virtual ObjectListViews. Non-virtual lists use
-    /// ColumnComparer</para>
-    /// </remarks>
-    /// <remarks>
-    /// Create a model object comparer
-    /// </remarks>
-    /// <param name="col"></param>
-    /// <param name="order"></param>
-    public class ModelObjectComparer(OLVColumn col, SortOrder order) : IComparer, IComparer<object>
+    /// <param name="x"></param>
+    /// <param name="y"></param>
+    /// <returns></returns>
+    public int Compare(object x, object y)
     {
-        /// <summary>
-        /// Gets or sets the method that will be used to compare two strings.
-        /// The default is to compare on the current culture, case-insensitive
-        /// </summary>
-        public static StringCompareDelegate StringComparer
-        {
-            get { return stringComparer; }
-            set { stringComparer = value; }
-        }
-        private static StringCompareDelegate stringComparer;
+        int result = 0;
+        object x1 = this.column.GetValue(x);
+        object y1 = this.column.GetValue(y);
 
-        /// <summary>
-        /// Create a model object comparer with a secondary sorting column
-        /// </summary>
-        /// <param name="col"></param>
-        /// <param name="order"></param>
-        /// <param name="col2"></param>
-        /// <param name="order2"></param>
-        public ModelObjectComparer(OLVColumn col, SortOrder order, OLVColumn col2, SortOrder order2)
-            : this(col, order)
-        {
-            // There is no point in secondary sorting on the same column
-            if (col != col2 && col2 != null && order2 != SortOrder.None)
-                this.secondComparer = new ModelObjectComparer(col2, order2);
-        }
+        if (this.sortOrder == SortOrder.None)
+            return 0;
 
-        /// <summary>
-        /// Compare the two model objects
-        /// </summary>
-        /// <param name="x"></param>
-        /// <param name="y"></param>
-        /// <returns></returns>
-        public int Compare(object x, object y)
-        {
-            int result = 0;
-            object x1 = this.column.GetValue(x);
-            object y1 = this.column.GetValue(y);
-
-            if (this.sortOrder == SortOrder.None)
-                return 0;
-
-            // Handle nulls. Null values come last
-            bool xIsNull = (x1 == null || x1 == System.DBNull.Value);
-            bool yIsNull = (y1 == null || y1 == System.DBNull.Value);
-            if (xIsNull || yIsNull) {
-                if (xIsNull && yIsNull)
-                    result = 0;
-                else
-                    result = (xIsNull ? -1 : 1);
-            } else {
-                result = CompareValues(x1, y1);
-            }
-
-            if (this.sortOrder == SortOrder.Descending)
-                result = 0 - result;
-
-            // If the result was equality, use the secondary comparer to resolve it
-            if (result == 0 && this.secondComparer != null)
-                result = this.secondComparer.Compare(x, y);
-
-            return result;
-        }
-
-        /// <summary>
-        /// Compare the actual values
-        /// </summary>
-        /// <param name="x"></param>
-        /// <param name="y"></param>
-        /// <returns></returns>
-        public static int CompareValues(object x, object y)
-        {
-            // Force case insensitive compares on strings
-            String xStr = x as String;
-            if (xStr != null)
-                return CompareStrings(xStr, y as String);
-
-            IComparable comparable = x as IComparable;
-            return comparable != null ? comparable.CompareTo(y) : 0;
-        }
-
-        private static int CompareStrings(string x, string y)
-        {
-            if (StringComparer == null)
-                return String.Compare(x, y, StringComparison.OrdinalIgnoreCase);
+        // Handle nulls. Null values come last
+        bool xIsNull = (x1 == null || x1 == System.DBNull.Value);
+        bool yIsNull = (y1 == null || y1 == System.DBNull.Value);
+        if (xIsNull || yIsNull) {
+            if (xIsNull && yIsNull)
+                result = 0;
             else
-                return StringComparer(x, y);
+                result = (xIsNull ? -1 : 1);
+        } else {
+            result = CompareValues(x1, y1);
         }
 
-        private OLVColumn column = col;
-        private SortOrder sortOrder = order;
-        private ModelObjectComparer secondComparer;
+        if (this.sortOrder == SortOrder.Descending)
+            result = 0 - result;
 
-        #region IComparer<object> Members
+        // If the result was equality, use the secondary comparer to resolve it
+        if (result == 0 && this.secondComparer != null)
+            result = this.secondComparer.Compare(x, y);
 
-        #endregion
+        return result;
     }
 
+    /// <summary>
+    /// Compare the actual values
+    /// </summary>
+    /// <param name="x"></param>
+    /// <param name="y"></param>
+    /// <returns></returns>
+    public static int CompareValues(object x, object y)
+    {
+        // Force case insensitive compares on strings
+        String xStr = x as String;
+        if (xStr != null)
+            return CompareStrings(xStr, y as String);
+
+        IComparable comparable = x as IComparable;
+        return comparable != null ? comparable.CompareTo(y) : 0;
+    }
+
+    private static int CompareStrings(string x, string y)
+    {
+        if (StringComparer == null)
+            return String.Compare(x, y, StringComparison.OrdinalIgnoreCase);
+        else
+            return StringComparer(x, y);
+    }
+
+    private OLVColumn column = col;
+    private SortOrder sortOrder = order;
+    private ModelObjectComparer secondComparer;
+
+    #region IComparer<object> Members
+
+    #endregion
 }

@@ -1,14 +1,14 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Runtime.Versioning;
 using mRemoteNG.Config.Serializers.MiscSerializers;
 using mRemoteNG.Connection;
 using mRemoteNG.Connection.Protocol;
 using mRemoteNG.Container;
-using NUnit.Framework;
-using mRemoteNGTests.Properties;
 using mRemoteNG.Tree;
-using System.Runtime.Versioning;
+using mRemoteNGTests.Properties;
+using NUnit.Framework;
 
 namespace mRemoteNGTests.Config.Serializers.MiscSerializers;
 
@@ -49,7 +49,7 @@ public class SecureCRTFileDeserializerTests
         Assert.That(rawNode.Username, Is.EqualTo(""));
     }
 
-    [Test] 
+    [Test]
     public void TestRDPConnectionInfo()
     {
         var rootNode = GetContainerNamed("Connections", _connectionTreeModel.RootNodes);
@@ -132,7 +132,7 @@ public class SecureCRTFileDeserializerTests
     }
 
     [Test]
-    public void TestValidateFileStructure() 
+    public void TestValidateFileStructure()
     {
         var rootNode = GetContainerNamed("Connections", _connectionTreeModel.RootNodes);
         var sessionsNode = GetContainerNamed("Sessions", rootNode.Children);

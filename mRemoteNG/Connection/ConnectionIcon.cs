@@ -5,46 +5,45 @@ using mRemoteNG.App;
 using mRemoteNG.App.Info;
 
 
-namespace mRemoteNG.Connection
+namespace mRemoteNG.Connection;
+
+[SupportedOSPlatform("windows")]
+public class ConnectionIcon : StringConverter
 {
-    [SupportedOSPlatform("windows")]
-    public class ConnectionIcon : StringConverter
+    public static string[] Icons = Array.Empty<string>();
+
+    public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
     {
-        public static string[] Icons = Array.Empty<string>();
+        return new StandardValuesCollection(Icons);
+    }
 
-        public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
-        {
-            return new StandardValuesCollection(Icons);
-        }
+    public override bool GetStandardValuesExclusive(ITypeDescriptorContext? context)
+    {
+        return true;
+    }
 
-        public override bool GetStandardValuesExclusive(ITypeDescriptorContext? context)
-        {
-            return true;
-        }
+    public override bool GetStandardValuesSupported(ITypeDescriptorContext? context)
+    {
+        return true;
+    }
 
-        public override bool GetStandardValuesSupported(ITypeDescriptorContext? context)
+    public static System.Drawing.Icon? FromString(string iconName)
+    {
+        try
         {
-            return true;
-        }
+            string iconPath = $"{GeneralAppInfo.HomePath}\\Icons\\{iconName}.ico";
 
-        public static System.Drawing.Icon? FromString(string iconName)
-        {
-            try
+            if (System.IO.File.Exists(iconPath))
             {
-                string iconPath = $"{GeneralAppInfo.HomePath}\\Icons\\{iconName}.ico";
-
-                if (System.IO.File.Exists(iconPath))
-                {
-                    System.Drawing.Icon nI = new(iconPath);
-                    return nI;
-                }
+                System.Drawing.Icon nI = new(iconPath);
+                return nI;
             }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddMessage(Messages.MessageClass.ErrorMsg, $"Couldn't get Icon from String" + Environment.NewLine + ex.Message);
-            }
-
-            return null;
         }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddMessage(Messages.MessageClass.ErrorMsg, $"Couldn't get Icon from String" + Environment.NewLine + ex.Message);
+        }
+
+        return null;
     }
 }

@@ -10,183 +10,182 @@ using mRemoteNG.Tree.Root;
 
 // ReSharper disable ArrangeAccessorOwnerBody
 
-namespace mRemoteNG.Config.Putty
+namespace mRemoteNG.Config.Putty;
+
+[SupportedOSPlatform("windows")]
+public class PuttySessionsManager
 {
-    [SupportedOSPlatform("windows")]
-    public class PuttySessionsManager
+    public static PuttySessionsManager Instance { get; } = new PuttySessionsManager();
+
+    private readonly List<AbstractPuttySessionsProvider> _providers = [];
+
+    public IEnumerable<AbstractPuttySessionsProvider> Providers => _providers;
+
+    public IList<RootPuttySessionsNodeInfo> RootPuttySessionsNodes { get; } = [];
+
+    private PuttySessionsManager()
     {
-        public static PuttySessionsManager Instance { get; } = new PuttySessionsManager();
+        AddProvider(new PuttySessionsRegistryProvider());
+        AddProvider(new PuttySessionsFileProvider());
+    }
 
-        private readonly List<AbstractPuttySessionsProvider> _providers = [];
 
-        public IEnumerable<AbstractPuttySessionsProvider> Providers => _providers;
+    #region Public Methods
 
-        public IList<RootPuttySessionsNodeInfo> RootPuttySessionsNodes { get; } = [];
-
-        private PuttySessionsManager()
+    public void AddSessions()
+    {
+        foreach (AbstractPuttySessionsProvider provider in Providers)
         {
-            AddProvider(new PuttySessionsRegistryProvider());
-            AddProvider(new PuttySessionsFileProvider());
-        }
-
-
-        #region Public Methods
-
-        public void AddSessions()
-        {
-            foreach (AbstractPuttySessionsProvider provider in Providers)
+            if (IsProviderEnabled(provider))
             {
-                if (IsProviderEnabled(provider))
-                {
-                    AddSessionsFromProvider(provider);
-                }
+                AddSessionsFromProvider(provider);
             }
         }
+    }
 
-        private void AddSessionsFromProvider(AbstractPuttySessionsProvider puttySessionProvider)
+    private void AddSessionsFromProvider(AbstractPuttySessionsProvider puttySessionProvider)
+    {
+        ArgumentNullException.ThrowIfNull(puttySessionProvider);
+
+        RootPuttySessionsNodeInfo rootTreeNode = puttySessionProvider.RootInfo;
+        try
         {
-            ArgumentNullException.ThrowIfNull(puttySessionProvider);
+            puttySessionProvider.GetSessions();
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddExceptionMessage(
+                $"Failed to load PuTTY sessions from provider {puttySessionProvider.GetType().Name}.",
+                ex,
+                MessageClass.WarningMsg);
+            return;
+        }
 
-            RootPuttySessionsNodeInfo rootTreeNode = puttySessionProvider.RootInfo;
-            try
+        if (!RootPuttySessionsNodes.Contains(rootTreeNode) && rootTreeNode.HasChildren())
+            RootPuttySessionsNodes.Add(rootTreeNode);
+        rootTreeNode.SortRecursive();
+    }
+
+    public void StartWatcher()
+    {
+        foreach (AbstractPuttySessionsProvider provider in Providers)
+        {
+            provider.StartWatcher();
+            provider.PuttySessionChanged += PuttySessionChanged;
+        }
+    }
+
+    public void StopWatcher()
+    {
+        foreach (AbstractPuttySessionsProvider provider in Providers)
+        {
+            provider.StopWatcher();
+            provider.PuttySessionChanged -= PuttySessionChanged;
+        }
+    }
+
+    public void AddProvider(AbstractPuttySessionsProvider newProvider)
+    {
+        if (_providers.Contains(newProvider)) return;
+        _providers.Add(newProvider);
+        newProvider.PuttySessionsCollectionChanged += RaisePuttySessionCollectionChangedEvent;
+        RaiseSessionProvidersCollectionChangedEvent(
+            new
+                NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add,
+                    newProvider));
+    }
+
+    public void AddProviders(IEnumerable<AbstractPuttySessionsProvider> newProviders)
+    {
+        foreach (AbstractPuttySessionsProvider provider in newProviders)
+            AddProvider(provider);
+    }
+
+    public void RemoveProvider(AbstractPuttySessionsProvider providerToRemove)
+    {
+        if (!_providers.Contains(providerToRemove)) return;
+        _providers.Remove(providerToRemove);
+        providerToRemove.PuttySessionsCollectionChanged -= RaisePuttySessionCollectionChangedEvent;
+        RaiseSessionProvidersCollectionChangedEvent(
+            new
+                NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove,
+                    providerToRemove));
+    }
+
+    public void PuttySessionChanged(object sender, PuttySessionChangedEventArgs e)
+    {
+        AddSessions();
+    }
+
+    #endregion
+
+    #region Private Methods
+
+    private string[] GetSessionNames(bool raw = false)
+    {
+        List<string> sessionNames = new();
+        foreach (AbstractPuttySessionsProvider provider in Providers)
+        {
+            if (!IsProviderEnabled(provider))
             {
-                puttySessionProvider.GetSessions();
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionMessage(
-                    $"Failed to load PuTTY sessions from provider {puttySessionProvider.GetType().Name}.",
-                    ex,
-                    MessageClass.WarningMsg);
-                return;
-            }
-
-            if (!RootPuttySessionsNodes.Contains(rootTreeNode) && rootTreeNode.HasChildren())
-                RootPuttySessionsNodes.Add(rootTreeNode);
-            rootTreeNode.SortRecursive();
-        }
-
-        public void StartWatcher()
-        {
-            foreach (AbstractPuttySessionsProvider provider in Providers)
-            {
-                provider.StartWatcher();
-                provider.PuttySessionChanged += PuttySessionChanged;
-            }
-        }
-
-        public void StopWatcher()
-        {
-            foreach (AbstractPuttySessionsProvider provider in Providers)
-            {
-                provider.StopWatcher();
-                provider.PuttySessionChanged -= PuttySessionChanged;
-            }
-        }
-
-        public void AddProvider(AbstractPuttySessionsProvider newProvider)
-        {
-            if (_providers.Contains(newProvider)) return;
-            _providers.Add(newProvider);
-            newProvider.PuttySessionsCollectionChanged += RaisePuttySessionCollectionChangedEvent;
-            RaiseSessionProvidersCollectionChangedEvent(
-                                                        new
-                                                            NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add,
-                                                                                             newProvider));
-        }
-
-        public void AddProviders(IEnumerable<AbstractPuttySessionsProvider> newProviders)
-        {
-            foreach (AbstractPuttySessionsProvider provider in newProviders)
-                AddProvider(provider);
-        }
-
-        public void RemoveProvider(AbstractPuttySessionsProvider providerToRemove)
-        {
-            if (!_providers.Contains(providerToRemove)) return;
-            _providers.Remove(providerToRemove);
-            providerToRemove.PuttySessionsCollectionChanged -= RaisePuttySessionCollectionChangedEvent;
-            RaiseSessionProvidersCollectionChangedEvent(
-                                                        new
-                                                            NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove,
-                                                                                             providerToRemove));
-        }
-
-        public void PuttySessionChanged(object sender, PuttySessionChangedEventArgs e)
-        {
-            AddSessions();
-        }
-
-        #endregion
-
-        #region Private Methods
-
-        private string[] GetSessionNames(bool raw = false)
-        {
-            List<string> sessionNames = new();
-            foreach (AbstractPuttySessionsProvider provider in Providers)
-            {
-                if (!IsProviderEnabled(provider))
-                {
-                    continue;
-                }
-
-                sessionNames.AddRange(provider.GetSessionNames(raw));
+                continue;
             }
 
-            return sessionNames.ToArray();
+            sessionNames.AddRange(provider.GetSessionNames(raw));
         }
 
-        private static bool IsProviderEnabled(AbstractPuttySessionsProvider puttySessionsProvider)
+        return sessionNames.ToArray();
+    }
+
+    private static bool IsProviderEnabled(AbstractPuttySessionsProvider puttySessionsProvider)
+    {
+        if (puttySessionsProvider is PuttySessionsRegistryProvider) return true;
+
+        if (puttySessionsProvider is PuttySessionsFileProvider)
         {
-            if (puttySessionsProvider is PuttySessionsRegistryProvider) return true;
-
-            if (puttySessionsProvider is PuttySessionsFileProvider)
-            {
-                return PuttyTypeDetector.GetPuttyType() == PuttyTypeDetector.PuttyType.Kitty;
-            }
-
-            return false;
+            return PuttyTypeDetector.GetPuttyType() == PuttyTypeDetector.PuttyType.Kitty;
         }
 
-        #endregion
+        return false;
+    }
 
-        #region Public Classes
+    #endregion
 
-        public class SessionList : StringConverter
+    #region Public Classes
+
+    public class SessionList : StringConverter
+    {
+        public static string[] Names => Instance.GetSessionNames();
+
+        public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
         {
-            public static string[] Names => Instance.GetSessionNames();
-
-            public override StandardValuesCollection GetStandardValues(ITypeDescriptorContext? context)
-            {
-                return new StandardValuesCollection(Names);
-            }
-
-            public override bool GetStandardValuesExclusive(ITypeDescriptorContext? context)
-            {
-                return true;
-            }
-
-            public override bool GetStandardValuesSupported(ITypeDescriptorContext? context)
-            {
-                return true;
-            }
+            return new StandardValuesCollection(Names);
         }
 
-        #endregion
-
-        public event NotifyCollectionChangedEventHandler? PuttySessionsCollectionChanged;
-
-        protected void RaisePuttySessionCollectionChangedEvent(object sender, NotifyCollectionChangedEventArgs args)
+        public override bool GetStandardValuesExclusive(ITypeDescriptorContext? context)
         {
-            PuttySessionsCollectionChanged?.Invoke(this, args);
+            return true;
         }
 
-        public event NotifyCollectionChangedEventHandler? SessionProvidersCollectionChanged;
-
-        protected void RaiseSessionProvidersCollectionChangedEvent(NotifyCollectionChangedEventArgs args)
+        public override bool GetStandardValuesSupported(ITypeDescriptorContext? context)
         {
-            SessionProvidersCollectionChanged?.Invoke(this, args);
+            return true;
         }
+    }
+
+    #endregion
+
+    public event NotifyCollectionChangedEventHandler? PuttySessionsCollectionChanged;
+
+    protected void RaisePuttySessionCollectionChangedEvent(object sender, NotifyCollectionChangedEventArgs args)
+    {
+        PuttySessionsCollectionChanged?.Invoke(this, args);
+    }
+
+    public event NotifyCollectionChangedEventHandler? SessionProvidersCollectionChanged;
+
+    protected void RaiseSessionProvidersCollectionChangedEvent(NotifyCollectionChangedEventArgs args)
+    {
+        SessionProvidersCollectionChanged?.Invoke(this, args);
     }
 }

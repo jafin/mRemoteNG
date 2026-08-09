@@ -1,13 +1,12 @@
 ﻿using System.Windows.Forms;
 
-namespace mRemoteNGTests.UI.Controls
+namespace mRemoteNGTests.UI.Controls;
+
+public partial class SecureTextBoxTestForm : Form
 {
-    public partial class SecureTextBoxTestForm : Form
+    public SecureTextBoxTestForm()
     {
-        public SecureTextBoxTestForm()
-        {
-            Application.EnableVisualStyles();
-            InitializeComponent();
-        }
+        Application.EnableVisualStyles();
+        InitializeComponent();
     }
 }

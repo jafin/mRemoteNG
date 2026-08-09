@@ -1,53 +1,52 @@
-﻿using mRemoteNG.Connection;
-using mRemoteNG.Container;
-using System;
+﻿using System;
 using System.Globalization;
-using System.Windows.Forms;
-using mRemoteNG.Resources.Language;
 using System.Runtime.Versioning;
+using System.Windows.Forms;
+using mRemoteNG.Connection;
+using mRemoteNG.Container;
+using mRemoteNG.Resources.Language;
 
-namespace mRemoteNG.Tree
+namespace mRemoteNG.Tree;
+
+[SupportedOSPlatform("windows")]
+public class SelectedConnectionDeletionConfirmer(Func<string, DialogResult> confirmationFunc) : IConfirm<ConnectionInfo>
 {
-    [SupportedOSPlatform("windows")]
-    public class SelectedConnectionDeletionConfirmer(Func<string, DialogResult> confirmationFunc) : IConfirm<ConnectionInfo>
+    private readonly Func<string, DialogResult> _confirmationFunc = confirmationFunc;
+
+    public bool Confirm(ConnectionInfo deletionTarget)
     {
-        private readonly Func<string, DialogResult> _confirmationFunc = confirmationFunc;
+        if (deletionTarget == null)
+            return false;
 
-        public bool Confirm(ConnectionInfo deletionTarget)
-        {
-            if (deletionTarget == null)
-                return false;
+        ContainerInfo? deletionTargetAsContainer = deletionTarget as ContainerInfo;
+        if (deletionTargetAsContainer != null)
+            return deletionTargetAsContainer.HasChildren()
+                ? UserConfirmsNonEmptyFolderDeletion(deletionTargetAsContainer)
+                : UserConfirmsEmptyFolderDeletion(deletionTargetAsContainer);
+        return UserConfirmsConnectionDeletion(deletionTarget);
+    }
 
-            ContainerInfo? deletionTargetAsContainer = deletionTarget as ContainerInfo;
-            if (deletionTargetAsContainer != null)
-                return deletionTargetAsContainer.HasChildren()
-                    ? UserConfirmsNonEmptyFolderDeletion(deletionTargetAsContainer)
-                    : UserConfirmsEmptyFolderDeletion(deletionTargetAsContainer);
-            return UserConfirmsConnectionDeletion(deletionTarget);
-        }
+    private bool UserConfirmsEmptyFolderDeletion(AbstractConnectionRecord deletionTarget)
+    {
+        string messagePrompt = string.Format(CultureInfo.CurrentCulture, Language.ConfirmDeleteNodeFolder, deletionTarget.Name);
+        return PromptUser(messagePrompt);
+    }
 
-        private bool UserConfirmsEmptyFolderDeletion(AbstractConnectionRecord deletionTarget)
-        {
-            string messagePrompt = string.Format(CultureInfo.CurrentCulture, Language.ConfirmDeleteNodeFolder, deletionTarget.Name);
-            return PromptUser(messagePrompt);
-        }
+    private bool UserConfirmsNonEmptyFolderDeletion(AbstractConnectionRecord deletionTarget)
+    {
+        string messagePrompt = string.Format(CultureInfo.CurrentCulture, Language.ConfirmDeleteNodeFolderNotEmpty, deletionTarget.Name);
+        return PromptUser(messagePrompt);
+    }
 
-        private bool UserConfirmsNonEmptyFolderDeletion(AbstractConnectionRecord deletionTarget)
-        {
-            string messagePrompt = string.Format(CultureInfo.CurrentCulture, Language.ConfirmDeleteNodeFolderNotEmpty, deletionTarget.Name);
-            return PromptUser(messagePrompt);
-        }
+    private bool UserConfirmsConnectionDeletion(AbstractConnectionRecord deletionTarget)
+    {
+        string messagePrompt = string.Format(CultureInfo.CurrentCulture, Language.ConfirmDeleteNodeConnection, deletionTarget.Name);
+        return PromptUser(messagePrompt);
+    }
 
-        private bool UserConfirmsConnectionDeletion(AbstractConnectionRecord deletionTarget)
-        {
-            string messagePrompt = string.Format(CultureInfo.CurrentCulture, Language.ConfirmDeleteNodeConnection, deletionTarget.Name);
-            return PromptUser(messagePrompt);
-        }
-
-        private bool PromptUser(string promptMessage)
-        {
-            DialogResult msgBoxResponse = _confirmationFunc(promptMessage);
-            return msgBoxResponse == DialogResult.Yes;
-        }
+    private bool PromptUser(string promptMessage)
+    {
+        DialogResult msgBoxResponse = _confirmationFunc(promptMessage);
+        return msgBoxResponse == DialogResult.Yes;
     }
 }

@@ -1,26 +1,26 @@
-﻿using mRemoteNG.App;
+﻿using System;
+using System.Runtime.Versioning;
+using mRemoteNG.App;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
-using System;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.Config.Serializers.Versioning
+namespace mRemoteNG.Config.Serializers.Versioning;
+
+[SupportedOSPlatform("windows")]
+public class SqlVersion25To26Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlVersion25To26Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
+    private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+
+    public bool CanUpgrade(Version currentVersion)
     {
-        private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+        return currentVersion.CompareTo(new Version(2, 5)) == 0;
+    }
 
-        public bool CanUpgrade(Version currentVersion)
-        {
-            return currentVersion.CompareTo(new Version(2, 5)) == 0;
-        }
-
-        public Version Upgrade()
-        {
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                                                "Upgrading database from version 2.5 to version 2.6.");
-            const string sqlText = @"
+    public Version Upgrade()
+    {
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+            "Upgrading database from version 2.5 to version 2.6.");
+        const string sqlText = @"
 ALTER TABLE tblCons
 ADD RDPMinutesToIdleTimeout int NOT NULL DEFAULT 0,
     RDPAlertIdleTimeout bit NOT NULL DEFAULT 0,
@@ -30,10 +30,9 @@ ADD RDPMinutesToIdleTimeout int NOT NULL DEFAULT 0,
 	InheritSoundQuality bit NOT NULL DEFAULT 0;
 UPDATE tblRoot
     SET ConfVersion='2.6'";
-            System.Data.Common.DbCommand dbCommand = _databaseConnector.DbCommand(sqlText);
-            dbCommand.ExecuteNonQuery();
+        System.Data.Common.DbCommand dbCommand = _databaseConnector.DbCommand(sqlText);
+        dbCommand.ExecuteNonQuery();
 
-            return new Version(2, 6);
-        }
+        return new Version(2, 6);
     }
 }

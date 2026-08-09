@@ -1,31 +1,31 @@
-﻿using mRemoteNG.App;
+﻿using System;
+using System.Runtime.Versioning;
+using mRemoteNG.App;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
-using System;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.Config.Serializers.Versioning
+namespace mRemoteNG.Config.Serializers.Versioning;
+
+[SupportedOSPlatform("windows")]
+public class SqlVersion28To29Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlVersion28To29Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
+    private readonly Version _version = new(2, 9);
+    private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+
+    public bool CanUpgrade(Version currentVersion)
     {
-        private readonly Version _version = new(2, 9);
-        private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
-
-        public bool CanUpgrade(Version currentVersion)
-        {
-            return currentVersion == new Version(2, 8) ||
-                // Support upgrading during dev revisions, 2.9.1, 2.9.2, etc...
-                (currentVersion <= new Version(2, 9) &&
+        return currentVersion == new Version(2, 8) ||
+               // Support upgrading during dev revisions, 2.9.1, 2.9.2, etc...
+               (currentVersion <= new Version(2, 9) &&
                 currentVersion < _version);
-        }
+    }
 
-        public Version Upgrade()
-        {
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                $"Upgrading database to version {_version}.");
+    public Version Upgrade()
+    {
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+            $"Upgrading database to version {_version}.");
 
-            const string mySqlAlter = @"
+        const string mySqlAlter = @"
 ALTER TABLE tblCons ADD COLUMN `InheritUseRestrictedAdmin` tinyint NOT NULL;
 ALTER TABLE tblCons ADD COLUMN `UseRCG` tinyint NOT NULL;
 ALTER TABLE tblCons ADD COLUMN `UseRestrictedAdmin` tinyint NOT NULL;
@@ -51,7 +51,7 @@ ALTER TABLE tblCons MODIFY COLUMN UseVmId tinyint NOT NULL;
 ALTER TABLE tblRoot MODIFY COLUMN ConfVersion VARCHAR(15) NOT NULL;
 ";
 
-            const string msSqlAlter = @"
+        const string msSqlAlter = @"
 ALTER TABLE tblCons ADD InheritUseRestrictedAdmin bit NOT NULL;
 ALTER TABLE tblCons ADD UseRCG bit NOT NULL;
 ALTER TABLE tblCons ADD UseRestrictedAdmin bit NOT NULL;
@@ -77,8 +77,7 @@ ALTER TABLE tblCons ALTER COLUMN UseVmId bit NOT NULL;
 ALTER TABLE tblRoot ALTER COLUMN [ConfVersion] VARCHAR(15) NOT NULL;
 ";
 
-            SqlMigrationHelper.ExecuteMigration(_databaseConnector, _version, msSqlAlter, mySqlAlter);
-            return _version;
-        }
+        SqlMigrationHelper.ExecuteMigration(_databaseConnector, _version, msSqlAlter, mySqlAlter);
+        return _version;
     }
 }

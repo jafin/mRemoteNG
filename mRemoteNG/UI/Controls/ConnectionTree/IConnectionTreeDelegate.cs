@@ -1,7 +1,6 @@
-﻿namespace mRemoteNG.UI.Controls.ConnectionTree
+﻿namespace mRemoteNG.UI.Controls.ConnectionTree;
+
+public interface IConnectionTreeDelegate
 {
-    public interface IConnectionTreeDelegate
-    {
-        void Execute(IConnectionTree connectionTree);
-    }
+    void Execute(IConnectionTree connectionTree);
 }

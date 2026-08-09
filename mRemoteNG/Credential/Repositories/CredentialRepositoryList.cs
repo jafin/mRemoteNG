@@ -5,97 +5,96 @@ using System.IO;
 using System.Linq;
 using mRemoteNG.Tools.CustomCollections;
 
-namespace mRemoteNG.Credential.Repositories
+namespace mRemoteNG.Credential.Repositories;
+
+public class CredentialRepositoryList : ICredentialRepositoryList
 {
-    public class CredentialRepositoryList : ICredentialRepositoryList
+    private readonly List<ICredentialRepository> _credentialProviders = [];
+
+    public IEnumerable<ICredentialRepository> CredentialProviders => _credentialProviders;
+
+
+    public void AddProvider(ICredentialRepository credentialProvider)
     {
-        private readonly List<ICredentialRepository> _credentialProviders = [];
+        if (Contains(credentialProvider.Config.Id)) return;
+        if (ContainsSource(credentialProvider.Config.Source))
+            throw new ArgumentException(
+                $"A credential repository already exists that points to \"{credentialProvider.Config.Source}\".",
+                nameof(credentialProvider));
+        _credentialProviders.Add(credentialProvider);
+        credentialProvider.CredentialsUpdated += RaiseCredentialsUpdatedEvent;
+        credentialProvider.RepositoryConfigUpdated += OnRepoConfigChanged;
+        RaiseRepositoriesUpdatedEvent(ActionType.Added, new[] {credentialProvider});
+    }
 
-        public IEnumerable<ICredentialRepository> CredentialProviders => _credentialProviders;
+    public void RemoveProvider(ICredentialRepository credentialProvider)
+    {
+        if (!Contains(credentialProvider.Config.Id)) return;
+        credentialProvider.CredentialsUpdated -= RaiseCredentialsUpdatedEvent;
+        credentialProvider.RepositoryConfigUpdated -= OnRepoConfigChanged;
+        _credentialProviders.Remove(credentialProvider);
+        RaiseRepositoriesUpdatedEvent(ActionType.Removed, new[] {credentialProvider});
+    }
 
+    public bool Contains(Guid repositoryId)
+    {
+        return _credentialProviders.Any(repo => repo.Config.Id == repositoryId);
+    }
 
-        public void AddProvider(ICredentialRepository credentialProvider)
+    private bool ContainsSource(string source)
+    {
+        if (string.IsNullOrEmpty(source)) return false;
+        string resolvedNew = Path.GetFullPath(source);
+        return _credentialProviders.Any(repo =>
+            !string.IsNullOrEmpty(repo.Config.Source) &&
+            string.Equals(Path.GetFullPath(repo.Config.Source), resolvedNew, StringComparison.OrdinalIgnoreCase));
+    }
+
+    public IEnumerable<ICredentialRecord> GetCredentialRecords()
+    {
+        List<ICredentialRecord> list = new();
+        foreach (ICredentialRepository repository in CredentialProviders)
         {
-            if (Contains(credentialProvider.Config.Id)) return;
-            if (ContainsSource(credentialProvider.Config.Source))
-                throw new ArgumentException(
-                    $"A credential repository already exists that points to \"{credentialProvider.Config.Source}\".",
-                    nameof(credentialProvider));
-            _credentialProviders.Add(credentialProvider);
-            credentialProvider.CredentialsUpdated += RaiseCredentialsUpdatedEvent;
-            credentialProvider.RepositoryConfigUpdated += OnRepoConfigChanged;
-            RaiseRepositoriesUpdatedEvent(ActionType.Added, new[] {credentialProvider});
+            list.AddRange(repository.CredentialRecords);
         }
 
-        public void RemoveProvider(ICredentialRepository credentialProvider)
-        {
-            if (!Contains(credentialProvider.Config.Id)) return;
-            credentialProvider.CredentialsUpdated -= RaiseCredentialsUpdatedEvent;
-            credentialProvider.RepositoryConfigUpdated -= OnRepoConfigChanged;
-            _credentialProviders.Remove(credentialProvider);
-            RaiseRepositoriesUpdatedEvent(ActionType.Removed, new[] {credentialProvider});
-        }
+        return list;
+    }
 
-        public bool Contains(Guid repositoryId)
-        {
-            return _credentialProviders.Any(repo => repo.Config.Id == repositoryId);
-        }
+    public ICredentialRecord? GetCredentialRecord(Guid id)
+    {
+        return CredentialProviders.SelectMany(repo => repo.CredentialRecords)
+            .FirstOrDefault(record => record.Id.Equals(id));
+    }
 
-        private bool ContainsSource(string source)
-        {
-            if (string.IsNullOrEmpty(source)) return false;
-            string resolvedNew = Path.GetFullPath(source);
-            return _credentialProviders.Any(repo =>
-                !string.IsNullOrEmpty(repo.Config.Source) &&
-                string.Equals(Path.GetFullPath(repo.Config.Source), resolvedNew, StringComparison.OrdinalIgnoreCase));
-        }
+    public IEnumerator<ICredentialRepository> GetEnumerator()
+    {
+        return _credentialProviders.GetEnumerator();
+    }
 
-        public IEnumerable<ICredentialRecord> GetCredentialRecords()
-        {
-            List<ICredentialRecord> list = new();
-            foreach (ICredentialRepository repository in CredentialProviders)
-            {
-                list.AddRange(repository.CredentialRecords);
-            }
+    IEnumerator IEnumerable.GetEnumerator()
+    {
+        return GetEnumerator();
+    }
 
-            return list;
-        }
+    public event EventHandler<CollectionUpdatedEventArgs<ICredentialRepository>>? RepositoriesUpdated;
+    public event EventHandler<CollectionUpdatedEventArgs<ICredentialRecord>>? CredentialsUpdated;
 
-        public ICredentialRecord? GetCredentialRecord(Guid id)
-        {
-            return CredentialProviders.SelectMany(repo => repo.CredentialRecords)
-                                      .FirstOrDefault(record => record.Id.Equals(id));
-        }
+    private void RaiseRepositoriesUpdatedEvent(ActionType action, IEnumerable<ICredentialRepository> changedItems)
+    {
+        RepositoriesUpdated?.Invoke(this,
+            new CollectionUpdatedEventArgs<ICredentialRepository>(action, changedItems));
+    }
 
-        public IEnumerator<ICredentialRepository> GetEnumerator()
-        {
-            return _credentialProviders.GetEnumerator();
-        }
+    private void RaiseCredentialsUpdatedEvent(object sender, CollectionUpdatedEventArgs<ICredentialRecord> args)
+    {
+        CredentialsUpdated?.Invoke(this, args);
+    }
 
-        IEnumerator IEnumerable.GetEnumerator()
-        {
-            return GetEnumerator();
-        }
-
-        public event EventHandler<CollectionUpdatedEventArgs<ICredentialRepository>>? RepositoriesUpdated;
-        public event EventHandler<CollectionUpdatedEventArgs<ICredentialRecord>>? CredentialsUpdated;
-
-        private void RaiseRepositoriesUpdatedEvent(ActionType action, IEnumerable<ICredentialRepository> changedItems)
-        {
-            RepositoriesUpdated?.Invoke(this,
-                                        new CollectionUpdatedEventArgs<ICredentialRepository>(action, changedItems));
-        }
-
-        private void RaiseCredentialsUpdatedEvent(object sender, CollectionUpdatedEventArgs<ICredentialRecord> args)
-        {
-            CredentialsUpdated?.Invoke(this, args);
-        }
-
-        private void OnRepoConfigChanged(object sender, EventArgs args)
-        {
-            ICredentialRepository? repo = sender as ICredentialRepository;
-            if (repo == null) return;
-            RaiseRepositoriesUpdatedEvent(ActionType.Updated, new[] {repo});
-        }
+    private void OnRepoConfigChanged(object sender, EventArgs args)
+    {
+        ICredentialRepository? repo = sender as ICredentialRepository;
+        if (repo == null) return;
+        RaiseRepositoriesUpdatedEvent(ActionType.Updated, new[] {repo});
     }
 }

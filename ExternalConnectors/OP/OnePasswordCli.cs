@@ -24,8 +24,8 @@ public static class OnePasswordCli
 	// We use the label for as fallback because that can be user-modified to fit this convention in all cases.
 	private const string UserNameLabel = "username";
 	private const string CredentialLabel = "password"; // NOSONAR — 1Password API field label
-	
-	
+
+
 	private const string StringType = "STRING";
 	private const string ConcealedType = "CONCEALED";
 	private const string SshKeyType = "SSHKEY";
@@ -122,7 +122,7 @@ public static class OnePasswordCli
         args.Add("json");
 
 		string commandLine = OnePasswordCliExecutable + " " + string.Join(' ', args);
-            
+
         var exitCode = RunCommand(OnePasswordCliExecutable, args, out var output, out var error);
         if (exitCode != 0)
         {

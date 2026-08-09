@@ -5,156 +5,155 @@ using System.Runtime.Versioning;
 using System.Windows.Forms;
 using mRemoteNG.Themes;
 
-namespace mRemoteNG.UI.Controls
+namespace mRemoteNG.UI.Controls;
+
+[SupportedOSPlatform("windows")]
+[ToolboxBitmap(typeof(Button))]
+//Extended button class, the button onPaint completely repaint the control
+public class MrngButton : Button
 {
-    [SupportedOSPlatform("windows")]
-    [ToolboxBitmap(typeof(Button))]
-    //Extended button class, the button onPaint completely repaint the control
-    public class MrngButton : Button
+    private ThemeManager? _themeManager;
+
+    /// <summary>
+    /// Store the mouse state, required for coloring the component according to the mouse state
+    /// </summary>
+    public enum MouseState
     {
-        private ThemeManager? _themeManager;
+        HOVER,
+        DOWN,
+        OUT
+    }
 
-        /// <summary>
-        /// Store the mouse state, required for coloring the component according to the mouse state
-        /// </summary>
-        public enum MouseState
-        {
-            HOVER,
-            DOWN,
-            OUT
-        }
-
-        public MrngButton()
-        {
-            ThemeManager.getInstance().ThemeChanged += OnCreateControl;
-        }
+    public MrngButton()
+    {
+        ThemeManager.getInstance().ThemeChanged += OnCreateControl;
+    }
 
 #pragma warning disable CA1707 // Designer-generated code uses this name; renaming would break .Designer.cs files
-        public MouseState _mice { get; set; }
+    public MouseState _mice { get; set; }
 #pragma warning restore CA1707
 
-        /// <summary>
-        /// Rewrite the function to allow for coloring the component depending on the mouse state
-        /// </summary>
-        protected override void OnCreateControl()
+    /// <summary>
+    /// Rewrite the function to allow for coloring the component depending on the mouse state
+    /// </summary>
+    protected override void OnCreateControl()
+    {
+        base.OnCreateControl();
+        _themeManager = ThemeManager.getInstance();
+        if (_themeManager.ThemingActive)
         {
-            base.OnCreateControl();
-            _themeManager = ThemeManager.getInstance();
-            if (_themeManager.ThemingActive)
+            _mice = MouseState.OUT;
+            MouseEnter += (sender, args) =>
+            {
+                _mice = MouseState.HOVER;
+                Invalidate();
+            };
+            MouseLeave += (sender, args) =>
             {
                 _mice = MouseState.OUT;
-                MouseEnter += (sender, args) =>
-                {
-                    _mice = MouseState.HOVER;
-                    Invalidate();
-                };
-                MouseLeave += (sender, args) =>
-                {
-                    _mice = MouseState.OUT;
-                    Invalidate();
-                };
-                MouseDown += (sender, args) =>
-                {
-                    if (args.Button == MouseButtons.Left)
-                    {
-                        _mice = MouseState.DOWN;
-                        Invalidate();
-                    }
-                };
-                MouseUp += (sender, args) =>
-                {
-                    _mice = MouseState.OUT;
-
-                    Invalidate();
-                };
                 Invalidate();
-            }
-        }
-
-
-        /// <summary>
-        /// Repaint the componente, the elements considered are the clipping rectangle, text and an icon
-        /// </summary>
-        /// <param name="e"></param>
-        protected override void OnPaint(PaintEventArgs pevent)
-        {
-            var themeManager = _themeManager;
-            if (themeManager is null || !themeManager.ActiveAndExtended)
+            };
+            MouseDown += (sender, args) =>
             {
-                base.OnPaint(pevent);
-                return;
-            }
-
-            // ActiveAndExtended guarantees ExtendedPalette is non-null
-            var palette = themeManager.ActiveTheme.ExtendedPalette!;
-
-            Color back;
-            Color fore;
-            Color border;
-            if (Enabled)
-            {
-                switch (_mice)
+                if (args.Button == MouseButtons.Left)
                 {
-                    case MouseState.HOVER:
-                        back = palette.getColor("Button_Hover_Background");
-                        fore = palette.getColor("Button_Hover_Foreground");
-                        border = palette.getColor("Button_Hover_Border");
-                        break;
-                    case MouseState.DOWN:
-                        back = palette.getColor("Button_Pressed_Background");
-                        fore = palette.getColor("Button_Pressed_Foreground");
-                        border = palette.getColor("Button_Pressed_Border");
-                        break;
-                    default:
-                        back = palette.getColor("Button_Background");
-                        fore = palette.getColor("Button_Foreground");
-                        border = palette.getColor("Button_Border");
-                        break;
+                    _mice = MouseState.DOWN;
+                    Invalidate();
                 }
-            }
-            else
+            };
+            MouseUp += (sender, args) =>
             {
-                back = palette.getColor("Button_Disabled_Background");
-                fore = palette.getColor("Button_Disabled_Foreground");
-                border = palette.getColor("Button_Disabled_Border");
-            }
+                _mice = MouseState.OUT;
 
-
-            using (SolidBrush backBrush = new(back))
-                pevent.Graphics.FillRectangle(backBrush, pevent.ClipRectangle);
-
-            // Draw a thicker, brighter border when the button is focused or is the
-            // form's default (AcceptButton) so the user can see which button is active.
-            bool isFocusedOrDefault = Focused || (IsDefault && FindForm()?.AcceptButton == this);
-            float borderWidth = isFocusedOrDefault ? 2f : 1f;
-            Color actualBorder = isFocusedOrDefault ? palette.getColor("Button_Hover_Border") : border;
-            using (Pen borderPen = new(actualBorder, borderWidth))
-                pevent.Graphics.DrawRectangle(borderPen, 1, 1, Width - 2, Height - 2);
-            pevent.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
-            pevent.Graphics.TextRenderingHint = TextRenderingHint.AntiAlias;
-            //Warning. the app doesnt use many images in buttons so this positions are kinda tailored just for the used by the app
-            //not by general usage of iamges in buttons
-            if (Image != null)
-            {
-                SizeF stringSize = pevent.Graphics.MeasureString(Text, Font);
-
-                pevent.Graphics.DrawImageUnscaled(Image, Width / 2 - (int)stringSize.Width / 2 - Image.Width,
-                                             Height / 2 - Image.Height / 2);
-            }
-
-            TextRenderer.DrawText(pevent.Graphics, Text, Font, ClientRectangle, fore,
-                                  TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+                Invalidate();
+            };
+            Invalidate();
         }
+    }
 
-        private void InitializeComponent()
+
+    /// <summary>
+    /// Repaint the componente, the elements considered are the clipping rectangle, text and an icon
+    /// </summary>
+    /// <param name="e"></param>
+    protected override void OnPaint(PaintEventArgs pevent)
+    {
+        var themeManager = _themeManager;
+        if (themeManager is null || !themeManager.ActiveAndExtended)
         {
-            this.SuspendLayout();
-            // 
-            // NGButton
-            // 
-            this.Font = new System.Drawing.Font("Segoe UI", 8.25F, System.Drawing.FontStyle.Regular,
-                                                System.Drawing.GraphicsUnit.Point, ((byte)(0)));
-            this.ResumeLayout(false);
+            base.OnPaint(pevent);
+            return;
         }
+
+        // ActiveAndExtended guarantees ExtendedPalette is non-null
+        var palette = themeManager.ActiveTheme.ExtendedPalette!;
+
+        Color back;
+        Color fore;
+        Color border;
+        if (Enabled)
+        {
+            switch (_mice)
+            {
+                case MouseState.HOVER:
+                    back = palette.getColor("Button_Hover_Background");
+                    fore = palette.getColor("Button_Hover_Foreground");
+                    border = palette.getColor("Button_Hover_Border");
+                    break;
+                case MouseState.DOWN:
+                    back = palette.getColor("Button_Pressed_Background");
+                    fore = palette.getColor("Button_Pressed_Foreground");
+                    border = palette.getColor("Button_Pressed_Border");
+                    break;
+                default:
+                    back = palette.getColor("Button_Background");
+                    fore = palette.getColor("Button_Foreground");
+                    border = palette.getColor("Button_Border");
+                    break;
+            }
+        }
+        else
+        {
+            back = palette.getColor("Button_Disabled_Background");
+            fore = palette.getColor("Button_Disabled_Foreground");
+            border = palette.getColor("Button_Disabled_Border");
+        }
+
+
+        using (SolidBrush backBrush = new(back))
+            pevent.Graphics.FillRectangle(backBrush, pevent.ClipRectangle);
+
+        // Draw a thicker, brighter border when the button is focused or is the
+        // form's default (AcceptButton) so the user can see which button is active.
+        bool isFocusedOrDefault = Focused || (IsDefault && FindForm()?.AcceptButton == this);
+        float borderWidth = isFocusedOrDefault ? 2f : 1f;
+        Color actualBorder = isFocusedOrDefault ? palette.getColor("Button_Hover_Border") : border;
+        using (Pen borderPen = new(actualBorder, borderWidth))
+            pevent.Graphics.DrawRectangle(borderPen, 1, 1, Width - 2, Height - 2);
+        pevent.Graphics.SmoothingMode = SmoothingMode.AntiAlias;
+        pevent.Graphics.TextRenderingHint = TextRenderingHint.AntiAlias;
+        //Warning. the app doesnt use many images in buttons so this positions are kinda tailored just for the used by the app
+        //not by general usage of iamges in buttons
+        if (Image != null)
+        {
+            SizeF stringSize = pevent.Graphics.MeasureString(Text, Font);
+
+            pevent.Graphics.DrawImageUnscaled(Image, Width / 2 - (int)stringSize.Width / 2 - Image.Width,
+                Height / 2 - Image.Height / 2);
+        }
+
+        TextRenderer.DrawText(pevent.Graphics, Text, Font, ClientRectangle, fore,
+            TextFormatFlags.HorizontalCenter | TextFormatFlags.VerticalCenter);
+    }
+
+    private void InitializeComponent()
+    {
+        this.SuspendLayout();
+        // 
+        // NGButton
+        // 
+        this.Font = new System.Drawing.Font("Segoe UI", 8.25F, System.Drawing.FontStyle.Regular,
+            System.Drawing.GraphicsUnit.Point, ((byte)(0)));
+        this.ResumeLayout(false);
     }
 }

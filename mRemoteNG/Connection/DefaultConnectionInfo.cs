@@ -6,85 +6,84 @@ using System.Runtime.Versioning;
 using mRemoteNG.App;
 
 
-namespace mRemoteNG.Connection
+namespace mRemoteNG.Connection;
+
+[SupportedOSPlatform("windows")]
+public class DefaultConnectionInfo : ConnectionInfo
 {
-    [SupportedOSPlatform("windows")]
-    public class DefaultConnectionInfo : ConnectionInfo
+    [Browsable(false)]
+    public static DefaultConnectionInfo Instance { get; } = new DefaultConnectionInfo();
+
+    private DefaultConnectionInfo()
     {
-        [Browsable(false)]
-        public static DefaultConnectionInfo Instance { get; } = new DefaultConnectionInfo();
+        IsDefault = true;
+        Inheritance = DefaultConnectionInheritance.Instance;
+    }
 
-        private DefaultConnectionInfo()
+    public void LoadFrom<TSource>(TSource sourceInstance, Func<string, string>? propertyNameMutator = null)
+    {
+        propertyNameMutator ??= a => a;
+
+        System.Collections.Generic.IEnumerable<System.Reflection.PropertyInfo> connectionProperties = GetSerializableProperties();
+        foreach (System.Reflection.PropertyInfo property in connectionProperties)
         {
-            IsDefault = true;
-            Inheritance = DefaultConnectionInheritance.Instance;
-        }
-
-        public void LoadFrom<TSource>(TSource sourceInstance, Func<string, string>? propertyNameMutator = null)
-        {
-            propertyNameMutator ??= a => a;
-
-            System.Collections.Generic.IEnumerable<System.Reflection.PropertyInfo> connectionProperties = GetSerializableProperties();
-            foreach (System.Reflection.PropertyInfo property in connectionProperties)
+            try
             {
-                try
+                string expectedPropertyName = propertyNameMutator(property.Name);
+                System.Reflection.PropertyInfo? propertyFromSource = typeof(TSource).GetProperty(expectedPropertyName);
+                if (propertyFromSource == null)
+                    continue; // Property not in Settings — keep default value
+
+                object? valueFromSource = propertyFromSource.GetValue(sourceInstance, null);
+
+                if (property.PropertyType.IsEnum)
                 {
-                    string expectedPropertyName = propertyNameMutator(property.Name);
-                    System.Reflection.PropertyInfo? propertyFromSource = typeof(TSource).GetProperty(expectedPropertyName);
-                    if (propertyFromSource == null)
-                        continue; // Property not in Settings — keep default value
-
-                    object? valueFromSource = propertyFromSource.GetValue(sourceInstance, null);
-
-                    if (property.PropertyType.IsEnum)
-                    {
-                        string enumValue = valueFromSource?.ToString() ?? string.Empty;
-                        property.SetValue(Instance, Enum.Parse(property.PropertyType, enumValue), null);
-                        continue;
-                    }
-
-                    property.SetValue(Instance, Convert.ChangeType(valueFromSource, property.PropertyType, CultureInfo.InvariantCulture), null);
+                    string enumValue = valueFromSource?.ToString() ?? string.Empty;
+                    property.SetValue(Instance, Enum.Parse(property.PropertyType, enumValue), null);
+                    continue;
                 }
-                catch (Exception ex)
-                {
-                    Runtime.MessageCollector?.AddExceptionStackTrace($"Error loading default connectioninfo property {property.Name}", ex);
-                }
+
+                property.SetValue(Instance, Convert.ChangeType(valueFromSource, property.PropertyType, CultureInfo.InvariantCulture), null);
+            }
+            catch (Exception ex)
+            {
+                Runtime.MessageCollector?.AddExceptionStackTrace($"Error loading default connectioninfo property {property.Name}", ex);
             }
         }
+    }
 
-        public void SaveTo<TDestination>(TDestination destinationInstance, Func<string, string>? propertyNameMutator = null)
+    public void SaveTo<TDestination>(TDestination destinationInstance, Func<string, string>? propertyNameMutator = null)
+    {
+        propertyNameMutator ??= a => a;
+
+        System.Collections.Generic.IEnumerable<System.Reflection.PropertyInfo> connectionProperties = GetSerializableProperties();
+
+        foreach (System.Reflection.PropertyInfo property in connectionProperties)
         {
-            propertyNameMutator ??= a => a;
-
-            System.Collections.Generic.IEnumerable<System.Reflection.PropertyInfo> connectionProperties = GetSerializableProperties();
-
-            foreach (System.Reflection.PropertyInfo property in connectionProperties)
+            try
             {
-                try
+                string expectedPropertyName = propertyNameMutator(property.Name);
+                System.Reflection.PropertyInfo? propertyFromDestination = typeof(TDestination).GetProperty(expectedPropertyName);
+
+                if (propertyFromDestination == null)
+                    throw new SettingsPropertyNotFoundException($"No property with name '{expectedPropertyName}' found.");
+
+                // ensure value is of correct type
+                object? value;
+                if (property.PropertyType.IsEnum && propertyFromDestination.PropertyType == typeof(string))
                 {
-                    string expectedPropertyName = propertyNameMutator(property.Name);
-                    System.Reflection.PropertyInfo? propertyFromDestination = typeof(TDestination).GetProperty(expectedPropertyName);
-
-                    if (propertyFromDestination == null)
-                        throw new SettingsPropertyNotFoundException($"No property with name '{expectedPropertyName}' found.");
-
-                    // ensure value is of correct type
-                    object? value;
-                    if (property.PropertyType.IsEnum && propertyFromDestination.PropertyType == typeof(string))
-                    {
-                        value = property.GetValue(Instance, null)?.ToString();
-                    }
-                    else
-                    {
-                        value = Convert.ChangeType(property.GetValue(Instance, null), propertyFromDestination.PropertyType, CultureInfo.InvariantCulture);
-                    }
-
-                    propertyFromDestination.SetValue(destinationInstance, value, null);
+                    value = property.GetValue(Instance, null)?.ToString();
                 }
-                catch (Exception ex)
+                else
                 {
-                    Runtime.MessageCollector?.AddExceptionStackTrace($"Error saving default connectioninfo property {property.Name}", ex);
+                    value = Convert.ChangeType(property.GetValue(Instance, null), propertyFromDestination.PropertyType, CultureInfo.InvariantCulture);
                 }
+
+                propertyFromDestination.SetValue(destinationInstance, value, null);
+            }
+            catch (Exception ex)
+            {
+                Runtime.MessageCollector?.AddExceptionStackTrace($"Error saving default connectioninfo property {property.Name}", ex);
             }
         }
     }

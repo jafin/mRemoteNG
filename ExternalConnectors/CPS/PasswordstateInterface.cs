@@ -1,12 +1,11 @@
-﻿using System;
+﻿using System.Security.Cryptography;
+using System.Text.Json;
+using System.Text.Json.Nodes;
 using Microsoft.Win32;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.OpenSsl;
 using Org.BouncyCastle.Security;
-using System.Security.Cryptography;
-using System.Text.Json;
-using System.Text.Json.Nodes;
 
 namespace ExternalConnectors.CPS;
 
@@ -14,14 +13,13 @@ public static class PasswordstateInterface
 {
     private static class CPSConnectionData
     {
-        public static string ssUsername = "";
-        public static string ssPassword = "";
-        public static string ssUrl = "";
-        public static string ssOTP = "";
-        public static DateTime ssOTPTimeStampExpiration;
+        public static string SsPassword = "";
+        public static string SsUrl = "";
+        public static string SsOtp = "";
+        private static DateTime ssOtpTimeStampExpiration;
 
-        public static bool ssSSO;
-        public static bool initdone;
+        public static bool SsSso;
+        private static bool initDone;
 
         //token 
         //public static string ssTokenBearer = "";
@@ -31,36 +29,34 @@ public static class PasswordstateInterface
         public static void Init()
         {
             // 2024-05-04 passwordstate currently does not support auth tokens, so we need to re-enter otp codes frequently
-            if (!string.IsNullOrEmpty(ssOTP) && DateTime.Now > ssOTPTimeStampExpiration)
+            if (!string.IsNullOrEmpty(SsOtp) && DateTime.Now > ssOtpTimeStampExpiration)
             {
-                ssOTP = "";
-                initdone = false;
+                SsOtp = "";
+                initDone = false;
             }
 
-            if (initdone == true)
+            if (initDone)
                 return;
 
-            RegistryKey key = Registry.CurrentUser.CreateSubKey(@"SOFTWARE\mRemoteCPSInterface");
+            var key = Registry.CurrentUser.CreateSubKey(@"SOFTWARE\mRemoteCPSInterface");
             try
             {
                 // display gui and ask for data
-                CPSConnectionForm f = new CPSConnectionForm();
-                //string? un = key.GetValue("Username") as string;
-                //f.tbUsername.Text = un ?? "";
-                f.tbAPIKey.Text = CPSConnectionData.ssPassword;    // in OTP refresh cases, this value might already be filled
+                var f = new CPSConnectionForm();
+                f.tbAPIKey.Text = SsPassword; // in OTP refresh cases, this value might already be filled
 
-                string? url = key.GetValue("URL") as string;
-                if (url == null || !url.Contains("://"))
+                var url = key.GetValue("URL") as string;
+                if (url == null || !url.Contains("://", StringComparison.OrdinalIgnoreCase))
                     url = "https://cred.domain.local/SecretServer";
                 f.tbServerURL.Text = url;
 
                 var b = key.GetValue("SSO");
                 if (b == null || !string.Equals((string)b, "True", StringComparison.Ordinal))
-                    ssSSO = false;
+                    SsSso = false;
                 else
-                    ssSSO = true;
-                f.cbUseSSO.Checked = ssSSO;
-                
+                    SsSso = true;
+                f.cbUseSSO.Checked = SsSso;
+
                 // show dialog
                 while (true)
                 {
@@ -71,24 +67,26 @@ public static class PasswordstateInterface
 
                     // store values to memory
                     //ssUsername = f.tbUsername.Text;
-                    ssPassword = f.tbAPIKey.Text;
-                    ssUrl = f.tbServerURL.Text;
-                    ssSSO = f.cbUseSSO.Checked;
+                    SsPassword = f.tbAPIKey.Text;
+                    SsUrl = f.tbServerURL.Text;
+                    SsSso = f.cbUseSSO.Checked;
 
                     // Require HTTPS for vault connections
-                    if (!ssUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    if (!SsUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                     {
-                        MessageBox.Show("Passwordstate server URL must use HTTPS for secure communication.", "Security Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        MessageBox.Show("Passwordstate server URL must use HTTPS for secure communication.",
+                            "Security Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         continue;
                     }
-                    ssOTP = f.tbOTP.Text;
-                    ssOTPTimeStampExpiration = DateTime.Now.AddSeconds(30);
+
+                    SsOtp = f.tbOTP.Text;
+                    ssOtpTimeStampExpiration = DateTime.Now.AddSeconds(30);
                     // check connection first
                     try
                     {
-                        if (TestCredentials() == true)
+                        if (TestCredentials())
                         {
-                            initdone = true;
+                            initDone = true;
                             break;
                         }
                     }
@@ -98,15 +96,9 @@ public static class PasswordstateInterface
                     }
                 }
 
-
                 // write values to registry
-                //key.SetValue("Username", ssUsername);
-                key.SetValue("URL", ssUrl);
-                key.SetValue("SSO", ssSSO);
-            }
-            catch (Exception)
-            {
-                throw;
+                key.SetValue("URL", SsUrl);
+                key.SetValue("SSO", SsSso);
             }
             finally
             {
@@ -119,88 +111,91 @@ public static class PasswordstateInterface
     {
         return ConnectionTest();
     }
+
     private static bool ConnectionTest()
     {
-        if (CPSConnectionData.ssSSO)
+        if (CPSConnectionData.SsSso)
         {
-            string url = $"{CPSConnectionData.ssUrl}/winapi/passwordlists/";
+            var url = $"{CPSConnectionData.SsUrl}/winapi/passwordlists/";
 
-            using HttpClient client = new HttpClient(new HttpClientHandler() { UseDefaultCredentials = true });
+            using var client = new HttpClient(new HttpClientHandler() { UseDefaultCredentials = true });
             client.DefaultRequestHeaders.Accept.Clear();
             client.DefaultRequestHeaders.Add("User-Agent", "mRemote");
-            client.DefaultRequestHeaders.Add("OTP", CPSConnectionData.ssOTP);
+            client.DefaultRequestHeaders.Add("OTP", CPSConnectionData.SsOtp);
 
             var json = Task.Run(() => client.GetStringAsync(url)).GetAwaiter().GetResult();
-            JsonNode? data = JsonSerializer.Deserialize<JsonNode>(json);
+            var data = JsonSerializer.Deserialize<JsonNode>(json);
             if (data == null)
                 return false;
             return true;
         }
         else
         {
-            string url = $"{CPSConnectionData.ssUrl}/api/passwordlists/";
-            using HttpClient client = new HttpClient();
+            var url = $"{CPSConnectionData.SsUrl}/api/passwordlists/";
+            using var client = new HttpClient();
             client.DefaultRequestHeaders.Accept.Clear();
             client.DefaultRequestHeaders.Add("User-Agent", "mRemote");
-            client.DefaultRequestHeaders.Add("APIKey", CPSConnectionData.ssPassword);
-            client.DefaultRequestHeaders.Add("OTP", CPSConnectionData.ssOTP);
+            client.DefaultRequestHeaders.Add("APIKey", CPSConnectionData.SsPassword);
+            client.DefaultRequestHeaders.Add("OTP", CPSConnectionData.SsOtp);
 
             var json = Task.Run(() => client.GetStringAsync(url)).GetAwaiter().GetResult();
-            JsonNode? data = JsonSerializer.Deserialize<JsonNode>(json);
+            var data = JsonSerializer.Deserialize<JsonNode>(json);
             if (data == null)
                 return false;
             return true;
         }
     }
 
-    private static JsonNode? FetchDataWinAuth(int secretID)
+    private static JsonNode? FetchDataWinAuth(int secretId)
     {
-        string url = $"{CPSConnectionData.ssUrl}/winapi/passwords/{secretID}";
+        var url = $"{CPSConnectionData.SsUrl}/winapi/passwords/{secretId}";
 
-        using HttpClient client = new HttpClient(new HttpClientHandler() { UseDefaultCredentials = true });
+        using var client = new HttpClient(new HttpClientHandler() { UseDefaultCredentials = true });
         client.DefaultRequestHeaders.Accept.Clear();
         client.DefaultRequestHeaders.Add("User-Agent", "mRemote");
-        client.DefaultRequestHeaders.Add("OTP", CPSConnectionData.ssOTP);
+        client.DefaultRequestHeaders.Add("OTP", CPSConnectionData.SsOtp);
 
         var json = Task.Run(() => client.GetStringAsync(url)).GetAwaiter().GetResult();
-        JsonNode? data = JsonSerializer.Deserialize<JsonNode>(json);
+        var data = JsonSerializer.Deserialize<JsonNode>(json);
         if (data == null)
             return null;
-        JsonNode? element = data[0];
-        return element;
-    }
-    private static JsonNode? FetchDataAPIKeyAuth(int secretID)
-    {
-        string url = $"{CPSConnectionData.ssUrl}/api/passwords/{secretID}";
-
-        using HttpClient client = new HttpClient();
-        client.DefaultRequestHeaders.Accept.Clear();
-        client.DefaultRequestHeaders.Add("User-Agent", "mRemote");
-        client.DefaultRequestHeaders.Add("APIKey", CPSConnectionData.ssPassword);
-        client.DefaultRequestHeaders.Add("OTP", CPSConnectionData.ssOTP);
-
-        var json = Task.Run(() => client.GetStringAsync(url)).GetAwaiter().GetResult();
-        JsonNode? data = JsonSerializer.Deserialize<JsonNode>(json);
-        if (data == null)
-            return null;
-        JsonNode? element = data[0];
+        var element = data[0];
         return element;
     }
 
-    private static void FetchSecret(int secretID, out string secretUsername, out string secretPassword, out string secretDomain, out string privatekey)
+    private static JsonNode? FetchDataApiKeyAuth(int secretId)
+    {
+        var url = $"{CPSConnectionData.SsUrl}/api/passwords/{secretId}";
+
+        using var client = new HttpClient();
+        client.DefaultRequestHeaders.Accept.Clear();
+        client.DefaultRequestHeaders.Add("User-Agent", "mRemote");
+        client.DefaultRequestHeaders.Add("APIKey", CPSConnectionData.SsPassword);
+        client.DefaultRequestHeaders.Add("OTP", CPSConnectionData.SsOtp);
+
+        var json = Task.Run(() => client.GetStringAsync(url)).GetAwaiter().GetResult();
+        var data = JsonSerializer.Deserialize<JsonNode>(json);
+        if (data == null)
+            return null;
+        var element = data[0];
+        return element;
+    }
+
+    private static void FetchSecret(int secretId, out string secretUsername, out string secretPassword,
+        out string secretDomain, out string privatekey)
     {
         // clear return variables
         secretDomain = "";
         secretUsername = "";
         secretPassword = "";
         privatekey = "";
-        string privatekeypassphrase = "";
-        JsonNode? element = null;
+        var privateKeyPassPhrase = "";
+        JsonNode? element;
 
-        if (CPSConnectionData.ssSSO)
-            element = FetchDataWinAuth(secretID);
+        if (CPSConnectionData.SsSso)
+            element = FetchDataWinAuth(secretId);
         else
-            element = FetchDataAPIKeyAuth(secretID);
+            element = FetchDataApiKeyAuth(secretId);
 
         if (element == null)
             return;
@@ -218,28 +213,29 @@ public static class PasswordstateInterface
         if (privkey != null) privatekey = privkey.ToString();
 
         var phrase = element["GenericField3"];
-        if (phrase != null) privatekeypassphrase = phrase.ToString();
+        if (phrase != null) privateKeyPassPhrase = phrase.ToString();
 
         // need to decode the private key?
-        if (!string.IsNullOrEmpty(privatekeypassphrase))
+        if (!string.IsNullOrEmpty(privateKeyPassPhrase))
         {
             try
             {
-                var key = DecodePrivateKey(privatekey, privatekeypassphrase);
+                var key = DecodePrivateKey(privatekey, privateKeyPassPhrase);
                 privatekey = key;
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _ = ex; // Intentionally suppressed
             }
         }
 
         // conversion to putty format necessary?
-        if (!string.IsNullOrEmpty(privatekey) && !privatekey.StartsWith("PuTTY-User-Key-File-2", StringComparison.Ordinal))
+        if (!string.IsNullOrEmpty(privatekey) &&
+            !privatekey.StartsWith("PuTTY-User-Key-File-2", StringComparison.Ordinal))
         {
             try
             {
-                RSACryptoServiceProvider key = ImportPrivateKey(privatekey);
+                var key = ImportPrivateKey(privatekey);
                 privatekey = PuttyKeyFileGenerator.ToPuttyPrivateKey(key);
             }
             catch (Exception ex)
@@ -250,25 +246,25 @@ public static class PasswordstateInterface
     }
 
     #region PUTTY KEY HANDLING
+
     // decode rsa private key with encryption password
     private static string DecodePrivateKey(string encryptedPrivateKey, string password)
     {
         TextReader textReader = new StringReader(encryptedPrivateKey);
-        PemReader pemReader = new PemReader(textReader, new PasswordFinder(password));
+        var pemReader = new PemReader(textReader, new PasswordFinder(password));
 
-        AsymmetricCipherKeyPair keyPair = (AsymmetricCipherKeyPair)pemReader.ReadObject();
+        var keyPair = (AsymmetricCipherKeyPair)pemReader.ReadObject();
 
         TextWriter textWriter = new StringWriter();
         var pemWriter = new PemWriter(textWriter);
         pemWriter.WriteObject(keyPair.Private);
         pemWriter.Writer.Flush();
 
-        return ""+textWriter.ToString();
+        return "" + textWriter;
     }
+
     private sealed class PasswordFinder(string password) : IPasswordFinder
     {
-        private string password = password;
-
         public char[] GetPassword()
         {
             return password.ToCharArray();
@@ -278,21 +274,23 @@ public static class PasswordstateInterface
     // read private key pem string to rsacryptoserviceprovider
     public static RSACryptoServiceProvider ImportPrivateKey(string pem)
     {
-        PemReader pr = new PemReader(new StringReader(pem));
-        AsymmetricCipherKeyPair KeyPair = (AsymmetricCipherKeyPair)pr.ReadObject();
-        RSAParameters rsaParams = DotNetUtilities.ToRSAParameters((RsaPrivateCrtKeyParameters)KeyPair.Private);
-        RSACryptoServiceProvider rsa = new RSACryptoServiceProvider();
+        var pr = new PemReader(new StringReader(pem));
+        var keyPair = (AsymmetricCipherKeyPair)pr.ReadObject();
+        var rsaParams = DotNetUtilities.ToRSAParameters((RsaPrivateCrtKeyParameters)keyPair.Private);
+        var rsa = new RSACryptoServiceProvider();
         rsa.ImportParameters(rsaParams);
         return rsa;
     }
+
     #endregion
 
 
     // input: must be the secret id to fetch
-    public static void FetchSecretFromServer(string secretID, out string username, out string password, out string domain, out string privatekey)
+    public static void FetchSecretFromServer(string secretId, out string username, out string password,
+        out string domain, out string privatekey)
     {
         // get secret id
-        int sid = Int32.Parse(secretID);
+        var sid = Int32.Parse(secretId);
 
         // init connection credentials, display popup if necessary
         CPSConnectionData.Init();

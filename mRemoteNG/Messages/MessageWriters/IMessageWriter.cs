@@ -1,7 +1,6 @@
-﻿namespace mRemoteNG.Messages.MessageWriters
+﻿namespace mRemoteNG.Messages.MessageWriters;
+
+public interface IMessageWriter
 {
-    public interface IMessageWriter
-    {
-        void Write(IMessage message);
-    }
+    void Write(IMessage message);
 }

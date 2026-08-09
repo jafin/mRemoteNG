@@ -10,165 +10,164 @@ using mRemoteNG.Properties;
 using mRemoteNG.Tree.Root;
 
 
-namespace mRemoteNG.Tree
+namespace mRemoteNG.Tree;
+
+/// <summary>
+/// The in-memory model backing the connection tree UI.
+/// Holds one or more <see cref="RootNodeInfo"/> root nodes, each containing
+/// a hierarchy of <see cref="ContainerInfo"/> folders and <see cref="ConnectionInfo"/> connections.
+/// Raises <see cref="INotifyCollectionChanged.CollectionChanged"/> and
+/// <see cref="INotifyPropertyChanged.PropertyChanged"/> events to keep the
+/// tree view synchronized with the data model.
+/// </summary>
+[SupportedOSPlatform("windows")]
+public sealed class ConnectionTreeModel : INotifyCollectionChanged, INotifyPropertyChanged
 {
     /// <summary>
-    /// The in-memory model backing the connection tree UI.
-    /// Holds one or more <see cref="RootNodeInfo"/> root nodes, each containing
-    /// a hierarchy of <see cref="ContainerInfo"/> folders and <see cref="ConnectionInfo"/> connections.
-    /// Raises <see cref="INotifyCollectionChanged.CollectionChanged"/> and
-    /// <see cref="INotifyPropertyChanged.PropertyChanged"/> events to keep the
-    /// tree view synchronized with the data model.
+    /// Tracks connection ConstantIDs present when this model was loaded from a data
+    /// source (e.g. SQL database). Used during save to distinguish between connections
+    /// the user explicitly deleted (was loaded, now absent) vs. connections added by
+    /// other users after our last load (never loaded, should not be deleted). (#1424)
     /// </summary>
-    [SupportedOSPlatform("windows")]
-    public sealed class ConnectionTreeModel : INotifyCollectionChanged, INotifyPropertyChanged
+    private readonly HashSet<string> _loadedConnectionIds = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// The set of connection IDs that were present at load time.
+    /// </summary>
+    public IReadOnlyCollection<string> LoadedConnectionIds => _loadedConnectionIds;
+
+    /// <summary>
+    /// Records a connection ID as having been loaded from the data source.
+    /// </summary>
+    public void TrackLoadedConnectionId(string constantId)
     {
-        /// <summary>
-        /// Tracks connection ConstantIDs present when this model was loaded from a data
-        /// source (e.g. SQL database). Used during save to distinguish between connections
-        /// the user explicitly deleted (was loaded, now absent) vs. connections added by
-        /// other users after our last load (never loaded, should not be deleted). (#1424)
-        /// </summary>
-        private readonly HashSet<string> _loadedConnectionIds = new(StringComparer.OrdinalIgnoreCase);
+        if (!string.IsNullOrEmpty(constantId))
+            _loadedConnectionIds.Add(constantId);
+    }
 
-        /// <summary>
-        /// The set of connection IDs that were present at load time.
-        /// </summary>
-        public IReadOnlyCollection<string> LoadedConnectionIds => _loadedConnectionIds;
+    public List<ContainerInfo> RootNodes { get; } = [];
 
-        /// <summary>
-        /// Records a connection ID as having been loaded from the data source.
-        /// </summary>
-        public void TrackLoadedConnectionId(string constantId)
+    public void AddRootNode(ContainerInfo rootNode)
+    {
+        if (RootNodes.Contains(rootNode)) return;
+        RootNodes.Add(rootNode);
+        rootNode.CollectionChanged += RaiseCollectionChangedEvent!;
+        rootNode.PropertyChanged += RaisePropertyChangedEvent!;
+        RaiseCollectionChangedEvent(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, rootNode));
+    }
+
+    public void RemoveRootNode(ContainerInfo rootNode)
+    {
+        if (!RootNodes.Contains(rootNode)) return;
+        rootNode.CollectionChanged -= RaiseCollectionChangedEvent!;
+        rootNode.PropertyChanged -= RaisePropertyChangedEvent!;
+        RootNodes.Remove(rootNode);
+        RaiseCollectionChangedEvent(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove, rootNode));
+    }
+
+    public IReadOnlyList<ConnectionInfo> GetRecursiveChildList()
+    {
+        // Snapshot RootNodes; the sync watcher can trigger a reload from a
+        // background thread while the UI thread mutates the tree. #102.
+        List<ConnectionInfo> list = new();
+        foreach (ContainerInfo rootNode in RootNodes.ToArray())
         {
-            if (!string.IsNullOrEmpty(constantId))
-                _loadedConnectionIds.Add(constantId);
+            list.AddRange(GetRecursiveChildList(rootNode));
         }
 
-        public List<ContainerInfo> RootNodes { get; } = [];
+        return list;
+    }
 
-        public void AddRootNode(ContainerInfo rootNode)
+    public static IEnumerable<ConnectionInfo> GetRecursiveChildList(ContainerInfo container)
+    {
+        return container.GetRecursiveChildList();
+    }
+
+    public static IEnumerable<ConnectionInfo> GetRecursiveFavoriteChildList(ContainerInfo container)
+    {
+        return container.GetRecursiveFavoriteChildList();
+    }
+
+    public static void RenameNode(ConnectionInfo connectionInfo, string newName)
+    {
+        if (newName == null || newName.Length <= 0)
+            return;
+
+        connectionInfo.Name = newName;
+        if (Settings.Default.SetHostnameLikeDisplayName)
+            connectionInfo.Hostname = newName;
+    }
+
+    public static void DeleteNode(ConnectionInfo connectionInfo)
+    {
+        if (connectionInfo is RootNodeInfo)
+            return;
+
+        connectionInfo?.RemoveParent();
+    }
+
+    public ConnectionInfo? FindConnectionById(string connectionId)
+    {
+        if (string.IsNullOrWhiteSpace(connectionId))
+            return null;
+
+        foreach (ContainerInfo rootNode in RootNodes.ToArray())
         {
-            if (RootNodes.Contains(rootNode)) return;
-            RootNodes.Add(rootNode);
-            rootNode.CollectionChanged += RaiseCollectionChangedEvent!;
-            rootNode.PropertyChanged += RaisePropertyChangedEvent!;
-            RaiseCollectionChangedEvent(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, rootNode));
+            if (string.Equals(rootNode.ConstantID, connectionId, StringComparison.OrdinalIgnoreCase))
+                return rootNode;
+
+            ConnectionInfo? childNode = rootNode.GetRecursiveChildList()
+                .FirstOrDefault(node => string.Equals(node.ConstantID, connectionId, StringComparison.OrdinalIgnoreCase));
+            if (childNode != null)
+                return childNode;
         }
 
-        public void RemoveRootNode(ContainerInfo rootNode)
+        return null;
+    }
+
+    public ConnectionInfo? ResolveLinkedConnection(ConnectionInfo connectionInfo)
+    {
+        if (connectionInfo == null)
+            return null;
+
+        if (string.IsNullOrWhiteSpace(connectionInfo.LinkedConnectionId))
+            return connectionInfo;
+
+        HashSet<string> visitedConnectionIds = new(StringComparer.OrdinalIgnoreCase)
         {
-            if (!RootNodes.Contains(rootNode)) return;
-            rootNode.CollectionChanged -= RaiseCollectionChangedEvent!;
-            rootNode.PropertyChanged -= RaisePropertyChangedEvent!;
-            RootNodes.Remove(rootNode);
-            RaiseCollectionChangedEvent(this, new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove, rootNode));
-        }
+            connectionInfo.ConstantID
+        };
 
-        public IReadOnlyList<ConnectionInfo> GetRecursiveChildList()
+        string currentLinkedId = connectionInfo.LinkedConnectionId;
+        while (!string.IsNullOrWhiteSpace(currentLinkedId))
         {
-            // Snapshot RootNodes; the sync watcher can trigger a reload from a
-            // background thread while the UI thread mutates the tree. #102.
-            List<ConnectionInfo> list = new();
-            foreach (ContainerInfo rootNode in RootNodes.ToArray())
-            {
-                list.AddRange(GetRecursiveChildList(rootNode));
-            }
-
-            return list;
-        }
-
-        public static IEnumerable<ConnectionInfo> GetRecursiveChildList(ContainerInfo container)
-        {
-            return container.GetRecursiveChildList();
-        }
-
-        public static IEnumerable<ConnectionInfo> GetRecursiveFavoriteChildList(ContainerInfo container)
-        {
-            return container.GetRecursiveFavoriteChildList();
-        }
-
-        public static void RenameNode(ConnectionInfo connectionInfo, string newName)
-        {
-            if (newName == null || newName.Length <= 0)
-                return;
-
-            connectionInfo.Name = newName;
-            if (Settings.Default.SetHostnameLikeDisplayName)
-                connectionInfo.Hostname = newName;
-        }
-
-        public static void DeleteNode(ConnectionInfo connectionInfo)
-        {
-            if (connectionInfo is RootNodeInfo)
-                return;
-
-            connectionInfo?.RemoveParent();
-        }
-
-        public ConnectionInfo? FindConnectionById(string connectionId)
-        {
-            if (string.IsNullOrWhiteSpace(connectionId))
+            if (!visitedConnectionIds.Add(currentLinkedId))
                 return null;
 
-            foreach (ContainerInfo rootNode in RootNodes.ToArray())
-            {
-                if (string.Equals(rootNode.ConstantID, connectionId, StringComparison.OrdinalIgnoreCase))
-                    return rootNode;
-
-                ConnectionInfo? childNode = rootNode.GetRecursiveChildList()
-                    .FirstOrDefault(node => string.Equals(node.ConstantID, connectionId, StringComparison.OrdinalIgnoreCase));
-                if (childNode != null)
-                    return childNode;
-            }
-
-            return null;
-        }
-
-        public ConnectionInfo? ResolveLinkedConnection(ConnectionInfo connectionInfo)
-        {
-            if (connectionInfo == null)
+            ConnectionInfo? candidate = FindConnectionById(currentLinkedId);
+            if (candidate == null)
                 return null;
 
-            if (string.IsNullOrWhiteSpace(connectionInfo.LinkedConnectionId))
-                return connectionInfo;
+            if (string.IsNullOrWhiteSpace(candidate.LinkedConnectionId))
+                return candidate;
 
-            HashSet<string> visitedConnectionIds = new(StringComparer.OrdinalIgnoreCase)
-            {
-                connectionInfo.ConstantID
-            };
-
-            string currentLinkedId = connectionInfo.LinkedConnectionId;
-            while (!string.IsNullOrWhiteSpace(currentLinkedId))
-            {
-                if (!visitedConnectionIds.Add(currentLinkedId))
-                    return null;
-
-                ConnectionInfo? candidate = FindConnectionById(currentLinkedId);
-                if (candidate == null)
-                    return null;
-
-                if (string.IsNullOrWhiteSpace(candidate.LinkedConnectionId))
-                    return candidate;
-
-                currentLinkedId = candidate.LinkedConnectionId;
-            }
-
-            return null;
+            currentLinkedId = candidate.LinkedConnectionId;
         }
 
-        public event NotifyCollectionChangedEventHandler? CollectionChanged;
+        return null;
+    }
 
-        public event PropertyChangedEventHandler? PropertyChanged;
+    public event NotifyCollectionChangedEventHandler? CollectionChanged;
 
-        private void RaiseCollectionChangedEvent(object? sender, NotifyCollectionChangedEventArgs args)
-        {
-            CollectionChanged?.Invoke(this, args);
-        }
+    public event PropertyChangedEventHandler? PropertyChanged;
 
-        private void RaisePropertyChangedEvent(object? sender, PropertyChangedEventArgs args)
-        {
-            PropertyChanged?.Invoke(this, args);
-        }
+    private void RaiseCollectionChangedEvent(object? sender, NotifyCollectionChangedEventArgs args)
+    {
+        CollectionChanged?.Invoke(this, args);
+    }
+
+    private void RaisePropertyChangedEvent(object? sender, PropertyChangedEventArgs args)
+    {
+        PropertyChanged?.Invoke(this, args);
     }
 }

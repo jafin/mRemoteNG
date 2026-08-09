@@ -1,103 +1,99 @@
-using System;
 using System.IO;
-using System.Linq;
 using System.Reflection;
-using NUnit.Framework;
-using mRemoteNG.Container;
-using mRemoteNG.Connection;
 using System.Threading;
+using mRemoteNG.Container;
+using NUnit.Framework;
 
-namespace mRemoteNGTests.Container
+namespace mRemoteNGTests.Container;
+
+[TestFixture]
+[Apartment(ApartmentState.STA)]
+public class DynamicFolderManagerTests
 {
-    [TestFixture]
-    [Apartment(ApartmentState.STA)]
-    public class DynamicFolderManagerTests
+    private string _tempFile;
+    private DynamicFolderManager _manager;
+
+    [SetUp]
+    public void Setup()
     {
-        private string _tempFile;
-        private DynamicFolderManager _manager;
+        _manager = new DynamicFolderManager();
+        _tempFile = Path.GetTempFileName();
+    }
 
-        [SetUp]
-        public void Setup()
+    [TearDown]
+    public void TearDown()
+    {
+        if (File.Exists(_tempFile))
         {
-            _manager = new DynamicFolderManager();
-            _tempFile = Path.GetTempFileName();
+            File.Delete(_tempFile);
         }
+    }
 
-        [TearDown]
-        public void TearDown()
+    /// <summary>
+    /// Calls ImportXml directly via reflection to bypass RefreshFolderInternal's
+    /// exception swallowing and FrmMain.Default?.InvokeRequired check.
+    /// </summary>
+    private static void InvokeImportXml(string xmlContent, ContainerInfo container, string sourceName)
+    {
+        var method = typeof(DynamicFolderManager).GetMethod(
+            "ImportXml",
+            BindingFlags.Static | BindingFlags.NonPublic);
+        Assert.That(method, Is.Not.Null, "Failed to find ImportXml method");
+        try
         {
-            if (File.Exists(_tempFile))
-            {
-                File.Delete(_tempFile);
-            }
+            method!.Invoke(null, new object[] { xmlContent, container, sourceName });
         }
-
-        /// <summary>
-        /// Calls ImportXml directly via reflection to bypass RefreshFolderInternal's
-        /// exception swallowing and FrmMain.Default?.InvokeRequired check.
-        /// </summary>
-        private static void InvokeImportXml(string xmlContent, ContainerInfo container, string sourceName)
+        catch (TargetInvocationException tie) when (tie.InnerException != null)
         {
-            var method = typeof(DynamicFolderManager).GetMethod(
-                "ImportXml",
-                BindingFlags.Static | BindingFlags.NonPublic);
-            Assert.That(method, Is.Not.Null, "Failed to find ImportXml method");
-            try
-            {
-                method!.Invoke(null, new object[] { xmlContent, container, sourceName });
-            }
-            catch (TargetInvocationException tie) when (tie.InnerException != null)
-            {
-                throw tie.InnerException;
-            }
+            throw tie.InnerException;
         }
+    }
 
-        [Test]
-        public void RefreshFolder_FileSource_PopulatesChildren()
-        {
-            // Arrange
-            string xml = @"<?xml version=""1.0"" encoding=""utf-8""?>
+    [Test]
+    public void RefreshFolder_FileSource_PopulatesChildren()
+    {
+        // Arrange
+        string xml = @"<?xml version=""1.0"" encoding=""utf-8""?>
 <Connections Name=""Connections"" Export=""False"" ConfVersion=""1.3"">
     <Node Name=""TestConnection"" Type=""Connection"" Descr=""Test Description"" Protocol=""RDP"" Hostname=""localhost"" Port=""3389"" />
 </Connections>";
 
-            var container = new ContainerInfo
-            {
-                Name = "DynamicFolder",
-                DynamicSource = DynamicSourceType.File,
-                DynamicSourceValue = _tempFile
-            };
-
-            // Act — call ImportXml directly (bypasses RefreshFolderInternal exception swallowing)
-            InvokeImportXml(xml, container, "TestFile");
-
-            // Assert
-            Assert.That(container.Children.Count, Is.EqualTo(1));
-            Assert.That(container.Children[0].Name, Is.EqualTo("TestConnection"));
-        }
-
-        [Test]
-        public void RefreshFolder_ScriptSource_PopulatesChildren()
+        var container = new ContainerInfo
         {
-            // Arrange
-            string xml = @"<?xml version=""1.0"" encoding=""utf-8""?>
+            Name = "DynamicFolder",
+            DynamicSource = DynamicSourceType.File,
+            DynamicSourceValue = _tempFile
+        };
+
+        // Act — call ImportXml directly (bypasses RefreshFolderInternal exception swallowing)
+        InvokeImportXml(xml, container, "TestFile");
+
+        // Assert
+        Assert.That(container.Children.Count, Is.EqualTo(1));
+        Assert.That(container.Children[0].Name, Is.EqualTo("TestConnection"));
+    }
+
+    [Test]
+    public void RefreshFolder_ScriptSource_PopulatesChildren()
+    {
+        // Arrange
+        string xml = @"<?xml version=""1.0"" encoding=""utf-8""?>
 <Connections Name=""Connections"" Export=""False"" ConfVersion=""1.3"">
     <Node Name=""ScriptConnection"" Type=""Connection"" Descr=""From Script"" Protocol=""SSH2"" Hostname=""127.0.0.1"" Port=""22"" />
 </Connections>";
 
-            var container = new ContainerInfo
-            {
-                Name = "DynamicScriptFolder",
-                DynamicSource = DynamicSourceType.Script,
-                DynamicSourceValue = "test-script.bat"
-            };
+        var container = new ContainerInfo
+        {
+            Name = "DynamicScriptFolder",
+            DynamicSource = DynamicSourceType.Script,
+            DynamicSourceValue = "test-script.bat"
+        };
 
-            // Act — call ImportXml directly to test XML parsing without script execution
-            InvokeImportXml(xml, container, "ScriptOutput");
+        // Act — call ImportXml directly to test XML parsing without script execution
+        InvokeImportXml(xml, container, "ScriptOutput");
 
-            // Assert
-            Assert.That(container.Children.Count, Is.EqualTo(1));
-            Assert.That(container.Children[0].Name, Is.EqualTo("ScriptConnection"));
-        }
+        // Assert
+        Assert.That(container.Children.Count, Is.EqualTo(1));
+        Assert.That(container.Children[0].Name, Is.EqualTo("ScriptConnection"));
     }
 }

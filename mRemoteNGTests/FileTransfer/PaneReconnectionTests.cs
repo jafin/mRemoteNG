@@ -6,139 +6,138 @@ using mRemoteNG.FileTransfer;
 using mRemoteNG.UI.Controls.FileTransfer;
 using NUnit.Framework;
 
-namespace mRemoteNGTests.FileTransfer
+namespace mRemoteNGTests.FileTransfer;
+
+/// <summary>
+/// Covers <c>specs/file-manager-reconnection/spec.md</c>. The decisions are separated from the
+/// control precisely so they can be asserted here, with no window and no server.
+/// </summary>
+[TestFixture]
+public class PaneReconnectionTests
 {
-    /// <summary>
-    /// Covers <c>specs/file-manager-reconnection/spec.md</c>. The decisions are separated from the
-    /// control precisely so they can be asserted here, with no window and no server.
-    /// </summary>
-    [TestFixture]
-    public class PaneReconnectionTests
+    private sealed class FakeConnection(bool connected, bool reconnectSucceeds = true) : IPaneConnection
     {
-        private sealed class FakeConnection(bool connected, bool reconnectSucceeds = true) : IPaneConnection
+        public bool IsConnected { get; private set; } = connected;
+
+        public int ReconnectAttempts { get; private set; }
+
+        public event EventHandler? ConnectionChanged;
+
+        public Task<bool> ReconnectAsync(CancellationToken cancellationToken = default)
         {
-            public bool IsConnected { get; private set; } = connected;
+            ReconnectAttempts++;
 
-            public int ReconnectAttempts { get; private set; }
+            if (reconnectSucceeds)
+                IsConnected = true;
 
-            public event EventHandler? ConnectionChanged;
-
-            public Task<bool> ReconnectAsync(CancellationToken cancellationToken = default)
-            {
-                ReconnectAttempts++;
-
-                if (reconnectSucceeds)
-                    IsConnected = true;
-
-                ConnectionChanged?.Invoke(this, EventArgs.Empty);
-                return Task.FromResult(reconnectSucceeds);
-            }
+            ConnectionChanged?.Invoke(this, EventArgs.Empty);
+            return Task.FromResult(reconnectSucceeds);
         }
+    }
 
-        // ---- when to list ------------------------------------------------------------
+    // ---- when to list ------------------------------------------------------------
 
-        /// <summary>The local pane, which has nothing to reconnect to, must list as it always did.</summary>
-        [Test]
-        public async Task WithNoConnectionThePaneJustLists() =>
-            Assert.That(await FilePaneControl.ShouldListAsync(null), Is.True);
+    /// <summary>The local pane, which has nothing to reconnect to, must list as it always did.</summary>
+    [Test]
+    public async Task WithNoConnectionThePaneJustLists() =>
+        Assert.That(await FilePaneControl.ShouldListAsync(null), Is.True);
 
-        [Test]
-        public async Task AConnectedPaneListsWithoutReconnecting()
+    [Test]
+    public async Task AConnectedPaneListsWithoutReconnecting()
+    {
+        FakeConnection connection = new(connected: true);
+
+        bool shouldList = await FilePaneControl.ShouldListAsync(connection);
+
+        Assert.Multiple(() =>
         {
-            FakeConnection connection = new(connected: true);
+            Assert.That(shouldList, Is.True);
+            Assert.That(connection.ReconnectAttempts, Is.Zero);
+        });
+    }
 
-            bool shouldList = await FilePaneControl.ShouldListAsync(connection);
+    [Test]
+    public async Task ADisconnectedPaneReconnectsThenLists()
+    {
+        FakeConnection connection = new(connected: false);
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(shouldList, Is.True);
-                Assert.That(connection.ReconnectAttempts, Is.Zero);
-            });
-        }
+        bool shouldList = await FilePaneControl.ShouldListAsync(connection);
 
-        [Test]
-        public async Task ADisconnectedPaneReconnectsThenLists()
+        Assert.Multiple(() =>
         {
-            FakeConnection connection = new(connected: false);
+            Assert.That(shouldList, Is.True);
+            Assert.That(connection.ReconnectAttempts, Is.EqualTo(1));
+        });
+    }
 
-            bool shouldList = await FilePaneControl.ShouldListAsync(connection);
+    /// <summary>
+    /// Listing anyway would fail with the same "not connected" error the reconnect just reported,
+    /// giving one gesture two errors.
+    /// </summary>
+    [Test]
+    public async Task AFailedReconnectDoesNotThenList()
+    {
+        FakeConnection connection = new(connected: false, reconnectSucceeds: false);
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(shouldList, Is.True);
-                Assert.That(connection.ReconnectAttempts, Is.EqualTo(1));
-            });
-        }
+        bool shouldList = await FilePaneControl.ShouldListAsync(connection);
 
-        /// <summary>
-        /// Listing anyway would fail with the same "not connected" error the reconnect just reported,
-        /// giving one gesture two errors.
-        /// </summary>
-        [Test]
-        public async Task AFailedReconnectDoesNotThenList()
+        Assert.Multiple(() =>
         {
-            FakeConnection connection = new(connected: false, reconnectSucceeds: false);
+            Assert.That(shouldList, Is.False);
+            Assert.That(connection.ReconnectAttempts, Is.EqualTo(1));
+        });
+    }
 
-            bool shouldList = await FilePaneControl.ShouldListAsync(connection);
+    // ---- one at a time -----------------------------------------------------------
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(shouldList, Is.False);
-                Assert.That(connection.ReconnectAttempts, Is.EqualTo(1));
-            });
-        }
+    [Test]
+    public void OnlyOneOperationRunsAtATime()
+    {
+        SingleFlight flight = new();
 
-        // ---- one at a time -----------------------------------------------------------
-
-        [Test]
-        public void OnlyOneOperationRunsAtATime()
+        Assert.Multiple(() =>
         {
-            SingleFlight flight = new();
+            Assert.That(flight.TryEnter(), Is.True);
+            Assert.That(flight.TryEnter(), Is.False, "a second caller must be turned away, not queued");
+        });
+    }
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(flight.TryEnter(), Is.True);
-                Assert.That(flight.TryEnter(), Is.False, "a second caller must be turned away, not queued");
-            });
-        }
+    [Test]
+    public void TheSlotIsReusableOnceReleased()
+    {
+        SingleFlight flight = new();
 
-        [Test]
-        public void TheSlotIsReusableOnceReleased()
+        flight.TryEnter();
+        flight.Exit();
+
+        Assert.Multiple(() =>
         {
-            SingleFlight flight = new();
+            Assert.That(flight.TryEnter(), Is.True);
+            Assert.That(flight.IsRunning, Is.True);
+        });
+    }
 
-            flight.TryEnter();
-            flight.Exit();
+    [Test]
+    public void ReleasingAnUnclaimedSlotIsHarmless()
+    {
+        SingleFlight flight = new();
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(flight.TryEnter(), Is.True);
-                Assert.That(flight.IsRunning, Is.True);
-            });
-        }
+        Assert.DoesNotThrow(flight.Exit);
+        Assert.That(flight.IsRunning, Is.False);
+    }
 
-        [Test]
-        public void ReleasingAnUnclaimedSlotIsHarmless()
+    [Test]
+    public async Task ConcurrentCallersLeaveExactlyOneHolder()
+    {
+        SingleFlight flight = new();
+        int admitted = 0;
+
+        await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => Task.Run(() =>
         {
-            SingleFlight flight = new();
+            if (flight.TryEnter())
+                Interlocked.Increment(ref admitted);
+        })));
 
-            Assert.DoesNotThrow(flight.Exit);
-            Assert.That(flight.IsRunning, Is.False);
-        }
-
-        [Test]
-        public async Task ConcurrentCallersLeaveExactlyOneHolder()
-        {
-            SingleFlight flight = new();
-            int admitted = 0;
-
-            await Task.WhenAll(Enumerable.Range(0, 32).Select(_ => Task.Run(() =>
-            {
-                if (flight.TryEnter())
-                    Interlocked.Increment(ref admitted);
-            })));
-
-            Assert.That(admitted, Is.EqualTo(1));
-        }
+        Assert.That(admitted, Is.EqualTo(1));
     }
 }

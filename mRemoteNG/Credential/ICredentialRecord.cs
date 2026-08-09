@@ -3,15 +3,14 @@ using System.ComponentModel;
 using System.Security;
 
 
-namespace mRemoteNG.Credential
+namespace mRemoteNG.Credential;
+
+[TypeConverter(typeof(CredentialRecordTypeConverter))]
+public interface ICredentialRecord : INotifyPropertyChanged
 {
-    [TypeConverter(typeof(CredentialRecordTypeConverter))]
-    public interface ICredentialRecord : INotifyPropertyChanged
-    {
-        Guid Id { get; }
-        string Title { get; set; }
-        string Username { get; set; }
-        SecureString Password { get; set; }
-        string Domain { get; set; }
-    }
+    Guid Id { get; }
+    string Title { get; set; }
+    string Username { get; set; }
+    SecureString Password { get; set; }
+    string Domain { get; set; }
 }

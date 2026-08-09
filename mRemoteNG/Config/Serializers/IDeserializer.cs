@@ -1,7 +1,6 @@
-﻿namespace mRemoteNG.Config.Serializers
+﻿namespace mRemoteNG.Config.Serializers;
+
+public interface IDeserializer<in TIn, out TOut>
 {
-    public interface IDeserializer<in TIn, out TOut>
-    {
-        TOut Deserialize(TIn serializedData);
-    }
+    TOut Deserialize(TIn serializedData);
 }

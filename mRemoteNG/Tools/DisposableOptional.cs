@@ -1,23 +1,22 @@
 ﻿using System;
 using System.Linq;
 
-namespace mRemoteNG.Tools
+namespace mRemoteNG.Tools;
+
+public class DisposableOptional<T>(T value) : Optional<T>(value), IDisposable
+    where T : IDisposable
 {
-    public class DisposableOptional<T>(T value) : Optional<T>(value), IDisposable
-        where T : IDisposable
+    public void Dispose()
     {
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
 
-        private void Dispose(bool disposing)
-        {
-            if (!disposing || !this.Any())
-                return;
+    private void Dispose(bool disposing)
+    {
+        if (!disposing || !this.Any())
+            return;
 
-            this.First().Dispose();
-        }
+        this.First().Dispose();
     }
 }

@@ -109,7 +109,7 @@ public class SqlMigrationHelperTests
             cmd.Parameters.Returns(Substitute.For<DbParameterCollection>());
             cmd.CreateParameter().Returns(Substitute.For<DbParameter>());
 
-            if (sql.Contains("COLUMN a"))
+            if (sql.Contains("COLUMN a", StringComparison.Ordinal))
             {
                 // First ADD COLUMN duplicates a column already added by the schema
                 // forward-port — must be caught, not abort the upgrade (#113).
@@ -192,7 +192,7 @@ public class SqlMigrationHelperTests
             cmd.CreateParameter().Returns(Substitute.For<DbParameter>());
             cmd.ExecuteScalar().Returns(1L);
 
-            if (sql.Contains("ADD col"))
+            if (sql.Contains("ADD col", StringComparison.Ordinal))
                 cmd.When(c => c.ExecuteNonQuery()).Do(_ => throw new InvalidOperationException("boom"));
             else
                 cmd.ExecuteNonQuery().Returns(1);
@@ -314,7 +314,7 @@ public class SqlMigrationHelperTests
             cmd.Parameters.Returns(Substitute.For<DbParameterCollection>());
             cmd.CreateParameter().Returns(Substitute.For<DbParameter>());
 
-            if (sql.Contains("col1"))
+            if (sql.Contains("col1", StringComparison.Ordinal))
             {
                 // First ALTER throws "Duplicate column" — should be caught
                 cmd.When(c => c.ExecuteNonQuery()).Do(_ =>

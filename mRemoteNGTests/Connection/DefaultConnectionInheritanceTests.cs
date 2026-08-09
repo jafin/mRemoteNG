@@ -6,75 +6,74 @@ using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
 
-namespace mRemoteNGTests.Connection
+namespace mRemoteNGTests.Connection;
+
+[SupportedOSPlatform("windows")]
+public class DefaultConnectionInheritanceTests
 {
-    [SupportedOSPlatform("windows")]
-	public class DefaultConnectionInheritanceTests
-    {
-        private TestScope? _scope;
+	private TestScope? _scope;
 
-        [SetUp]
-        public void SetUp()
-        {
-            _scope = TestScope.Begin();
-        }
+	[SetUp]
+	public void SetUp()
+	{
+		_scope = TestScope.Begin();
+	}
 
-        [TearDown]
-        public void TearDown()
-        {
-            _scope?.Dispose();
-        }
+	[TearDown]
+	public void TearDown()
+	{
+		_scope?.Dispose();
+	}
 
-	    [TestCaseSource(nameof(GetInheritanceProperties))]
-		public void LoadingDefaultInheritanceUpdatesAllProperties(PropertyInfo property)
-        {
-			var inheritanceSource = new ConnectionInfoInheritance(new ConnectionInfo(), true);
-            inheritanceSource.TurnOnInheritanceCompletely();
-	        DefaultConnectionInheritance.Instance.TurnOffInheritanceCompletely();
+	[TestCaseSource(nameof(GetInheritanceProperties))]
+	public void LoadingDefaultInheritanceUpdatesAllProperties(PropertyInfo property)
+	{
+		var inheritanceSource = new ConnectionInfoInheritance(new ConnectionInfo(), true);
+		inheritanceSource.TurnOnInheritanceCompletely();
+		DefaultConnectionInheritance.Instance.TurnOffInheritanceCompletely();
 
-            DefaultConnectionInheritance.LoadFrom(inheritanceSource);
+		DefaultConnectionInheritance.LoadFrom(inheritanceSource);
 
-	        var valueInDestination = property.GetValue(DefaultConnectionInheritance.Instance);
-	        var valueInSource = property.GetValue(inheritanceSource);
-	        Assert.That(valueInDestination, Is.EqualTo(valueInSource));
-		}
+		var valueInDestination = property.GetValue(DefaultConnectionInheritance.Instance);
+		var valueInSource = property.GetValue(inheritanceSource);
+		Assert.That(valueInDestination, Is.EqualTo(valueInSource));
+	}
 
-		[TestCaseSource(nameof(GetInheritanceProperties))]
-		public void SavingDefaultInheritanceExportsAllProperties(PropertyInfo property)
-        {
-			var saveTarget = new ConnectionInfoInheritance(new ConnectionInfo(), true);
-	        saveTarget.TurnOffInheritanceCompletely();
-	        DefaultConnectionInheritance.Instance.TurnOnInheritanceCompletely();
+	[TestCaseSource(nameof(GetInheritanceProperties))]
+	public void SavingDefaultInheritanceExportsAllProperties(PropertyInfo property)
+	{
+		var saveTarget = new ConnectionInfoInheritance(new ConnectionInfo(), true);
+		saveTarget.TurnOffInheritanceCompletely();
+		DefaultConnectionInheritance.Instance.TurnOnInheritanceCompletely();
 
-	        DefaultConnectionInheritance.SaveTo(saveTarget);
+		DefaultConnectionInheritance.SaveTo(saveTarget);
 
-	        var valueInDestination = property.GetValue(saveTarget);
-	        var valueInSource = property.GetValue(DefaultConnectionInheritance.Instance);
-	        Assert.That(valueInDestination, Is.EqualTo(valueInSource));
-		}
+		var valueInDestination = property.GetValue(saveTarget);
+		var valueInSource = property.GetValue(DefaultConnectionInheritance.Instance);
+		Assert.That(valueInDestination, Is.EqualTo(valueInSource));
+	}
 
-        [Test]
-        public void NewInheritanceInstancesCreatedWithDefaultInheritanceValues()
-        {
-            DefaultConnectionInheritance.Instance.Domain = true;
-            var inheritanceInstance = new ConnectionInfoInheritance(new ConnectionInfo());
-            Assert.That(inheritanceInstance.Domain, Is.True);
-        }
+	[Test]
+	public void NewInheritanceInstancesCreatedWithDefaultInheritanceValues()
+	{
+		DefaultConnectionInheritance.Instance.Domain = true;
+		var inheritanceInstance = new ConnectionInfoInheritance(new ConnectionInfo());
+		Assert.That(inheritanceInstance.Domain, Is.True);
+	}
 
-		[TestCaseSource(nameof(GetInheritanceProperties))]
-		public void NewInheritanceInstancesCreatedWithAllDefaultInheritanceValues(PropertyInfo property)
-        {
-            DefaultConnectionInheritance.Instance.TurnOnInheritanceCompletely();
-            var inheritanceInstance = new ConnectionInfoInheritance(new ConnectionInfo());
+	[TestCaseSource(nameof(GetInheritanceProperties))]
+	public void NewInheritanceInstancesCreatedWithAllDefaultInheritanceValues(PropertyInfo property)
+	{
+		DefaultConnectionInheritance.Instance.TurnOnInheritanceCompletely();
+		var inheritanceInstance = new ConnectionInfoInheritance(new ConnectionInfo());
 
-			var valueInDestination = property.GetValue(inheritanceInstance);
-	        var valueInSource = property.GetValue(DefaultConnectionInheritance.Instance);
-	        Assert.That(valueInDestination, Is.EqualTo(valueInSource));
-		}
+		var valueInDestination = property.GetValue(inheritanceInstance);
+		var valueInSource = property.GetValue(DefaultConnectionInheritance.Instance);
+		Assert.That(valueInDestination, Is.EqualTo(valueInSource));
+	}
 
-	    private static IEnumerable<PropertyInfo> GetInheritanceProperties()
-	    {
-		    return ConnectionInfoInheritance.GetProperties();
-	    }
+	private static IEnumerable<PropertyInfo> GetInheritanceProperties()
+	{
+		return ConnectionInfoInheritance.GetProperties();
 	}
 }

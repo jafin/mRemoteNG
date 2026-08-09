@@ -1,9 +1,8 @@
 using System.Threading.Tasks;
 
-namespace mRemoteNG.Connection
+namespace mRemoteNG.Connection;
+
+public interface ITunnelPortValidator
 {
-    public interface ITunnelPortValidator
-    {
-        Task<bool> ValidatePortAsync(int port);
-    }
+    Task<bool> ValidatePortAsync(int port);
 }

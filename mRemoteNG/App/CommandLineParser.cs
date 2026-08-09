@@ -1,280 +1,279 @@
-using mRemoteNG.App.Info;
-using mRemoteNG.Properties;
-using mRemoteNG.Tools.Cmdline;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
+using mRemoteNG.App.Info;
+using mRemoteNG.Properties;
+using mRemoteNG.Tools.Cmdline;
 
-namespace mRemoteNG.App
+namespace mRemoteNG.App;
+
+[SupportedOSPlatform("windows")]
+public sealed class CommandLineParser
 {
-    [SupportedOSPlatform("windows")]
-    public sealed class CommandLineParser
+    private static readonly string[] ConnectionPathSwitches = ["cons", "c"];
+    private static readonly string[] ConfigurationPathSwitches = ["settings", "settingspath", "config", "configpath", "cfg"];
+    private static readonly string[] LogPathSwitches = ["log", "logpath", "logfile"];
+
+    private readonly string[] _args;
+    private readonly CmdArgumentsInterpreter _arguments;
+
+    public CommandLineParser(IEnumerable<string> args)
     {
-        private static readonly string[] ConnectionPathSwitches = ["cons", "c"];
-        private static readonly string[] ConfigurationPathSwitches = ["settings", "settingspath", "config", "configpath", "cfg"];
-        private static readonly string[] LogPathSwitches = ["log", "logpath", "logfile"];
+        _args = args?.ToArray() ?? [];
+        _arguments = new CmdArgumentsInterpreter(_args);
+    }
 
-        private readonly string[] _args;
-        private readonly CmdArgumentsInterpreter _arguments;
+    public void ApplySwitches(bool applyLogPathToActiveLogger = false)
+    {
+        ApplyConnectionFileOverride();
+        ApplyConfigurationPathOverride();
+        ApplyLogPathOverride(applyLogPathToActiveLogger);
+    }
 
-        public CommandLineParser(IEnumerable<string> args)
+    public string[] GetNormalizedArguments()
+    {
+        string[] normalizedArgs = (string[])_args.Clone();
+        ExpandSwitchValue(normalizedArgs, ConnectionPathSwitches);
+        ExpandSwitchValue(normalizedArgs, ConfigurationPathSwitches);
+        ExpandSwitchValue(normalizedArgs, LogPathSwitches);
+        return normalizedArgs;
+    }
+
+    private void ApplyConnectionFileOverride()
+    {
+        string? rawPath = GetArgumentValue(ConnectionPathSwitches);
+        if (string.IsNullOrWhiteSpace(rawPath))
+            return;
+
+        string? resolvedPath = ResolveExistingFilePath(rawPath);
+        if (string.IsNullOrWhiteSpace(resolvedPath))
+            return;
+
+        OptionsConnectionsPage.Default.ConnectionFilePath = resolvedPath;
+        OptionsBackupPage.Default.LoadConsFromCustomLocation = true;
+        OptionsBackupPage.Default.BackupLocation = resolvedPath;
+    }
+
+    private void ApplyConfigurationPathOverride()
+    {
+        string? rawPath = GetArgumentValue(ConfigurationPathSwitches);
+        if (string.IsNullOrWhiteSpace(rawPath))
+            return;
+
+        string? resolvedPath = NormalizeDirectoryPath(rawPath);
+        if (string.IsNullOrWhiteSpace(resolvedPath))
+            return;
+
+        Settings.Default.CustomConfigurationPath = resolvedPath;
+    }
+
+    private void ApplyLogPathOverride(bool applyToActiveLogger)
+    {
+        string? rawPath = GetArgumentValue(LogPathSwitches);
+        if (string.IsNullOrWhiteSpace(rawPath))
+            return;
+
+        string? resolvedPath = NormalizeLogFilePath(rawPath);
+        if (string.IsNullOrWhiteSpace(resolvedPath))
+            return;
+
+        OptionsNotificationsPage.Default.LogToApplicationDirectory = false;
+        OptionsNotificationsPage.Default.LogFilePath = resolvedPath;
+
+        if (!applyToActiveLogger)
+            return;
+
+        try
         {
-            _args = args?.ToArray() ?? [];
-            _arguments = new CmdArgumentsInterpreter(_args);
+            Logger.Instance.SetLogPath(resolvedPath);
+        }
+        catch
+        {
+            // Best effort only - do not fail argument processing on logger path errors.
+        }
+    }
+
+    private string? GetArgumentValue(IEnumerable<string> switchNames)
+    {
+        foreach (string switchName in switchNames)
+        {
+            string? value = _arguments[switchName];
+            if (!string.IsNullOrWhiteSpace(value))
+                return value;
         }
 
-        public void ApplySwitches(bool applyLogPathToActiveLogger = false)
+        return null;
+    }
+
+    private static string? ResolveExistingFilePath(string rawPath)
+    {
+        foreach (string candidatePath in ExpandFilePathCandidates(rawPath))
         {
-            ApplyConnectionFileOverride();
-            ApplyConfigurationPathOverride();
-            ApplyLogPathOverride(applyLogPathToActiveLogger);
+            if (File.Exists(candidatePath))
+                return candidatePath;
         }
 
-        public string[] GetNormalizedArguments()
+        return null;
+    }
+
+    private static IEnumerable<string> ExpandFilePathCandidates(string rawPath)
+    {
+        string? normalizedRawPath = TryNormalizePath(rawPath);
+        if (!string.IsNullOrWhiteSpace(normalizedRawPath))
+            yield return normalizedRawPath;
+
+        string? homeRelativePath = TryNormalizePath(Path.Combine(GeneralAppInfo.HomePath, rawPath));
+        if (!string.IsNullOrWhiteSpace(homeRelativePath))
+            yield return homeRelativePath;
+
+        string? defaultRelativePath = TryNormalizePath(Path.Combine(ConnectionsFileInfo.DefaultConnectionsPath, rawPath));
+        if (!string.IsNullOrWhiteSpace(defaultRelativePath))
+            yield return defaultRelativePath;
+    }
+
+    private static string? NormalizeDirectoryPath(string rawPath)
+    {
+        string? normalizedPath = TryNormalizePath(rawPath);
+        if (string.IsNullOrWhiteSpace(normalizedPath))
+            return null;
+
+        string extension = Path.GetExtension(normalizedPath);
+        if (string.Equals(extension, ".settings", StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(extension, ".config", StringComparison.OrdinalIgnoreCase))
         {
-            string[] normalizedArgs = (string[])_args.Clone();
-            ExpandSwitchValue(normalizedArgs, ConnectionPathSwitches);
-            ExpandSwitchValue(normalizedArgs, ConfigurationPathSwitches);
-            ExpandSwitchValue(normalizedArgs, LogPathSwitches);
-            return normalizedArgs;
+            string? directoryPath = Path.GetDirectoryName(normalizedPath);
+            if (!string.IsNullOrWhiteSpace(directoryPath))
+                return directoryPath;
         }
 
-        private void ApplyConnectionFileOverride()
+        return normalizedPath;
+    }
+
+    private static string? NormalizeLogFilePath(string rawPath)
+    {
+        string? expandedPath = TryExpandPath(rawPath);
+        if (string.IsNullOrWhiteSpace(expandedPath))
+            return null;
+
+        bool endsWithSeparator = expandedPath.EndsWith(Path.DirectorySeparatorChar) ||
+                                 expandedPath.EndsWith(Path.AltDirectorySeparatorChar);
+        if (endsWithSeparator)
         {
-            string? rawPath = GetArgumentValue(ConnectionPathSwitches);
-            if (string.IsNullOrWhiteSpace(rawPath))
-                return;
-
-            string? resolvedPath = ResolveExistingFilePath(rawPath);
-            if (string.IsNullOrWhiteSpace(resolvedPath))
-                return;
-
-            OptionsConnectionsPage.Default.ConnectionFilePath = resolvedPath;
-            OptionsBackupPage.Default.LoadConsFromCustomLocation = true;
-            OptionsBackupPage.Default.BackupLocation = resolvedPath;
+            string logFileName = Path.GetFileName(Logger.DefaultLogPath);
+            return TryNormalizePath(Path.Combine(expandedPath, logFileName));
         }
 
-        private void ApplyConfigurationPathOverride()
+        return TryNormalizePath(expandedPath);
+    }
+
+    private static string? TryNormalizePath(string path)
+    {
+        string? expandedPath = TryExpandPath(path);
+        if (string.IsNullOrWhiteSpace(expandedPath))
+            return null;
+
+        try
         {
-            string? rawPath = GetArgumentValue(ConfigurationPathSwitches);
-            if (string.IsNullOrWhiteSpace(rawPath))
-                return;
-
-            string? resolvedPath = NormalizeDirectoryPath(rawPath);
-            if (string.IsNullOrWhiteSpace(resolvedPath))
-                return;
-
-            Settings.Default.CustomConfigurationPath = resolvedPath;
+            return Path.GetFullPath(expandedPath);
         }
-
-        private void ApplyLogPathOverride(bool applyToActiveLogger)
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
         {
-            string? rawPath = GetArgumentValue(LogPathSwitches);
-            if (string.IsNullOrWhiteSpace(rawPath))
-                return;
-
-            string? resolvedPath = NormalizeLogFilePath(rawPath);
-            if (string.IsNullOrWhiteSpace(resolvedPath))
-                return;
-
-            OptionsNotificationsPage.Default.LogToApplicationDirectory = false;
-            OptionsNotificationsPage.Default.LogFilePath = resolvedPath;
-
-            if (!applyToActiveLogger)
-                return;
-
-            try
-            {
-                Logger.Instance.SetLogPath(resolvedPath);
-            }
-            catch
-            {
-                // Best effort only - do not fail argument processing on logger path errors.
-            }
-        }
-
-        private string? GetArgumentValue(IEnumerable<string> switchNames)
-        {
-            foreach (string switchName in switchNames)
-            {
-                string? value = _arguments[switchName];
-                if (!string.IsNullOrWhiteSpace(value))
-                    return value;
-            }
-
             return null;
         }
+    }
 
-        private static string? ResolveExistingFilePath(string rawPath)
+    private static string? TryExpandPath(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+            return null;
+
+        try
         {
-            foreach (string candidatePath in ExpandFilePathCandidates(rawPath))
-            {
-                if (File.Exists(candidatePath))
-                    return candidatePath;
-            }
-
+            return Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
+        }
+        catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
+        {
             return null;
         }
+    }
 
-        private static IEnumerable<string> ExpandFilePathCandidates(string rawPath)
+    private static void ExpandSwitchValue(string[] args, IReadOnlyCollection<string> switchNames)
+    {
+        for (int i = 0; i < args.Length; i++)
         {
-            string? normalizedRawPath = TryNormalizePath(rawPath);
-            if (!string.IsNullOrWhiteSpace(normalizedRawPath))
-                yield return normalizedRawPath;
+            string argument = args[i];
+            if (string.IsNullOrWhiteSpace(argument))
+                continue;
 
-            string? homeRelativePath = TryNormalizePath(Path.Combine(GeneralAppInfo.HomePath, rawPath));
-            if (!string.IsNullOrWhiteSpace(homeRelativePath))
-                yield return homeRelativePath;
+            if (!TryGetNamedSwitch(argument, out string switchName, out string? inlineValue))
+                continue;
 
-            string? defaultRelativePath = TryNormalizePath(Path.Combine(ConnectionsFileInfo.DefaultConnectionsPath, rawPath));
-            if (!string.IsNullOrWhiteSpace(defaultRelativePath))
-                yield return defaultRelativePath;
+            if (!switchNames.Contains(switchName, StringComparer.OrdinalIgnoreCase))
+                continue;
+
+            if (inlineValue != null)
+            {
+                string? expandedInlineValue = TryExpandPath(inlineValue);
+                if (!string.IsNullOrWhiteSpace(expandedInlineValue))
+                    args[i] = ReplaceSwitchValue(argument, inlineValue, expandedInlineValue);
+                continue;
+            }
+
+            int valueIndex = i + 1;
+            if (valueIndex >= args.Length)
+                continue;
+
+            string? expandedValue = TryExpandPath(args[valueIndex]);
+            if (!string.IsNullOrWhiteSpace(expandedValue))
+                args[valueIndex] = expandedValue;
         }
+    }
 
-        private static string? NormalizeDirectoryPath(string rawPath)
-        {
-            string? normalizedPath = TryNormalizePath(rawPath);
-            if (string.IsNullOrWhiteSpace(normalizedPath))
-                return null;
+    private static bool TryGetNamedSwitch(string argument, out string switchName, out string? inlineValue)
+    {
+        switchName = string.Empty;
+        inlineValue = null;
 
-            string extension = Path.GetExtension(normalizedPath);
-            if (string.Equals(extension, ".settings", StringComparison.OrdinalIgnoreCase) ||
-                string.Equals(extension, ".config", StringComparison.OrdinalIgnoreCase))
-            {
-                string? directoryPath = Path.GetDirectoryName(normalizedPath);
-                if (!string.IsNullOrWhiteSpace(directoryPath))
-                    return directoryPath;
-            }
+        if (argument.StartsWith("--", StringComparison.Ordinal))
+            return ParseSwitch(argument, 2, out switchName, out inlineValue);
 
-            return normalizedPath;
-        }
+        if (argument.StartsWith('-'))
+            return ParseSwitch(argument, 1, out switchName, out inlineValue);
 
-        private static string? NormalizeLogFilePath(string rawPath)
-        {
-            string? expandedPath = TryExpandPath(rawPath);
-            if (string.IsNullOrWhiteSpace(expandedPath))
-                return null;
+        if (argument.StartsWith('/'))
+            return ParseSwitch(argument, 1, out switchName, out inlineValue);
 
-            bool endsWithSeparator = expandedPath.EndsWith(Path.DirectorySeparatorChar) ||
-                                     expandedPath.EndsWith(Path.AltDirectorySeparatorChar);
-            if (endsWithSeparator)
-            {
-                string logFileName = Path.GetFileName(Logger.DefaultLogPath);
-                return TryNormalizePath(Path.Combine(expandedPath, logFileName));
-            }
+        return false;
+    }
 
-            return TryNormalizePath(expandedPath);
-        }
+    private static bool ParseSwitch(string argument, int prefixLength, out string switchName, out string? inlineValue)
+    {
+        switchName = string.Empty;
+        inlineValue = null;
 
-        private static string? TryNormalizePath(string path)
-        {
-            string? expandedPath = TryExpandPath(path);
-            if (string.IsNullOrWhiteSpace(expandedPath))
-                return null;
-
-            try
-            {
-                return Path.GetFullPath(expandedPath);
-            }
-            catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
-            {
-                return null;
-            }
-        }
-
-        private static string? TryExpandPath(string path)
-        {
-            if (string.IsNullOrWhiteSpace(path))
-                return null;
-
-            try
-            {
-                return Environment.ExpandEnvironmentVariables(path.Trim().Trim('"'));
-            }
-            catch (Exception ex) when (ex is ArgumentException or NotSupportedException)
-            {
-                return null;
-            }
-        }
-
-        private static void ExpandSwitchValue(string[] args, IReadOnlyCollection<string> switchNames)
-        {
-            for (int i = 0; i < args.Length; i++)
-            {
-                string argument = args[i];
-                if (string.IsNullOrWhiteSpace(argument))
-                    continue;
-
-                if (!TryGetNamedSwitch(argument, out string switchName, out string? inlineValue))
-                    continue;
-
-                if (!switchNames.Contains(switchName, StringComparer.OrdinalIgnoreCase))
-                    continue;
-
-                if (inlineValue != null)
-                {
-                    string? expandedInlineValue = TryExpandPath(inlineValue);
-                    if (!string.IsNullOrWhiteSpace(expandedInlineValue))
-                        args[i] = ReplaceSwitchValue(argument, inlineValue, expandedInlineValue);
-                    continue;
-                }
-
-                int valueIndex = i + 1;
-                if (valueIndex >= args.Length)
-                    continue;
-
-                string? expandedValue = TryExpandPath(args[valueIndex]);
-                if (!string.IsNullOrWhiteSpace(expandedValue))
-                    args[valueIndex] = expandedValue;
-            }
-        }
-
-        private static bool TryGetNamedSwitch(string argument, out string switchName, out string? inlineValue)
-        {
-            switchName = string.Empty;
-            inlineValue = null;
-
-            if (argument.StartsWith("--", StringComparison.Ordinal))
-                return ParseSwitch(argument, 2, out switchName, out inlineValue);
-
-            if (argument.StartsWith('-'))
-                return ParseSwitch(argument, 1, out switchName, out inlineValue);
-
-            if (argument.StartsWith('/'))
-                return ParseSwitch(argument, 1, out switchName, out inlineValue);
-
+        string withoutPrefix = argument[prefixLength..];
+        if (string.IsNullOrWhiteSpace(withoutPrefix))
             return false;
-        }
 
-        private static bool ParseSwitch(string argument, int prefixLength, out string switchName, out string? inlineValue)
+        int separatorIndex = withoutPrefix.IndexOfAny(['=', ':']);
+        if (separatorIndex < 0)
         {
-            switchName = string.Empty;
-            inlineValue = null;
-
-            string withoutPrefix = argument[prefixLength..];
-            if (string.IsNullOrWhiteSpace(withoutPrefix))
-                return false;
-
-            int separatorIndex = withoutPrefix.IndexOfAny(['=', ':']);
-            if (separatorIndex < 0)
-            {
-                switchName = withoutPrefix;
-                return true;
-            }
-
-            switchName = withoutPrefix[..separatorIndex];
-            if (separatorIndex + 1 < withoutPrefix.Length)
-                inlineValue = withoutPrefix[(separatorIndex + 1)..];
-
+            switchName = withoutPrefix;
             return true;
         }
 
-        private static string ReplaceSwitchValue(string argument, string originalValue, string replacementValue)
-        {
-            int valueStart = argument.Length - originalValue.Length;
-            return argument[..valueStart] + replacementValue;
-        }
+        switchName = withoutPrefix[..separatorIndex];
+        if (separatorIndex + 1 < withoutPrefix.Length)
+            inlineValue = withoutPrefix[(separatorIndex + 1)..];
+
+        return true;
+    }
+
+    private static string ReplaceSwitchValue(string argument, string originalValue, string replacementValue)
+    {
+        int valueStart = argument.Length - originalValue.Length;
+        return argument[..valueStart] + replacementValue;
     }
 }

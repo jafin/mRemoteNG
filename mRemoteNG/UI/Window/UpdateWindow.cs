@@ -1,207 +1,204 @@
-﻿using mRemoteNG.App;
-using mRemoteNG.App.Update;
-using mRemoteNG.Messages;
-using mRemoteNG.Resources.Language;
-using mRemoteNG.Themes;
-
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
 using System.Windows.Forms;
-
+using mRemoteNG.App;
+using mRemoteNG.App.Update;
+using mRemoteNG.Messages;
+using mRemoteNG.Resources.Language;
+using mRemoteNG.Themes;
 using WeifenLuo.WinFormsUI.Docking;
 
-namespace mRemoteNG.UI.Window
+namespace mRemoteNG.UI.Window;
+
+[SupportedOSPlatform("windows")]
+public partial class UpdateWindow : BaseWindow
 {
-    [SupportedOSPlatform("windows")]
-    public partial class UpdateWindow : BaseWindow
+    private AppUpdater? _appUpdate;
+    //private bool _isUpdateDownloadHandlerDeclared;
+
+    #region Public Methods
+
+    public UpdateWindow() : this(new DockContent())
     {
-        private AppUpdater? _appUpdate;
-        //private bool _isUpdateDownloadHandlerDeclared;
+    }
 
-        #region Public Methods
+    public UpdateWindow(DockContent panel)
+    {
+        WindowType = WindowType.Update;
+        DockPnl = panel;
+        InitializeComponent();
+        Icon = Resources.ImageConverter.GetImageAsIcon(Properties.Resources.RunUpdate_16x);
+        FontOverrider.FontOverride(this);
+    }
 
-        public UpdateWindow() : this(new DockContent())
+    /// <summary>
+    /// Checks for updates and displays the results in the window.
+    /// Call this method when you want to trigger an update check.
+    /// </summary>
+    public async Task PerformUpdateCheckAsync()
+    {
+        await CheckForUpdateAsync();
+    }
+
+    #endregion
+
+    #region Form Stuff
+
+    private async void Update_Load(object sender, EventArgs e)
+    {
+        ApplyTheme();
+        ThemeManager.getInstance().ThemeChanged += ApplyTheme;
+        ApplyLanguage();
+    }
+
+    private new void ApplyTheme()
+    {
+        if (!ThemeManager.getInstance().ActiveAndExtended) return;
+
+        base.ApplyTheme();
+        txtChangeLog.BackColor = ThemeManager.getInstance().ActiveTheme.ExtendedPalette?.getColor("Dialog_Background") ?? txtChangeLog.BackColor;
+        txtChangeLog.ForeColor = ThemeManager.getInstance().ActiveTheme.ExtendedPalette?.getColor("Dialog_Foreground") ?? txtChangeLog.ForeColor;
+    }
+
+    private void ApplyLanguage()
+    {
+        Text = Language.MenuItem_CheckForUpdates;
+        TabText = Language.MenuItem_CheckForUpdates;
+        btnCheckForUpdate.Text = Language.CheckAgain;
+        btnDownload.Text = Language.Download;
+        lblChangeLogLabel.Text = Language.Changelog;
+        lblInstalledVersion.Text = Language.Version;
+        lblInstalledVersionLabel.Text = $"{Language.Version}:";
+        lblLatestVersion.Text = Language.Version;
+        lblLatestVersionLabel.Text = $"{Language.AvailableVersion}:";
+    }
+
+    private async void btnCheckForUpdate_Click(object sender, EventArgs e)
+    {
+        await CheckForUpdateAsync();
+    }
+
+    private void btnDownload_Click(object sender, EventArgs e)
+    {
+        OpenReleasePage();
+    }
+
+    #endregion
+
+    #region Private Methods
+
+    private async Task CheckForUpdateAsync()
+    {
+        if (_appUpdate == null)
         {
+            _appUpdate = new AppUpdater();
+            //_appUpdate.Load += _appUpdate.Update_Load;
+        }
+        else if (_appUpdate.IsGetUpdateInfoRunning)
+        {
+            return;
         }
 
-        public UpdateWindow(DockContent panel)
+        lblStatus.Text = Language.MenuItem_CheckForUpdates;
+        lblStatus.ForeColor = SystemColors.WindowText;
+        lblLatestVersionLabel.Visible = false;
+        lblInstalledVersion.Visible = false;
+        lblInstalledVersionLabel.Visible = false;
+        lblLatestVersion.Visible = false;
+        btnCheckForUpdate.Visible = false;
+
+        SetVisibilityOfUpdateControls(false);
+
+        try
         {
-            WindowType = WindowType.Update;
-            DockPnl = panel;
-            InitializeComponent();
-            Icon = Resources.ImageConverter.GetImageAsIcon(Properties.Resources.RunUpdate_16x);
-            FontOverrider.FontOverride(this);
-        }
+            await _appUpdate.GetUpdateInfoAsync();
 
-        /// <summary>
-        /// Checks for updates and displays the results in the window.
-        /// Call this method when you want to trigger an update check.
-        /// </summary>
-        public async Task PerformUpdateCheckAsync()
-        {
-            await CheckForUpdateAsync();
-        }
+            lblInstalledVersion.Text = Application.ProductVersion;
+            lblInstalledVersion.Visible = true;
+            lblInstalledVersionLabel.Visible = true;
+            btnCheckForUpdate.Visible = true;
 
-        #endregion
-
-        #region Form Stuff
-
-        private async void Update_Load(object sender, EventArgs e)
-        {
-            ApplyTheme();
-            ThemeManager.getInstance().ThemeChanged += ApplyTheme;
-            ApplyLanguage();
-        }
-
-        private new void ApplyTheme()
-        {
-            if (!ThemeManager.getInstance().ActiveAndExtended) return;
-
-            base.ApplyTheme();
-            txtChangeLog.BackColor = ThemeManager.getInstance().ActiveTheme.ExtendedPalette?.getColor("Dialog_Background") ?? txtChangeLog.BackColor;
-            txtChangeLog.ForeColor = ThemeManager.getInstance().ActiveTheme.ExtendedPalette?.getColor("Dialog_Foreground") ?? txtChangeLog.ForeColor;
-        }
-
-        private void ApplyLanguage()
-        {
-            Text = Language.MenuItem_CheckForUpdates;
-            TabText = Language.MenuItem_CheckForUpdates;
-            btnCheckForUpdate.Text = Language.CheckAgain;
-            btnDownload.Text = Language.Download;
-            lblChangeLogLabel.Text = Language.Changelog;
-            lblInstalledVersion.Text = Language.Version;
-            lblInstalledVersionLabel.Text = $"{Language.Version}:";
-            lblLatestVersion.Text = Language.Version;
-            lblLatestVersionLabel.Text = $"{Language.AvailableVersion}:";
-        }
-
-        private async void btnCheckForUpdate_Click(object sender, EventArgs e)
-        {
-            await CheckForUpdateAsync();
-        }
-
-        private void btnDownload_Click(object sender, EventArgs e)
-        {
-            OpenReleasePage();
-        }
-
-        #endregion
-
-        #region Private Methods
-
-        private async Task CheckForUpdateAsync()
-        {
-            if (_appUpdate == null)
+            if (_appUpdate.IsUpdateAvailable())
             {
-                _appUpdate = new AppUpdater();
-                //_appUpdate.Load += _appUpdate.Update_Load;
-            }
-            else if (_appUpdate.IsGetUpdateInfoRunning)
-            {
-                return;
-            }
+                lblStatus.Text = Language.UpdateAvailable;
+                lblStatus.ForeColor = Color.OrangeRed;
+                SetVisibilityOfUpdateControls(true);
 
-            lblStatus.Text = Language.MenuItem_CheckForUpdates;
-            lblStatus.ForeColor = SystemColors.WindowText;
-            lblLatestVersionLabel.Visible = false;
-            lblInstalledVersion.Visible = false;
-            lblInstalledVersionLabel.Visible = false;
-            lblLatestVersion.Visible = false;
-            btnCheckForUpdate.Visible = false;
+                UpdateInfo? updateInfo = _appUpdate.CurrentUpdateInfo;
+                if (updateInfo == null) return;
+                lblLatestVersion.Text = updateInfo.Version?.ToString() ?? string.Empty;
+                lblLatestVersionLabel.Visible = true;
+                lblLatestVersion.Visible = true;
 
-            SetVisibilityOfUpdateControls(false);
-
-            try
-            {
-                await _appUpdate.GetUpdateInfoAsync();
-
-                lblInstalledVersion.Text = Application.ProductVersion;
-                lblInstalledVersion.Visible = true;
-                lblInstalledVersionLabel.Visible = true;
-                btnCheckForUpdate.Visible = true;
-
-                if (_appUpdate.IsUpdateAvailable())
+                if (updateInfo.IsGitHubSource && !string.IsNullOrEmpty(updateInfo.ChangeLogBody))
                 {
-                    lblStatus.Text = Language.UpdateAvailable;
-                    lblStatus.ForeColor = Color.OrangeRed;
-                    SetVisibilityOfUpdateControls(true);
-
-                    UpdateInfo? updateInfo = _appUpdate.CurrentUpdateInfo;
-                    if (updateInfo == null) return;
-                    lblLatestVersion.Text = updateInfo.Version?.ToString() ?? string.Empty;
-                    lblLatestVersionLabel.Visible = true;
-                    lblLatestVersion.Visible = true;
-
-                    if (updateInfo.IsGitHubSource && !string.IsNullOrEmpty(updateInfo.ChangeLogBody))
-                    {
-                        txtChangeLog.Text = updateInfo.ChangeLogBody.Replace("\n", Environment.NewLine);
-                    }
-                    else
-                    {
-                        try
-                        {
-                            string changeLog = await _appUpdate.GetChangeLogAsync();
-                            txtChangeLog.Text = changeLog.Replace("\n", Environment.NewLine);
-                        }
-                        catch (Exception ex)
-                        {
-                            Runtime.MessageCollector?.AddExceptionStackTrace(Language.UpdateGetChangeLogFailed, ex);
-                        }
-                    }
-
-                    btnDownload.Focus();
+                    txtChangeLog.Text = updateInfo.ChangeLogBody.Replace("\n", Environment.NewLine);
                 }
                 else
                 {
-                    lblStatus.Text = Language.NoUpdateAvailable;
-                    lblStatus.ForeColor = Color.ForestGreen;
-
-                    if (_appUpdate.CurrentUpdateInfo == null) return;
-                    UpdateInfo updateInfo = _appUpdate.CurrentUpdateInfo;
-                    if (!updateInfo.IsValid || updateInfo.Version == null) return;
-                    lblLatestVersion.Text = updateInfo.Version.ToString();
-                    lblLatestVersionLabel.Visible = true;
-                    lblLatestVersion.Visible = true;
+                    try
+                    {
+                        string changeLog = await _appUpdate.GetChangeLogAsync();
+                        txtChangeLog.Text = changeLog.Replace("\n", Environment.NewLine);
+                    }
+                    catch (Exception ex)
+                    {
+                        Runtime.MessageCollector?.AddExceptionStackTrace(Language.UpdateGetChangeLogFailed, ex);
+                    }
                 }
-            }
-            catch (Exception ex)
-            {
-                lblStatus.Text = Language.CheckFailed;
-                lblStatus.ForeColor = Color.OrangeRed;
 
-                Runtime.MessageCollector?.AddExceptionStackTrace(Language.UpdateCheckCompleteFailed, ex);
+                btnDownload.Focus();
+            }
+            else
+            {
+                lblStatus.Text = Language.NoUpdateAvailable;
+                lblStatus.ForeColor = Color.ForestGreen;
+
+                if (_appUpdate.CurrentUpdateInfo == null) return;
+                UpdateInfo updateInfo = _appUpdate.CurrentUpdateInfo;
+                if (!updateInfo.IsValid || updateInfo.Version == null) return;
+                lblLatestVersion.Text = updateInfo.Version.ToString();
+                lblLatestVersionLabel.Visible = true;
+                lblLatestVersion.Visible = true;
             }
         }
-
-        private void SetVisibilityOfUpdateControls(bool visible)
+        catch (Exception ex)
         {
-            lblChangeLogLabel.Visible = visible;
-            txtChangeLog.Visible = visible;
-            btnDownload.Visible = visible;
-        }
+            lblStatus.Text = Language.CheckFailed;
+            lblStatus.ForeColor = Color.OrangeRed;
 
-        // This fork distributes via GitHub Releases; "download" opens the release page in the
-        // browser rather than fetching/installing an MSI in-app.
-        private void OpenReleasePage()
-        {
-            try
-            {
-                Uri? releasePageUrl = _appUpdate?.CurrentUpdateInfo?.ReleasePageUrl;
-                if (releasePageUrl != null && !releasePageUrl.IsFile && !releasePageUrl.IsUnc && !releasePageUrl.IsLoopback
-                    && (releasePageUrl.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
-                        || releasePageUrl.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase)))
-                    Process.Start(new ProcessStartInfo { FileName = releasePageUrl.ToString(), UseShellExecute = true });
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector?.AddExceptionStackTrace(Language.UpdateDownloadFailed, ex);
-                Runtime.MessageCollector?.AddMessage(MessageClass.ErrorMsg, ex.Message);
-            }
+            Runtime.MessageCollector?.AddExceptionStackTrace(Language.UpdateCheckCompleteFailed, ex);
         }
-
-        #endregion
     }
+
+    private void SetVisibilityOfUpdateControls(bool visible)
+    {
+        lblChangeLogLabel.Visible = visible;
+        txtChangeLog.Visible = visible;
+        btnDownload.Visible = visible;
+    }
+
+    // This fork distributes via GitHub Releases; "download" opens the release page in the
+    // browser rather than fetching/installing an MSI in-app.
+    private void OpenReleasePage()
+    {
+        try
+        {
+            Uri? releasePageUrl = _appUpdate?.CurrentUpdateInfo?.ReleasePageUrl;
+            if (releasePageUrl != null && !releasePageUrl.IsFile && !releasePageUrl.IsUnc && !releasePageUrl.IsLoopback
+                && (releasePageUrl.Scheme.Equals("https", StringComparison.OrdinalIgnoreCase)
+                    || releasePageUrl.Scheme.Equals("http", StringComparison.OrdinalIgnoreCase)))
+                Process.Start(new ProcessStartInfo { FileName = releasePageUrl.ToString(), UseShellExecute = true });
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector?.AddExceptionStackTrace(Language.UpdateDownloadFailed, ex);
+            Runtime.MessageCollector?.AddMessage(MessageClass.ErrorMsg, ex.Message);
+        }
+    }
+
+    #endregion
 }

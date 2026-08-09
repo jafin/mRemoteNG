@@ -4,7 +4,6 @@ using mRemoteNG.Config.Serializers.MiscSerializers;
 using mRemoteNG.Connection;
 using mRemoteNG.Connection.Protocol;
 using mRemoteNG.Container;
-using mRemoteNG.Security;
 using mRemoteNGTests.Properties;
 using NUnit.Framework;
 

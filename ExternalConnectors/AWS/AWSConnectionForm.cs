@@ -1,16 +1,15 @@
-﻿namespace ExternalConnectors.AWS
+﻿namespace ExternalConnectors.AWS;
+
+public partial class AWSConnectionForm : Form
 {
-    public partial class AWSConnectionForm : Form
+    public AWSConnectionForm()
     {
-        public AWSConnectionForm()
-        {
-            InitializeComponent();
+        InitializeComponent();
 
-        }
+    }
 
-        private void AWSConnectionForm_Activated(object sender, EventArgs e)
-        {
-            tbAccesKeyID.Focus();
-        }
+    private void AWSConnectionForm_Activated(object sender, EventArgs e)
+    {
+        tbAccesKeyID.Focus();
     }
 }

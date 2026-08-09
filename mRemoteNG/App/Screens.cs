@@ -3,36 +3,35 @@ using System.Windows.Forms;
 using mRemoteNG.UI.Forms;
 using WeifenLuo.WinFormsUI.Docking;
 
-namespace mRemoteNG.App
+namespace mRemoteNG.App;
+
+public static class Screens
 {
-    public static class Screens
+    [SupportedOSPlatform("windows")]
+    public static void SendFormToScreen(Screen screen)
     {
-        [SupportedOSPlatform("windows")]
-        public static void SendFormToScreen(Screen screen)
+        FrmMain frmMain = FrmMain.Default;
+        bool wasMax = false;
+
+        if (frmMain.WindowState == FormWindowState.Maximized)
         {
-            FrmMain frmMain = FrmMain.Default;
-            bool wasMax = false;
-
-            if (frmMain.WindowState == FormWindowState.Maximized)
-            {
-                wasMax = true;
-                frmMain.WindowState = FormWindowState.Normal;
-            }
-
-            frmMain.Location = screen.Bounds.Location;
-
-            if (wasMax)
-            {
-                frmMain.WindowState = FormWindowState.Maximized;
-            }
+            wasMax = true;
+            frmMain.WindowState = FormWindowState.Normal;
         }
 
-        public static void SendPanelToScreen(DockContent panel, Screen screen)
+        frmMain.Location = screen.Bounds.Location;
+
+        if (wasMax)
         {
-            panel.DockState = DockState.Float;
-            if (panel.ParentForm == null) return;
-            panel.ParentForm.Left = screen.Bounds.Location.X;
-            panel.ParentForm.Top = screen.Bounds.Location.Y;
+            frmMain.WindowState = FormWindowState.Maximized;
         }
+    }
+
+    public static void SendPanelToScreen(DockContent panel, Screen screen)
+    {
+        panel.DockState = DockState.Float;
+        if (panel.ParentForm == null) return;
+        panel.ParentForm.Left = screen.Bounds.Location.X;
+        panel.ParentForm.Top = screen.Bounds.Location.Y;
     }
 }

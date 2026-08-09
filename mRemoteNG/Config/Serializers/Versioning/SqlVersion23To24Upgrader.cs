@@ -1,35 +1,34 @@
-﻿using mRemoteNG.App;
+﻿using System;
+using System.Runtime.Versioning;
+using mRemoteNG.App;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
-using System;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.Config.Serializers.Versioning
+namespace mRemoteNG.Config.Serializers.Versioning;
+
+[SupportedOSPlatform("windows")]
+public class SqlVersion23To24Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlVersion23To24Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
+    private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+
+    public bool CanUpgrade(Version currentVersion)
     {
-        private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+        return currentVersion.CompareTo(new Version(2, 3)) == 0;
+    }
 
-        public bool CanUpgrade(Version currentVersion)
-        {
-            return currentVersion.CompareTo(new Version(2, 3)) == 0;
-        }
+    public Version Upgrade()
+    {
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, "Upgrading database from version 2.3 to version 2.4.");
 
-        public Version Upgrade()
-        {
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, "Upgrading database from version 2.3 to version 2.4.");
-
-            const string sqlText = @"
+        const string sqlText = @"
 ALTER TABLE tblCons
 ADD UseCredSsp bit NOT NULL DEFAULT 1,
     InheritUseCredSsp bit NOT NULL DEFAULT 0;";
 
-            System.Data.Common.DbCommand dbCommand = _databaseConnector.DbCommand(sqlText);
+        System.Data.Common.DbCommand dbCommand = _databaseConnector.DbCommand(sqlText);
 
-            dbCommand.ExecuteNonQuery();
+        dbCommand.ExecuteNonQuery();
 
-            return new Version(2, 4);
-        }
+        return new Version(2, 4);
     }
 }

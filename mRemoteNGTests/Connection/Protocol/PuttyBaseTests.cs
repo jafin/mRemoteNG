@@ -8,193 +8,192 @@ using mRemoteNG.Connection.Protocol;
 using mRemoteNG.UI.Tabs;
 using NUnit.Framework;
 
-namespace mRemoteNGTests.Connection.Protocol
+namespace mRemoteNGTests.Connection.Protocol;
+
+[TestFixture]
+[Apartment(ApartmentState.STA)]
+[NonParallelizable]
+public class PuttyBaseTests
 {
-    [TestFixture]
-    [Apartment(ApartmentState.STA)]
-    [NonParallelizable]
-    public class PuttyBaseTests
+    private const string FallbackTabText = "SSH2: Connection Name";
+
+    private TestablePuttyBase _puttyProtocol = null!;
+    private ConnectionTab _connectionTab = null!;
+    private InterfaceControl _interfaceControl = null!;
+
+    [SetUp]
+    public void Setup()
     {
-        private const string FallbackTabText = "SSH2: Connection Name";
-
-        private TestablePuttyBase _puttyProtocol = null!;
-        private ConnectionTab _connectionTab = null!;
-        private InterfaceControl _interfaceControl = null!;
-
-        [SetUp]
-        public void Setup()
+        _puttyProtocol = new TestablePuttyBase();
+        _connectionTab = new ConnectionTab
         {
-            _puttyProtocol = new TestablePuttyBase();
-            _connectionTab = new ConnectionTab
-            {
-                TabText = FallbackTabText
-            };
+            TabText = FallbackTabText
+        };
 
-            ConnectionInfo connectionInfo = new()
-            {
-                Protocol = ProtocolType.SSH2,
-                Name = "Connection Name",
-                Hostname = "example-host"
-            };
+        ConnectionInfo connectionInfo = new()
+        {
+            Protocol = ProtocolType.SSH2,
+            Name = "Connection Name",
+            Hostname = "example-host"
+        };
 
-            _interfaceControl = new InterfaceControl(_connectionTab, _puttyProtocol, connectionInfo);
-            _puttyProtocol.InterfaceControl = _interfaceControl;
+        _interfaceControl = new InterfaceControl(_connectionTab, _puttyProtocol, connectionInfo);
+        _puttyProtocol.InterfaceControl = _interfaceControl;
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        _puttyProtocol?.StopTrackingForTest();
+        _interfaceControl?.Dispose();
+        _connectionTab?.Dispose();
+    }
+
+    [Test]
+    public void UpdateTabTitleFromTerminalTitle_UsesDynamicTitleWhenWindowTitleChanges()
+    {
+        _puttyProtocol.QueueTerminalTitle("example-host - PuTTY");
+        _puttyProtocol.StartTrackingForTest();
+
+        _puttyProtocol.QueueTerminalTitle("deploy-session");
+        _puttyProtocol.RefreshTitleForTest();
+
+        Assert.That(_connectionTab.TabText, Is.EqualTo("deploy-session"));
+    }
+
+    [Test]
+    public void UpdateTabTitleFromTerminalTitle_UsesFallbackWhenWindowTitleIsInitialOrEmpty()
+    {
+        _puttyProtocol.QueueTerminalTitle("example-host - PuTTY");
+        _puttyProtocol.StartTrackingForTest();
+
+        _puttyProtocol.QueueTerminalTitle("deploy-session");
+        _puttyProtocol.RefreshTitleForTest();
+        Assert.That(_connectionTab.TabText, Is.EqualTo("deploy-session"));
+
+        _puttyProtocol.QueueTerminalTitle("example-host - PuTTY");
+        _puttyProtocol.RefreshTitleForTest();
+        Assert.That(_connectionTab.TabText, Is.EqualTo(FallbackTabText));
+
+        _puttyProtocol.QueueTerminalTitle(string.Empty);
+        _puttyProtocol.RefreshTitleForTest();
+        Assert.That(_connectionTab.TabText, Is.EqualTo(FallbackTabText));
+    }
+
+    [Test]
+    public void StopTerminalTitleTracking_RestoresFallbackAndPreventsFurtherUpdates()
+    {
+        _puttyProtocol.QueueTerminalTitle("example-host - PuTTY");
+        _puttyProtocol.StartTrackingForTest();
+
+        _puttyProtocol.QueueTerminalTitle("deploy-session");
+        _puttyProtocol.RefreshTitleForTest();
+        Assert.That(_connectionTab.TabText, Is.EqualTo("deploy-session"));
+
+        _puttyProtocol.StopTrackingForTest();
+        Assert.That(_connectionTab.TabText, Is.EqualTo(FallbackTabText));
+
+        _puttyProtocol.QueueTerminalTitle("another-session");
+        _puttyProtocol.RefreshTitleForTest();
+        Assert.That(_connectionTab.TabText, Is.EqualTo(FallbackTabText));
+    }
+
+    [Test]
+    public void SchedulePostOpenLayoutResizePass_WaitsForHandleCreationThenResizes()
+    {
+        Assert.That(_interfaceControl.IsHandleCreated, Is.False);
+
+        _puttyProtocol.SchedulePostOpenLayoutResizePassForTest();
+        Assert.That(_puttyProtocol.DeferredResizeCallCount, Is.EqualTo(0));
+
+        _ = _interfaceControl.Handle;
+        Assert.That(_puttyProtocol.DeferredResizeCallCount, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void OnPowerModeChanged_Resume_TriggersResizeOnUIThread()
+    {
+        // Ensure handle is created so BeginInvoke works
+        _ = _interfaceControl.Handle;
+
+        int initialCount = _puttyProtocol.DeferredResizeCallCount;
+
+        _puttyProtocol.OnPowerModeChanged(PowerModes.Resume);
+
+        // Allow UI message loop to process the BeginInvoke
+        Application.DoEvents();
+
+        Assert.That(_puttyProtocol.DeferredResizeCallCount, Is.GreaterThan(initialCount));
+    }
+
+    [TestCase("PuTTY Exit Confirmation")]
+    [TestCase("PuTTYNG Exit Confirmation")]
+    public void IsPuttyExitConfirmation_MatchesTheWarnOnCloseMessageBox(string windowTitle)
+    {
+        Assert.That(PuttyBase.IsPuttyExitConfirmation("#32770", windowTitle), Is.True);
+    }
+
+    [TestCase("#32770", "PuTTY Security Alert", TestName = "IsPuttyExitConfirmation_IgnoresTheHostKeyAlert")]
+    [TestCase("#32770", "PuTTY Reconfiguration", TestName = "IsPuttyExitConfirmation_IgnoresTheSettingsDialog")]
+    [TestCase("PuTTY", "example-host - PuTTY", TestName = "IsPuttyExitConfirmation_IgnoresTheTerminalWindow")]
+    [TestCase("#32770", "", TestName = "IsPuttyExitConfirmation_IgnoresUntitledDialogs")]
+    public void IsPuttyExitConfirmation_LeavesOtherWindowsAlone(string windowClassName, string windowTitle)
+    {
+        Assert.That(PuttyBase.IsPuttyExitConfirmation(windowClassName, windowTitle), Is.False);
+    }
+
+    private sealed class TestablePuttyBase : PuttyBase
+    {
+        private readonly Queue<string> _queuedTitles = new();
+        private string _currentTitle = string.Empty;
+
+        public int DeferredResizeCallCount { get; private set; }
+
+        protected override bool UseTerminalTitlePollingTimer => false;
+
+        protected override int PowerModeChangedResizeDelay => 0;
+
+        protected override void QueuePostOpenLayoutResizePass(MethodInvoker resizeAction)
+        {
+            resizeAction();
         }
 
-        [TearDown]
-        public void TearDown()
+        protected override void Resize(object sender, EventArgs e)
         {
-            _puttyProtocol?.StopTrackingForTest();
-            _interfaceControl?.Dispose();
-            _connectionTab?.Dispose();
+            DeferredResizeCallCount++;
         }
 
-        [Test]
-        public void UpdateTabTitleFromTerminalTitle_UsesDynamicTitleWhenWindowTitleChanges()
+        protected override string ReadTerminalWindowTitle()
         {
-            _puttyProtocol.QueueTerminalTitle("example-host - PuTTY");
-            _puttyProtocol.StartTrackingForTest();
+            if (_queuedTitles.Count > 0)
+                _currentTitle = _queuedTitles.Dequeue();
 
-            _puttyProtocol.QueueTerminalTitle("deploy-session");
-            _puttyProtocol.RefreshTitleForTest();
-
-            Assert.That(_connectionTab.TabText, Is.EqualTo("deploy-session"));
+            return _currentTitle;
         }
 
-        [Test]
-        public void UpdateTabTitleFromTerminalTitle_UsesFallbackWhenWindowTitleIsInitialOrEmpty()
+        public void QueueTerminalTitle(string title)
         {
-            _puttyProtocol.QueueTerminalTitle("example-host - PuTTY");
-            _puttyProtocol.StartTrackingForTest();
-
-            _puttyProtocol.QueueTerminalTitle("deploy-session");
-            _puttyProtocol.RefreshTitleForTest();
-            Assert.That(_connectionTab.TabText, Is.EqualTo("deploy-session"));
-
-            _puttyProtocol.QueueTerminalTitle("example-host - PuTTY");
-            _puttyProtocol.RefreshTitleForTest();
-            Assert.That(_connectionTab.TabText, Is.EqualTo(FallbackTabText));
-
-            _puttyProtocol.QueueTerminalTitle(string.Empty);
-            _puttyProtocol.RefreshTitleForTest();
-            Assert.That(_connectionTab.TabText, Is.EqualTo(FallbackTabText));
+            _queuedTitles.Enqueue(title);
         }
 
-        [Test]
-        public void StopTerminalTitleTracking_RestoresFallbackAndPreventsFurtherUpdates()
+        public void SchedulePostOpenLayoutResizePassForTest()
         {
-            _puttyProtocol.QueueTerminalTitle("example-host - PuTTY");
-            _puttyProtocol.StartTrackingForTest();
-
-            _puttyProtocol.QueueTerminalTitle("deploy-session");
-            _puttyProtocol.RefreshTitleForTest();
-            Assert.That(_connectionTab.TabText, Is.EqualTo("deploy-session"));
-
-            _puttyProtocol.StopTrackingForTest();
-            Assert.That(_connectionTab.TabText, Is.EqualTo(FallbackTabText));
-
-            _puttyProtocol.QueueTerminalTitle("another-session");
-            _puttyProtocol.RefreshTitleForTest();
-            Assert.That(_connectionTab.TabText, Is.EqualTo(FallbackTabText));
+            SchedulePostOpenLayoutResizePass();
         }
 
-        [Test]
-        public void SchedulePostOpenLayoutResizePass_WaitsForHandleCreationThenResizes()
+        public void StartTrackingForTest()
         {
-            Assert.That(_interfaceControl.IsHandleCreated, Is.False);
-
-            _puttyProtocol.SchedulePostOpenLayoutResizePassForTest();
-            Assert.That(_puttyProtocol.DeferredResizeCallCount, Is.EqualTo(0));
-
-            _ = _interfaceControl.Handle;
-            Assert.That(_puttyProtocol.DeferredResizeCallCount, Is.EqualTo(1));
+            StartTerminalTitleTracking();
         }
 
-        [Test]
-        public void OnPowerModeChanged_Resume_TriggersResizeOnUIThread()
+        public void RefreshTitleForTest()
         {
-            // Ensure handle is created so BeginInvoke works
-            _ = _interfaceControl.Handle;
-
-            int initialCount = _puttyProtocol.DeferredResizeCallCount;
-
-            _puttyProtocol.OnPowerModeChanged(PowerModes.Resume);
-
-            // Allow UI message loop to process the BeginInvoke
-            Application.DoEvents();
-
-            Assert.That(_puttyProtocol.DeferredResizeCallCount, Is.GreaterThan(initialCount));
+            UpdateTabTitleFromTerminalTitle();
         }
 
-        [TestCase("PuTTY Exit Confirmation")]
-        [TestCase("PuTTYNG Exit Confirmation")]
-        public void IsPuttyExitConfirmation_MatchesTheWarnOnCloseMessageBox(string windowTitle)
+        public void StopTrackingForTest()
         {
-            Assert.That(PuttyBase.IsPuttyExitConfirmation("#32770", windowTitle), Is.True);
-        }
-
-        [TestCase("#32770", "PuTTY Security Alert", TestName = "IsPuttyExitConfirmation_IgnoresTheHostKeyAlert")]
-        [TestCase("#32770", "PuTTY Reconfiguration", TestName = "IsPuttyExitConfirmation_IgnoresTheSettingsDialog")]
-        [TestCase("PuTTY", "example-host - PuTTY", TestName = "IsPuttyExitConfirmation_IgnoresTheTerminalWindow")]
-        [TestCase("#32770", "", TestName = "IsPuttyExitConfirmation_IgnoresUntitledDialogs")]
-        public void IsPuttyExitConfirmation_LeavesOtherWindowsAlone(string windowClassName, string windowTitle)
-        {
-            Assert.That(PuttyBase.IsPuttyExitConfirmation(windowClassName, windowTitle), Is.False);
-        }
-
-        private sealed class TestablePuttyBase : PuttyBase
-        {
-            private readonly Queue<string> _queuedTitles = new();
-            private string _currentTitle = string.Empty;
-
-            public int DeferredResizeCallCount { get; private set; }
-
-            protected override bool UseTerminalTitlePollingTimer => false;
-
-            protected override int PowerModeChangedResizeDelay => 0;
-
-            protected override void QueuePostOpenLayoutResizePass(MethodInvoker resizeAction)
-            {
-                resizeAction();
-            }
-
-            protected override void Resize(object sender, EventArgs e)
-            {
-                DeferredResizeCallCount++;
-            }
-
-            protected override string ReadTerminalWindowTitle()
-            {
-                if (_queuedTitles.Count > 0)
-                    _currentTitle = _queuedTitles.Dequeue();
-
-                return _currentTitle;
-            }
-
-            public void QueueTerminalTitle(string title)
-            {
-                _queuedTitles.Enqueue(title);
-            }
-
-            public void SchedulePostOpenLayoutResizePassForTest()
-            {
-                SchedulePostOpenLayoutResizePass();
-            }
-
-            public void StartTrackingForTest()
-            {
-                StartTerminalTitleTracking();
-            }
-
-            public void RefreshTitleForTest()
-            {
-                UpdateTabTitleFromTerminalTitle();
-            }
-
-            public void StopTrackingForTest()
-            {
-                StopTerminalTitleTracking();
-            }
+            StopTerminalTitleTracking();
         }
     }
 }

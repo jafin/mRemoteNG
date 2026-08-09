@@ -11,312 +11,311 @@ using System.IO;
 using System.Security;
 using System.Security.Cryptography;
 using System.Text;
+using mRemoteNG.Resources.Language;
 using mRemoteNG.Security.KeyDerivation;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Engines;
 using Org.BouncyCastle.Crypto.Modes;
 using Org.BouncyCastle.Crypto.Parameters;
 using Org.BouncyCastle.Security;
-using mRemoteNG.Resources.Language;
 
 // ReSharper disable ArrangeAccessorOwnerBody
 
-namespace mRemoteNG.Security.SymmetricEncryption
+namespace mRemoteNG.Security.SymmetricEncryption;
+
+/// <summary>
+/// Provides authenticated encryption with associated data (AEAD) using
+/// AES-256-GCM via BouncyCastle. Used to encrypt/decrypt connection passwords
+/// and the confCons.xml connection file. Key derivation uses PBKDF2 with a
+/// configurable iteration count (default 600,000 as of v1.80.0) stored in
+/// the file's <c>KdfIterations</c> attribute for forward/backward compatibility.
+/// </summary>
+public class AeadCryptographyProvider : ICryptographyProvider
 {
-    /// <summary>
-    /// Provides authenticated encryption with associated data (AEAD) using
-    /// AES-256-GCM via BouncyCastle. Used to encrypt/decrypt connection passwords
-    /// and the confCons.xml connection file. Key derivation uses PBKDF2 with a
-    /// configurable iteration count (default 600,000 as of v1.80.0) stored in
-    /// the file's <c>KdfIterations</c> attribute for forward/backward compatibility.
-    /// </summary>
-    public class AeadCryptographyProvider : ICryptographyProvider
+    private readonly IAeadBlockCipher _aeadBlockCipher;
+    private readonly Encoding _encoding;
+    private readonly SecureRandom _random = new();
+
+    // Encryption-side KDF cache: deriving a PBKDF2 key at 600K iterations costs
+    // hundreds of ms, and serializing a connection file encrypts every password
+    // field with the same password. Reusing one salt+key per provider instance
+    // (one instance = one save operation) turns N derivations into 1 (#120).
+    // Decryption is unaffected: each field still carries its salt in the payload.
+    // GCM nonces remain random per field, so key reuse within a save is safe.
+    private byte[]? _cachedEncryptSalt;
+    private byte[]? _cachedEncryptKey;
+    private string? _cachedEncryptPassword;
+    private int _cachedEncryptIterations;
+
+    // Decryption-side KDF cache: files written with the shared-salt encryption
+    // above carry the same salt on every field, so the derived key can be reused
+    // across fields. Older files with per-field salts simply miss the cache and
+    // derive per field, exactly as before.
+    private byte[]? _cachedDecryptSalt;
+    private byte[]? _cachedDecryptKey;
+    private string? _cachedDecryptPassword;
+    private int _cachedDecryptIterations;
+
+    //Preconfigured Encryption Parameters
+    protected virtual int NonceBitSize { get; set; } = 128;
+    protected virtual int MacBitSize { get; set; } = 128;
+    protected virtual int KeyBitSize { get; set; } = 256;
+
+    //Preconfigured Password Key Derivation Parameters
+    protected virtual int SaltBitSize { get; set; } = 128;
+    public virtual int KeyDerivationIterations { get; set; } = 600_000;
+    protected virtual int MinPasswordLength { get; set; } = 1;
+
+
+    public int BlockSizeInBytes
     {
-        private readonly IAeadBlockCipher _aeadBlockCipher;
-        private readonly Encoding _encoding;
-        private readonly SecureRandom _random = new();
+        get { return _aeadBlockCipher.GetBlockSize(); }
+    }
 
-        // Encryption-side KDF cache: deriving a PBKDF2 key at 600K iterations costs
-        // hundreds of ms, and serializing a connection file encrypts every password
-        // field with the same password. Reusing one salt+key per provider instance
-        // (one instance = one save operation) turns N derivations into 1 (#120).
-        // Decryption is unaffected: each field still carries its salt in the payload.
-        // GCM nonces remain random per field, so key reuse within a save is safe.
-        private byte[]? _cachedEncryptSalt;
-        private byte[]? _cachedEncryptKey;
-        private string? _cachedEncryptPassword;
-        private int _cachedEncryptIterations;
-
-        // Decryption-side KDF cache: files written with the shared-salt encryption
-        // above carry the same salt on every field, so the derived key can be reused
-        // across fields. Older files with per-field salts simply miss the cache and
-        // derive per field, exactly as before.
-        private byte[]? _cachedDecryptSalt;
-        private byte[]? _cachedDecryptKey;
-        private string? _cachedDecryptPassword;
-        private int _cachedDecryptIterations;
-
-        //Preconfigured Encryption Parameters
-        protected virtual int NonceBitSize { get; set; } = 128;
-        protected virtual int MacBitSize { get; set; } = 128;
-        protected virtual int KeyBitSize { get; set; } = 256;
-
-        //Preconfigured Password Key Derivation Parameters
-        protected virtual int SaltBitSize { get; set; } = 128;
-        public virtual int KeyDerivationIterations { get; set; } = 600_000;
-        protected virtual int MinPasswordLength { get; set; } = 1;
-
-
-        public int BlockSizeInBytes
+    public BlockCipherEngines CipherEngine
+    {
+        get
         {
-            get { return _aeadBlockCipher.GetBlockSize(); }
+            string cipherEngine = _aeadBlockCipher.AlgorithmName.Split('/')[0];
+            return Enum.Parse<BlockCipherEngines>(cipherEngine);
+        }
+    }
+
+    public BlockCipherModes CipherMode
+    {
+        get
+        {
+            string cipherMode = _aeadBlockCipher.AlgorithmName.Split('/')[1];
+            return Enum.Parse<BlockCipherModes>(cipherMode);
+        }
+    }
+
+    public AeadCryptographyProvider()
+    {
+        _aeadBlockCipher = new GcmBlockCipher(new AesEngine());
+        _encoding = Encoding.UTF8;
+    }
+
+    public AeadCryptographyProvider(Encoding encoding)
+    {
+        _aeadBlockCipher = new GcmBlockCipher(new AesEngine());
+        _encoding = encoding;
+    }
+
+    public AeadCryptographyProvider(IAeadBlockCipher aeadBlockCipher)
+    {
+        _aeadBlockCipher = aeadBlockCipher;
+        _encoding = Encoding.UTF8;
+        SetNonceForCcm();
+    }
+
+    public AeadCryptographyProvider(IAeadBlockCipher aeadBlockCipher, Encoding encoding)
+    {
+        _aeadBlockCipher = aeadBlockCipher;
+        _encoding = encoding;
+        SetNonceForCcm();
+    }
+
+    private void SetNonceForCcm()
+    {
+        if (_aeadBlockCipher is CcmBlockCipher)
+            NonceBitSize = 88;
+    }
+
+    public string Encrypt(string plainText, SecureString encryptionKey)
+    {
+        string encryptedText = SimpleEncryptWithPassword(plainText, encryptionKey.ConvertToUnsecureString());
+        return encryptedText;
+    }
+
+    private string SimpleEncryptWithPassword(string secretMessage, string password, byte[]? nonSecretPayload = null)
+    {
+        if (string.IsNullOrEmpty(secretMessage))
+            return ""; //throw new ArgumentException(@"Secret Message Required!", nameof(secretMessage));
+
+        byte[] plainText = _encoding.GetBytes(secretMessage);
+        byte[] cipherText = SimpleEncryptWithPassword(plainText, password, nonSecretPayload);
+        return Convert.ToBase64String(cipherText);
+    }
+
+    private byte[] SimpleEncryptWithPassword(byte[] secretMessage, string password, byte[]? nonSecretPayload = null)
+    {
+        nonSecretPayload ??= ""u8.ToArray();
+
+        //User Error Checks
+        if (string.IsNullOrWhiteSpace(password) || password.Length < MinPasswordLength)
+            throw new ArgumentException($"Must have a password of at least {MinPasswordLength} characters!",
+                nameof(password));
+
+        if (secretMessage == null || secretMessage.Length == 0)
+            throw new ArgumentException(@"Secret Message Required!", nameof(secretMessage));
+
+        if (_cachedEncryptKey == null ||
+            _cachedEncryptIterations != KeyDerivationIterations ||
+            !string.Equals(_cachedEncryptPassword, password, StringComparison.Ordinal))
+        {
+            if (_cachedEncryptKey != null)
+                CryptographicOperations.ZeroMemory(_cachedEncryptKey);
+
+            //Use Random Salt to minimize pre-generated weak password attacks.
+            byte[] newSalt = GenerateSalt();
+
+            //Generate Key
+            Pkcs5S2KeyGenerator keyDerivationFunction = new(KeyBitSize, KeyDerivationIterations);
+            _cachedEncryptKey = keyDerivationFunction.DeriveKey(password, newSalt);
+            _cachedEncryptSalt = newSalt;
+            _cachedEncryptPassword = password;
+            _cachedEncryptIterations = KeyDerivationIterations;
         }
 
-        public BlockCipherEngines CipherEngine
+        byte[] salt = _cachedEncryptSalt!;
+
+        //Create Full Non Secret Payload
+        byte[] payload = new byte[salt.Length + nonSecretPayload.Length];
+        Array.Copy(nonSecretPayload, payload, nonSecretPayload.Length);
+        Array.Copy(salt, 0, payload, nonSecretPayload.Length, salt.Length);
+
+        return SimpleEncrypt(secretMessage, _cachedEncryptKey, payload);
+    }
+
+    private byte[] SimpleEncrypt(byte[] secretMessage, byte[] key, byte[]? nonSecretPayload = null)
+    {
+        //User Error Checks
+        if (key == null || key.Length != KeyBitSize / 8)
+            throw new ArgumentException($"Key needs to be {KeyBitSize} bit!", nameof(key));
+
+        if (secretMessage == null || secretMessage.Length == 0)
+            throw new ArgumentException(@"Secret Message Required!", nameof(secretMessage));
+
+        //Non-secret Payload Optional
+        nonSecretPayload ??= ""u8.ToArray();
+
+        //Using random nonce large enough not to repeat
+        byte[] nonce = new byte[NonceBitSize / 8];
+        _random.NextBytes(nonce, 0, nonce.Length);
+
+        AeadParameters parameters = new(new KeyParameter(key), MacBitSize, nonce, nonSecretPayload);
+        _aeadBlockCipher.Init(true, parameters);
+
+        //Generate Cipher Text With Auth Tag
+        byte[] cipherText = new byte[_aeadBlockCipher.GetOutputSize(secretMessage.Length)];
+        int len = _aeadBlockCipher.ProcessBytes(secretMessage, 0, secretMessage.Length, cipherText, 0);
+        _aeadBlockCipher.DoFinal(cipherText, len);
+
+        //Assemble Message
+        MemoryStream combinedStream = new();
+        using (BinaryWriter binaryWriter = new(combinedStream))
         {
-            get
-            {
-                string cipherEngine = _aeadBlockCipher.AlgorithmName.Split('/')[0];
-                return Enum.Parse<BlockCipherEngines>(cipherEngine);
-            }
+            //Prepend Authenticated Payload
+            binaryWriter.Write(nonSecretPayload);
+            //Prepend Nonce
+            binaryWriter.Write(nonce);
+            //Write Cipher Text
+            binaryWriter.Write(cipherText);
         }
 
-        public BlockCipherModes CipherMode
+        return combinedStream.ToArray();
+    }
+
+
+    public string Decrypt(string cipherText, SecureString decryptionKey)
+    {
+        string decryptedText = SimpleDecryptWithPassword(cipherText, decryptionKey);
+        return decryptedText;
+    }
+
+    private string SimpleDecryptWithPassword(string encryptedMessage, SecureString decryptionKey, int nonSecretPayloadLength = 0)
+    {
+        if (string.IsNullOrWhiteSpace(encryptedMessage))
+            return ""; //throw new ArgumentException(@"Encrypted Message Required!", nameof(encryptedMessage));
+
+        byte[] cipherText = Convert.FromBase64String(encryptedMessage);
+        byte[] plainText = SimpleDecryptWithPassword(cipherText, decryptionKey.ConvertToUnsecureString(), nonSecretPayloadLength);
+        try
         {
-            get
-            {
-                string cipherMode = _aeadBlockCipher.AlgorithmName.Split('/')[1];
-                return Enum.Parse<BlockCipherModes>(cipherMode);
-            }
+            return _encoding.GetString(plainText);
+        }
+        finally
+        {
+            CryptographicOperations.ZeroMemory(plainText);
+        }
+    }
+
+    private byte[] SimpleDecryptWithPassword(byte[] encryptedMessage, string password, int nonSecretPayloadLength = 0)
+    {
+        //User Error Checks
+        if (string.IsNullOrWhiteSpace(password) || password.Length < MinPasswordLength)
+            throw new ArgumentException($"Must have a password of at least {MinPasswordLength} characters!", nameof(password));
+
+        if (encryptedMessage == null || encryptedMessage.Length == 0)
+            throw new ArgumentException(@"Encrypted Message Required!", nameof(encryptedMessage));
+
+        //Grab Salt from Payload
+        byte[] salt = new byte[SaltBitSize / 8];
+        Array.Copy(encryptedMessage, nonSecretPayloadLength, salt, 0, salt.Length);
+
+        if (_cachedDecryptKey == null ||
+            _cachedDecryptIterations != KeyDerivationIterations ||
+            !string.Equals(_cachedDecryptPassword, password, StringComparison.Ordinal) ||
+            _cachedDecryptSalt == null ||
+            !salt.AsSpan().SequenceEqual(_cachedDecryptSalt))
+        {
+            if (_cachedDecryptKey != null)
+                CryptographicOperations.ZeroMemory(_cachedDecryptKey);
+
+            //Generate Key
+            Pkcs5S2KeyGenerator keyDerivationFunction = new(KeyBitSize, KeyDerivationIterations);
+            _cachedDecryptKey = keyDerivationFunction.DeriveKey(password, salt);
+            _cachedDecryptSalt = salt;
+            _cachedDecryptPassword = password;
+            _cachedDecryptIterations = KeyDerivationIterations;
         }
 
-        public AeadCryptographyProvider()
+        return SimpleDecrypt(encryptedMessage, _cachedDecryptKey, salt.Length + nonSecretPayloadLength);
+    }
+
+    private byte[] SimpleDecrypt(byte[] encryptedMessage, byte[] key, int nonSecretPayloadLength = 0)
+    {
+        //User Error Checks
+        if (key == null || key.Length != KeyBitSize / 8)
+            throw new ArgumentException($"Key needs to be {KeyBitSize} bit!", nameof(key));
+
+        if (encryptedMessage == null || encryptedMessage.Length == 0)
+            throw new ArgumentException(@"Encrypted Message Required!", nameof(encryptedMessage));
+
+        MemoryStream cipherStream = new(encryptedMessage);
+        using BinaryReader cipherReader = new(cipherStream);
+        //Grab Payload
+        byte[] nonSecretPayload = cipherReader.ReadBytes(nonSecretPayloadLength);
+
+        //Grab Nonce
+        byte[] nonce = cipherReader.ReadBytes(NonceBitSize / 8);
+
+        AeadParameters parameters = new(new KeyParameter(key), MacBitSize, nonce, nonSecretPayload);
+        _aeadBlockCipher.Init(false, parameters);
+
+        //Decrypt Cipher Text
+        byte[] cipherText =
+            cipherReader.ReadBytes(encryptedMessage.Length - nonSecretPayloadLength - nonce.Length);
+        byte[] plainText = new byte[_aeadBlockCipher.GetOutputSize(cipherText.Length)];
+
+        try
         {
-            _aeadBlockCipher = new GcmBlockCipher(new AesEngine());
-            _encoding = Encoding.UTF8;
+            int len = _aeadBlockCipher.ProcessBytes(cipherText, 0, cipherText.Length, plainText, 0);
+            _aeadBlockCipher.DoFinal(plainText, len);
+        }
+        catch (InvalidCipherTextException e)
+        {
+            throw new EncryptionException(Language.ErrorDecryptionFailed, e);
         }
 
-        public AeadCryptographyProvider(Encoding encoding)
-        {
-            _aeadBlockCipher = new GcmBlockCipher(new AesEngine());
-            _encoding = encoding;
-        }
+        return plainText;
+    }
 
-        public AeadCryptographyProvider(IAeadBlockCipher aeadBlockCipher)
-        {
-            _aeadBlockCipher = aeadBlockCipher;
-            _encoding = Encoding.UTF8;
-            SetNonceForCcm();
-        }
-
-        public AeadCryptographyProvider(IAeadBlockCipher aeadBlockCipher, Encoding encoding)
-        {
-            _aeadBlockCipher = aeadBlockCipher;
-            _encoding = encoding;
-            SetNonceForCcm();
-        }
-
-        private void SetNonceForCcm()
-        {
-            if (_aeadBlockCipher is CcmBlockCipher)
-                NonceBitSize = 88;
-        }
-
-        public string Encrypt(string plainText, SecureString encryptionKey)
-        {
-            string encryptedText = SimpleEncryptWithPassword(plainText, encryptionKey.ConvertToUnsecureString());
-            return encryptedText;
-        }
-
-        private string SimpleEncryptWithPassword(string secretMessage, string password, byte[]? nonSecretPayload = null)
-        {
-            if (string.IsNullOrEmpty(secretMessage))
-                return ""; //throw new ArgumentException(@"Secret Message Required!", nameof(secretMessage));
-
-            byte[] plainText = _encoding.GetBytes(secretMessage);
-            byte[] cipherText = SimpleEncryptWithPassword(plainText, password, nonSecretPayload);
-            return Convert.ToBase64String(cipherText);
-        }
-
-        private byte[] SimpleEncryptWithPassword(byte[] secretMessage, string password, byte[]? nonSecretPayload = null)
-        {
-            nonSecretPayload ??= ""u8.ToArray();
-
-            //User Error Checks
-            if (string.IsNullOrWhiteSpace(password) || password.Length < MinPasswordLength)
-                throw new ArgumentException($"Must have a password of at least {MinPasswordLength} characters!",
-                                            nameof(password));
-
-            if (secretMessage == null || secretMessage.Length == 0)
-                throw new ArgumentException(@"Secret Message Required!", nameof(secretMessage));
-
-            if (_cachedEncryptKey == null ||
-                _cachedEncryptIterations != KeyDerivationIterations ||
-                !string.Equals(_cachedEncryptPassword, password, StringComparison.Ordinal))
-            {
-                if (_cachedEncryptKey != null)
-                    CryptographicOperations.ZeroMemory(_cachedEncryptKey);
-
-                //Use Random Salt to minimize pre-generated weak password attacks.
-                byte[] newSalt = GenerateSalt();
-
-                //Generate Key
-                Pkcs5S2KeyGenerator keyDerivationFunction = new(KeyBitSize, KeyDerivationIterations);
-                _cachedEncryptKey = keyDerivationFunction.DeriveKey(password, newSalt);
-                _cachedEncryptSalt = newSalt;
-                _cachedEncryptPassword = password;
-                _cachedEncryptIterations = KeyDerivationIterations;
-            }
-
-            byte[] salt = _cachedEncryptSalt!;
-
-            //Create Full Non Secret Payload
-            byte[] payload = new byte[salt.Length + nonSecretPayload.Length];
-            Array.Copy(nonSecretPayload, payload, nonSecretPayload.Length);
-            Array.Copy(salt, 0, payload, nonSecretPayload.Length, salt.Length);
-
-            return SimpleEncrypt(secretMessage, _cachedEncryptKey, payload);
-        }
-
-        private byte[] SimpleEncrypt(byte[] secretMessage, byte[] key, byte[]? nonSecretPayload = null)
-        {
-            //User Error Checks
-            if (key == null || key.Length != KeyBitSize / 8)
-                throw new ArgumentException($"Key needs to be {KeyBitSize} bit!", nameof(key));
-
-            if (secretMessage == null || secretMessage.Length == 0)
-                throw new ArgumentException(@"Secret Message Required!", nameof(secretMessage));
-
-            //Non-secret Payload Optional
-            nonSecretPayload ??= ""u8.ToArray();
-
-            //Using random nonce large enough not to repeat
-            byte[] nonce = new byte[NonceBitSize / 8];
-            _random.NextBytes(nonce, 0, nonce.Length);
-
-            AeadParameters parameters = new(new KeyParameter(key), MacBitSize, nonce, nonSecretPayload);
-            _aeadBlockCipher.Init(true, parameters);
-
-            //Generate Cipher Text With Auth Tag
-            byte[] cipherText = new byte[_aeadBlockCipher.GetOutputSize(secretMessage.Length)];
-            int len = _aeadBlockCipher.ProcessBytes(secretMessage, 0, secretMessage.Length, cipherText, 0);
-            _aeadBlockCipher.DoFinal(cipherText, len);
-
-            //Assemble Message
-            MemoryStream combinedStream = new();
-            using (BinaryWriter binaryWriter = new(combinedStream))
-            {
-                //Prepend Authenticated Payload
-                binaryWriter.Write(nonSecretPayload);
-                //Prepend Nonce
-                binaryWriter.Write(nonce);
-                //Write Cipher Text
-                binaryWriter.Write(cipherText);
-            }
-
-            return combinedStream.ToArray();
-        }
-
-
-        public string Decrypt(string cipherText, SecureString decryptionKey)
-        {
-            string decryptedText = SimpleDecryptWithPassword(cipherText, decryptionKey);
-            return decryptedText;
-        }
-
-        private string SimpleDecryptWithPassword(string encryptedMessage, SecureString decryptionKey, int nonSecretPayloadLength = 0)
-        {
-            if (string.IsNullOrWhiteSpace(encryptedMessage))
-                return ""; //throw new ArgumentException(@"Encrypted Message Required!", nameof(encryptedMessage));
-
-            byte[] cipherText = Convert.FromBase64String(encryptedMessage);
-            byte[] plainText = SimpleDecryptWithPassword(cipherText, decryptionKey.ConvertToUnsecureString(), nonSecretPayloadLength);
-            try
-            {
-                return _encoding.GetString(plainText);
-            }
-            finally
-            {
-                CryptographicOperations.ZeroMemory(plainText);
-            }
-        }
-
-        private byte[] SimpleDecryptWithPassword(byte[] encryptedMessage, string password, int nonSecretPayloadLength = 0)
-        {
-            //User Error Checks
-            if (string.IsNullOrWhiteSpace(password) || password.Length < MinPasswordLength)
-                throw new ArgumentException($"Must have a password of at least {MinPasswordLength} characters!", nameof(password));
-
-            if (encryptedMessage == null || encryptedMessage.Length == 0)
-                throw new ArgumentException(@"Encrypted Message Required!", nameof(encryptedMessage));
-
-            //Grab Salt from Payload
-            byte[] salt = new byte[SaltBitSize / 8];
-            Array.Copy(encryptedMessage, nonSecretPayloadLength, salt, 0, salt.Length);
-
-            if (_cachedDecryptKey == null ||
-                _cachedDecryptIterations != KeyDerivationIterations ||
-                !string.Equals(_cachedDecryptPassword, password, StringComparison.Ordinal) ||
-                _cachedDecryptSalt == null ||
-                !salt.AsSpan().SequenceEqual(_cachedDecryptSalt))
-            {
-                if (_cachedDecryptKey != null)
-                    CryptographicOperations.ZeroMemory(_cachedDecryptKey);
-
-                //Generate Key
-                Pkcs5S2KeyGenerator keyDerivationFunction = new(KeyBitSize, KeyDerivationIterations);
-                _cachedDecryptKey = keyDerivationFunction.DeriveKey(password, salt);
-                _cachedDecryptSalt = salt;
-                _cachedDecryptPassword = password;
-                _cachedDecryptIterations = KeyDerivationIterations;
-            }
-
-            return SimpleDecrypt(encryptedMessage, _cachedDecryptKey, salt.Length + nonSecretPayloadLength);
-        }
-
-        private byte[] SimpleDecrypt(byte[] encryptedMessage, byte[] key, int nonSecretPayloadLength = 0)
-        {
-            //User Error Checks
-            if (key == null || key.Length != KeyBitSize / 8)
-                throw new ArgumentException($"Key needs to be {KeyBitSize} bit!", nameof(key));
-
-            if (encryptedMessage == null || encryptedMessage.Length == 0)
-                throw new ArgumentException(@"Encrypted Message Required!", nameof(encryptedMessage));
-
-            MemoryStream cipherStream = new(encryptedMessage);
-            using BinaryReader cipherReader = new(cipherStream);
-            //Grab Payload
-            byte[] nonSecretPayload = cipherReader.ReadBytes(nonSecretPayloadLength);
-
-            //Grab Nonce
-            byte[] nonce = cipherReader.ReadBytes(NonceBitSize / 8);
-
-            AeadParameters parameters = new(new KeyParameter(key), MacBitSize, nonce, nonSecretPayload);
-            _aeadBlockCipher.Init(false, parameters);
-
-            //Decrypt Cipher Text
-            byte[] cipherText =
-                cipherReader.ReadBytes(encryptedMessage.Length - nonSecretPayloadLength - nonce.Length);
-            byte[] plainText = new byte[_aeadBlockCipher.GetOutputSize(cipherText.Length)];
-
-            try
-            {
-                int len = _aeadBlockCipher.ProcessBytes(cipherText, 0, cipherText.Length, plainText, 0);
-                _aeadBlockCipher.DoFinal(plainText, len);
-            }
-            catch (InvalidCipherTextException e)
-            {
-                throw new EncryptionException(Language.ErrorDecryptionFailed, e);
-            }
-
-            return plainText;
-        }
-
-        private byte[] GenerateSalt()
-        {
-            byte[] salt = new byte[SaltBitSize / 8];
-            _random.NextBytes(salt);
-            return salt;
-        }
+    private byte[] GenerateSalt()
+    {
+        byte[] salt = new byte[SaltBitSize / 8];
+        _random.NextBytes(salt);
+        return salt;
     }
 }

@@ -1,10 +1,10 @@
-﻿using mRemoteNG.Config.Serializers.CredentialSerializer;
+﻿using System;
+using System.Linq;
+using System.Xml.Linq;
+using mRemoteNG.Config.Serializers.CredentialSerializer;
 using mRemoteNG.Credential;
 using mRemoteNG.Security;
 using NUnit.Framework;
-using System;
-using System.Linq;
-using System.Xml.Linq;
 
 namespace mRemoteNGTests.Config.Serializers.CredentialSerializers;
 

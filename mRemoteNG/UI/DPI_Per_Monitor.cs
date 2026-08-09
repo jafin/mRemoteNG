@@ -1,7 +1,5 @@
 ﻿using System;
 using System.Collections.Generic;
-using System.Drawing;
-using System.Linq;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Windows.Forms;
@@ -37,20 +35,20 @@ using System.Windows.Forms;
 ///     void SetUserFonts(float scaleFactorX, float scaleFactorY) {
 ///         Font = new Font(Font.FontFamily, 11f * scaleFactorX, GraphicsUnit.Pixel);
 ///     }
-///     
-/// 5) And a really odd one, due to a Visual studio BUG. 
+///
+/// 5) And a really odd one, due to a Visual studio BUG.
 /// This ONLY works, if your PRIMARY monitor is scalled at 100% at COMPILE time!!!
 /// It is NOT just a matter of using a different reference than the 96 dpi below, and
 /// it does not help to run it from a secondary monitor set to 100% !!!
 /// And to make things worse, Visual Studio is one of the programs that doesn't handle
 /// change of scale on primary monitor, without at the least a sign out....
-/// 
+///
 /// NOTE that if you got (Checked)ListBoxes, repeated autosizing (e.g. move between monitors)
-/// might fail as it rounds the height down to a multipla of the itemheight. So despite a 
+/// might fail as it rounds the height down to a multipla of the itemheight. So despite a
 /// bottom-anchor it will 'creep' upwards...
 /// So I recommend to place an empty and/or hidden bottom-anchored label just below the boxes,
 /// to scale the spacing and set e.g. :  yourList.Height=yourAnchor.Top-yourList.Top
-/// 
+///
 /// Also note that not everything gets scaled automatically. Only new updates of Win10 handles
 /// the titlebar correctly. Also the squares of checkboxes are forgotten.
 /// </summary>

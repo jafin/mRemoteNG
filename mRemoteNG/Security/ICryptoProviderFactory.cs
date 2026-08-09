@@ -1,7 +1,6 @@
-﻿namespace mRemoteNG.Security
+﻿namespace mRemoteNG.Security;
+
+public interface ICryptoProviderFactory
 {
-    public interface ICryptoProviderFactory
-    {
-        ICryptographyProvider Build();
-    }
+    ICryptographyProvider Build();
 }

@@ -2,103 +2,102 @@
 using System.Collections.Generic;
 using System.Collections.Specialized;
 using System.Linq;
+using System.Runtime.Versioning;
 using mRemoteNG.Connection;
 using mRemoteNG.Tree.Root;
-using System.Runtime.Versioning;
 
 // ReSharper disable ArrangeAccessorOwnerBody
 
-namespace mRemoteNG.Config.Putty
+namespace mRemoteNG.Config.Putty;
+
+[SupportedOSPlatform("windows")]
+public abstract class AbstractPuttySessionsProvider
 {
-    [SupportedOSPlatform("windows")]
-    public abstract class AbstractPuttySessionsProvider
+    public virtual RootPuttySessionsNodeInfo RootInfo { get; } = new RootPuttySessionsNodeInfo();
+
+    protected virtual IEnumerable<PuttySessionInfo> Sessions => RootInfo.Children.OfType<PuttySessionInfo>();
+
+    #region Public Methods
+
+    public abstract string[] GetSessionNames(bool raw = false);
+    public abstract PuttySessionInfo? GetSession(string sessionName);
+
+    public virtual IEnumerable<PuttySessionInfo> GetSessions()
     {
-        public virtual RootPuttySessionsNodeInfo RootInfo { get; } = new RootPuttySessionsNodeInfo();
+        string[] sessionNamesFromProvider = GetSessionNames(true);
 
-        protected virtual IEnumerable<PuttySessionInfo> Sessions => RootInfo.Children.OfType<PuttySessionInfo>();
-
-        #region Public Methods
-
-        public abstract string[] GetSessionNames(bool raw = false);
-        public abstract PuttySessionInfo? GetSession(string sessionName);
-
-        public virtual IEnumerable<PuttySessionInfo> GetSessions()
+        foreach (string sessionName in GetSessionNamesToAdd(sessionNamesFromProvider))
         {
-            string[] sessionNamesFromProvider = GetSessionNames(true);
-
-            foreach (string sessionName in GetSessionNamesToAdd(sessionNamesFromProvider))
-            {
-                PuttySessionInfo? sessionInfo = GetSession(sessionName);
-                if (sessionInfo != null)
-                    AddSession(sessionInfo);
-            }
-
-            foreach (PuttySessionInfo session in GetSessionToRemove(sessionNamesFromProvider))
-            {
-                RemoveSession(session);
-            }
-
-            RootInfo.SortRecursive();
-            return Sessions;
+            PuttySessionInfo? sessionInfo = GetSession(sessionName);
+            if (sessionInfo != null)
+                AddSession(sessionInfo);
         }
 
-        private IEnumerable<string> GetSessionNamesToAdd(IEnumerable<string> sessionNamesFromProvider)
+        foreach (PuttySessionInfo session in GetSessionToRemove(sessionNamesFromProvider))
         {
-            if (sessionNamesFromProvider == null) { return Enumerable.Empty<string>(); }
-            IEnumerable<string> currentlyKnownSessionNames = Sessions.Select(session => session.Name);
-            IEnumerable<string> sessionNamesToAdd = sessionNamesFromProvider.Except(currentlyKnownSessionNames, StringComparer.Ordinal);
-            return sessionNamesToAdd;
+            RemoveSession(session);
         }
 
-        private IEnumerable<PuttySessionInfo> GetSessionToRemove(IEnumerable<string> sessionNamesFromProvider)
-        {
-            if (sessionNamesFromProvider == null) return Enumerable.Empty<PuttySessionInfo>();
-            IEnumerable<string> currentlyKnownSessionNames = Sessions.Select(session => session.Name);
-            IEnumerable<string> normalizedSessionNames =
-                sessionNamesFromProvider.Select(name => PuttySessionNameDecoder.Decode(name));
-            IEnumerable<string> sessionNamesToRemove = currentlyKnownSessionNames.Except(normalizedSessionNames, StringComparer.Ordinal);
-            return Sessions.Where(session => sessionNamesToRemove.Contains(session.Name, StringComparer.Ordinal));
-        }
+        RootInfo.SortRecursive();
+        return Sessions;
+    }
 
-        protected virtual void AddSession(PuttySessionInfo sessionInfo)
-        {
-            if (string.IsNullOrEmpty(sessionInfo?.Name) || Sessions.Any(child => child.Name == sessionInfo.Name))
-                return;
-            RootInfo.AddChild(sessionInfo);
-            RaisePuttySessionCollectionChangedEvent(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, sessionInfo));
-        }
+    private IEnumerable<string> GetSessionNamesToAdd(IEnumerable<string> sessionNamesFromProvider)
+    {
+        if (sessionNamesFromProvider == null) { return Enumerable.Empty<string>(); }
+        IEnumerable<string> currentlyKnownSessionNames = Sessions.Select(session => session.Name);
+        IEnumerable<string> sessionNamesToAdd = sessionNamesFromProvider.Except(currentlyKnownSessionNames, StringComparer.Ordinal);
+        return sessionNamesToAdd;
+    }
 
-        protected virtual void RemoveSession(PuttySessionInfo sessionInfo)
-        {
-            if (!Sessions.Contains(sessionInfo)) return;
-            RootInfo.RemoveChild(sessionInfo);
-            RaisePuttySessionCollectionChangedEvent(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove, sessionInfo));
-        }
+    private IEnumerable<PuttySessionInfo> GetSessionToRemove(IEnumerable<string> sessionNamesFromProvider)
+    {
+        if (sessionNamesFromProvider == null) return Enumerable.Empty<PuttySessionInfo>();
+        IEnumerable<string> currentlyKnownSessionNames = Sessions.Select(session => session.Name);
+        IEnumerable<string> normalizedSessionNames =
+            sessionNamesFromProvider.Select(name => PuttySessionNameDecoder.Decode(name));
+        IEnumerable<string> sessionNamesToRemove = currentlyKnownSessionNames.Except(normalizedSessionNames, StringComparer.Ordinal);
+        return Sessions.Where(session => sessionNamesToRemove.Contains(session.Name, StringComparer.Ordinal));
+    }
 
-        public virtual void StartWatcher()
-        {
-        }
+    protected virtual void AddSession(PuttySessionInfo sessionInfo)
+    {
+        if (string.IsNullOrEmpty(sessionInfo?.Name) || Sessions.Any(child => child.Name == sessionInfo.Name))
+            return;
+        RootInfo.AddChild(sessionInfo);
+        RaisePuttySessionCollectionChangedEvent(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Add, sessionInfo));
+    }
 
-        public virtual void StopWatcher()
-        {
-        }
+    protected virtual void RemoveSession(PuttySessionInfo sessionInfo)
+    {
+        if (!Sessions.Contains(sessionInfo)) return;
+        RootInfo.RemoveChild(sessionInfo);
+        RaisePuttySessionCollectionChangedEvent(new NotifyCollectionChangedEventArgs(NotifyCollectionChangedAction.Remove, sessionInfo));
+    }
 
-        #endregion
+    public virtual void StartWatcher()
+    {
+    }
 
-        public delegate void PuttySessionChangedEventHandler(object sender, PuttySessionChangedEventArgs e);
+    public virtual void StopWatcher()
+    {
+    }
 
-        public event PuttySessionChangedEventHandler? PuttySessionChanged;
+    #endregion
 
-        protected virtual void RaiseSessionChangedEvent(PuttySessionChangedEventArgs args)
-        {
-            PuttySessionChanged?.Invoke(this, args);
-        }
+    public delegate void PuttySessionChangedEventHandler(object sender, PuttySessionChangedEventArgs e);
 
-        public event NotifyCollectionChangedEventHandler? PuttySessionsCollectionChanged;
+    public event PuttySessionChangedEventHandler? PuttySessionChanged;
 
-        protected void RaisePuttySessionCollectionChangedEvent(NotifyCollectionChangedEventArgs args)
-        {
-            PuttySessionsCollectionChanged?.Invoke(this, args);
-        }
+    protected virtual void RaiseSessionChangedEvent(PuttySessionChangedEventArgs args)
+    {
+        PuttySessionChanged?.Invoke(this, args);
+    }
+
+    public event NotifyCollectionChangedEventHandler? PuttySessionsCollectionChanged;
+
+    protected void RaisePuttySessionCollectionChangedEvent(NotifyCollectionChangedEventArgs args)
+    {
+        PuttySessionsCollectionChanged?.Invoke(this, args);
     }
 }

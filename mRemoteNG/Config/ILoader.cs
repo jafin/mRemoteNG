@@ -1,7 +1,6 @@
-﻿namespace mRemoteNG.Config
+﻿namespace mRemoteNG.Config;
+
+public interface ILoader<out T>
 {
-    public interface ILoader<out T>
-    {
-        T Load();
-    }
+    T Load();
 }

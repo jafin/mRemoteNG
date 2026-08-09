@@ -1,15 +1,14 @@
 ﻿using System;
 
-namespace mRemoteNG.Messages
+namespace mRemoteNG.Messages;
+
+public interface IMessage
 {
-    public interface IMessage
-    {
-        MessageClass Class { get; set; }
+    MessageClass Class { get; set; }
 
-        string Text { get; set; }
+    string Text { get; set; }
 
-        DateTime Date { get; set; }
+    DateTime Date { get; set; }
 
-        bool OnlyLog { get; set; }
-    }
+    bool OnlyLog { get; set; }
 }

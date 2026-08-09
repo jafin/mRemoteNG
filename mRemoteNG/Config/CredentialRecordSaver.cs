@@ -6,25 +6,24 @@ using mRemoteNG.Config.Serializers;
 using mRemoteNG.Credential;
 
 
-namespace mRemoteNG.Config
+namespace mRemoteNG.Config;
+
+public class CredentialRecordSaver
 {
-    public class CredentialRecordSaver
+    private readonly IDataProvider<string> _dataProvider;
+    private readonly ISecureSerializer<IEnumerable<ICredentialRecord>, string> _serializer;
+
+    public CredentialRecordSaver(IDataProvider<string> dataProvider, ISecureSerializer<IEnumerable<ICredentialRecord>, string> serializer)
     {
-        private readonly IDataProvider<string> _dataProvider;
-        private readonly ISecureSerializer<IEnumerable<ICredentialRecord>, string> _serializer;
+        ArgumentNullException.ThrowIfNull(dataProvider);
+        ArgumentNullException.ThrowIfNull(serializer);
+        _dataProvider = dataProvider;
+        _serializer = serializer;
+    }
 
-        public CredentialRecordSaver(IDataProvider<string> dataProvider, ISecureSerializer<IEnumerable<ICredentialRecord>, string> serializer)
-        {
-            ArgumentNullException.ThrowIfNull(dataProvider);
-            ArgumentNullException.ThrowIfNull(serializer);
-            _dataProvider = dataProvider;
-            _serializer = serializer;
-        }
-
-        public void Save(IEnumerable<ICredentialRecord> credentialRecords, SecureString key)
-        {
-            string serializedCredentials = _serializer.Serialize(credentialRecords, key);
-            _dataProvider.Save(serializedCredentials);
-        }
+    public void Save(IEnumerable<ICredentialRecord> credentialRecords, SecureString key)
+    {
+        string serializedCredentials = _serializer.Serialize(credentialRecords, key);
+        _dataProvider.Save(serializedCredentials);
     }
 }

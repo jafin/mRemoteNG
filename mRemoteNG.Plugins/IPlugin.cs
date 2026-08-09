@@ -1,13 +1,10 @@
-using System;
+namespace mRemoteNG.PluginSystem;
 
-namespace mRemoteNG.PluginSystem
+public interface IPlugin
 {
-    public interface IPlugin
-    {
-        string Name { get; }
-        string Version { get; }
-        string Author { get; }
-        void Initialize(IPluginHost host);
-        void Shutdown();
-    }
+    string Name { get; }
+    string Version { get; }
+    string Author { get; }
+    void Initialize(IPluginHost host);
+    void Shutdown();
 }

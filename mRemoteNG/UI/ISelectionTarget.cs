@@ -1,11 +1,10 @@
 ﻿using System.Drawing;
 
-namespace mRemoteNG.UI
+namespace mRemoteNG.UI;
+
+public interface ISelectionTarget<out T>
 {
-    public interface ISelectionTarget<out T>
-    {
-        string Text { get; set; }
-        Image Image { get; }
-        T Config { get; }
-    }
+    string Text { get; set; }
+    Image Image { get; }
+    T Config { get; }
 }

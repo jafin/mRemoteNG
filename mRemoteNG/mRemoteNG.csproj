@@ -224,7 +224,6 @@
   <ItemGroup>
     <PackageReference Include="Ben.Demystifier" />
     <PackageReference Include="BouncyCastle.Cryptography" />
-    <PackageReference Include="Castle.Core" />
     <PackageReference Include="ConsoleControl" />
     <PackageReference Include="Cucumber.Messages" />
     <PackageReference Include="DockPanelSuite" />
@@ -236,8 +235,6 @@
     <PackageReference Include="Microsoft-WindowsAPICodePack-Shell" />
     <PackageReference Include="Microsoft.Data.SqlClient" />
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" />
-    <PackageReference Include="Microsoft.NETCore.Platforms" />
-    <PackageReference Include="Microsoft.NETCore.Targets" />
     <PackageReference Include="Microsoft.Web.WebView2" />
 
     <PackageReference Include="MySql.Data" />

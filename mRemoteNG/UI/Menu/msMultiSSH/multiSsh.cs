@@ -1,23 +1,15 @@
-﻿using System;
-using System.Windows.Forms;
-using System.Collections.Generic;
-using System.ComponentModel;
-using System.Diagnostics;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿using System.Windows.Forms;
 
-namespace mRemoteNG.UI.Menu.msMultiSSH
+namespace mRemoteNG.UI.Menu.msMultiSSH;
+
+public partial class multiSsh : ToolStripMenuItem
 {
-    public partial class multiSsh : ToolStripMenuItem
+    public multiSsh()
     {
-        public multiSsh()
-        {
-            Initialize();
-        }
+        Initialize();
+    }
 
-        private static void Initialize()
-        {
-        }
+    private static void Initialize()
+    {
     }
 }

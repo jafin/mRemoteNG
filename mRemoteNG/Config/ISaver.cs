@@ -1,7 +1,6 @@
-﻿namespace mRemoteNG.Config
+﻿namespace mRemoteNG.Config;
+
+public interface ISaver<in T>
 {
-    public interface ISaver<in T>
-    {
-        void Save(T model, string propertyNameTrigger = "");
-    }
+    void Save(T model, string propertyNameTrigger = "");
 }
