@@ -176,12 +176,14 @@ public partial class FrmExport
             saveFileDialog.InitialDirectory = Environment.GetFolderPath(Environment.SpecialFolder.Personal);
             saveFileDialog.OverwritePrompt = true;
 
-            List<string> fileTypes = new();
-            fileTypes.AddRange(new[] {Language.FiltermRemoteXML, "*.xml"});
-            fileTypes.AddRange(new[] {Language.FiltermRemoteCSV, "*.csv"});
-            fileTypes.AddRange(new[] {"mRemoteNG JSON|*.json"});
-            fileTypes.AddRange(new[] {"RDP File (*.rdp)|*.rdp"});
-            fileTypes.AddRange(new[] {Language.FilterAll, "*.*"});
+            List<string> fileTypes =
+            [
+                Language.FiltermRemoteXML, "*.xml",
+                Language.FiltermRemoteCSV, "*.csv",
+                "mRemoteNG JSON|*.json",
+                "RDP File (*.rdp)|*.rdp",
+                Language.FilterAll, "*.*"
+            ];
 
             saveFileDialog.Filter = string.Join("|", fileTypes.ToArray());
             SelectFileTypeBasedOnSaveFormat(saveFileDialog);

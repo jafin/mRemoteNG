@@ -7,9 +7,11 @@ namespace mRemoteNG.UI.Forms;
 [SupportedOSPlatform("windows")]
 public partial class FrmConnectWithCredentials : Form
 {
-    public string Username { get { return txtUsername.Text; } }
-    public string Password { get { return txtPassword.Text; } }
-    public string Domain { get { return txtDomain.Text; } }
+    public string Username => txtUsername.Text;
+
+    public string Password => txtPassword.Text;
+
+    public string Domain => txtDomain.Text;
 
     private Label lblUsername = null!;
     private TextBox txtUsername = null!;
@@ -26,7 +28,7 @@ public partial class FrmConnectWithCredentials : Form
         txtUsername.Text = defaultUsername;
         txtDomain.Text = defaultDomain;
 
-        this.Text = "Connect with Credentials";
+        Text = "Connect with Credentials";
         // Attempt to look up localized string for title if possible, but "Connect with Credentials" is fine for now.
         // We can check if Language.ConnectWithCredentials exists later, but I didn't see it in the truncated list.
 
@@ -39,108 +41,108 @@ public partial class FrmConnectWithCredentials : Form
 
     private void InitializeComponent()
     {
-        this.lblUsername = new System.Windows.Forms.Label();
-        this.txtUsername = new System.Windows.Forms.TextBox();
-        this.lblPassword = new System.Windows.Forms.Label();
-        this.txtPassword = new System.Windows.Forms.TextBox();
-        this.lblDomain = new System.Windows.Forms.Label();
-        this.txtDomain = new System.Windows.Forms.TextBox();
-        this.btnConnect = new System.Windows.Forms.Button();
-        this.btnCancel = new System.Windows.Forms.Button();
-        this.SuspendLayout();
-        // 
+        lblUsername = new Label();
+        txtUsername = new TextBox();
+        lblPassword = new Label();
+        txtPassword = new TextBox();
+        lblDomain = new Label();
+        txtDomain = new TextBox();
+        btnConnect = new Button();
+        btnCancel = new Button();
+        SuspendLayout();
+        //
         // lblUsername
-        // 
-        this.lblUsername.AutoSize = true;
-        this.lblUsername.Location = new System.Drawing.Point(12, 15);
-        this.lblUsername.Name = "lblUsername";
-        this.lblUsername.Size = new System.Drawing.Size(58, 13);
-        this.lblUsername.TabIndex = 0;
-        this.lblUsername.Text = "Username:";
-        // 
+        //
+        lblUsername.AutoSize = true;
+        lblUsername.Location = new System.Drawing.Point(12, 15);
+        lblUsername.Name = "lblUsername";
+        lblUsername.Size = new System.Drawing.Size(58, 13);
+        lblUsername.TabIndex = 0;
+        lblUsername.Text = "Username:";
+        //
         // txtUsername
-        // 
-        this.txtUsername.Location = new System.Drawing.Point(80, 12);
-        this.txtUsername.Name = "txtUsername";
-        this.txtUsername.Size = new System.Drawing.Size(192, 20);
-        this.txtUsername.TabIndex = 1;
-        // 
+        //
+        txtUsername.Location = new System.Drawing.Point(80, 12);
+        txtUsername.Name = "txtUsername";
+        txtUsername.Size = new System.Drawing.Size(192, 20);
+        txtUsername.TabIndex = 1;
+        //
         // lblPassword
-        // 
-        this.lblPassword.AutoSize = true;
-        this.lblPassword.Location = new System.Drawing.Point(12, 41);
-        this.lblPassword.Name = "lblPassword";
-        this.lblPassword.Size = new System.Drawing.Size(56, 13);
-        this.lblPassword.TabIndex = 2;
-        this.lblPassword.Text = "Password:";
-        // 
+        //
+        lblPassword.AutoSize = true;
+        lblPassword.Location = new System.Drawing.Point(12, 41);
+        lblPassword.Name = "lblPassword";
+        lblPassword.Size = new System.Drawing.Size(56, 13);
+        lblPassword.TabIndex = 2;
+        lblPassword.Text = "Password:";
+        //
         // txtPassword
-        // 
-        this.txtPassword.Location = new System.Drawing.Point(80, 38);
-        this.txtPassword.Name = "txtPassword";
-        this.txtPassword.Size = new System.Drawing.Size(192, 20);
-        this.txtPassword.TabIndex = 3;
-        this.txtPassword.UseSystemPasswordChar = true;
-        // 
+        //
+        txtPassword.Location = new System.Drawing.Point(80, 38);
+        txtPassword.Name = "txtPassword";
+        txtPassword.Size = new System.Drawing.Size(192, 20);
+        txtPassword.TabIndex = 3;
+        txtPassword.UseSystemPasswordChar = true;
+        //
         // lblDomain
-        // 
-        this.lblDomain.AutoSize = true;
-        this.lblDomain.Location = new System.Drawing.Point(12, 67);
-        this.lblDomain.Name = "lblDomain";
-        this.lblDomain.Size = new System.Drawing.Size(46, 13);
-        this.lblDomain.TabIndex = 4;
-        this.lblDomain.Text = "Domain:";
-        // 
+        //
+        lblDomain.AutoSize = true;
+        lblDomain.Location = new System.Drawing.Point(12, 67);
+        lblDomain.Name = "lblDomain";
+        lblDomain.Size = new System.Drawing.Size(46, 13);
+        lblDomain.TabIndex = 4;
+        lblDomain.Text = "Domain:";
+        //
         // txtDomain
-        // 
-        this.txtDomain.Location = new System.Drawing.Point(80, 64);
-        this.txtDomain.Name = "txtDomain";
-        this.txtDomain.Size = new System.Drawing.Size(192, 20);
-        this.txtDomain.TabIndex = 5;
-        // 
+        //
+        txtDomain.Location = new System.Drawing.Point(80, 64);
+        txtDomain.Name = "txtDomain";
+        txtDomain.Size = new System.Drawing.Size(192, 20);
+        txtDomain.TabIndex = 5;
+        //
         // btnConnect
-        // 
-        this.btnConnect.DialogResult = System.Windows.Forms.DialogResult.OK;
-        this.btnConnect.Location = new System.Drawing.Point(116, 100);
-        this.btnConnect.Name = "btnConnect";
-        this.btnConnect.Size = new System.Drawing.Size(75, 23);
-        this.btnConnect.TabIndex = 6;
-        this.btnConnect.Text = "Connect";
-        this.btnConnect.UseVisualStyleBackColor = true;
-        // 
+        //
+        btnConnect.DialogResult = DialogResult.OK;
+        btnConnect.Location = new System.Drawing.Point(116, 100);
+        btnConnect.Name = "btnConnect";
+        btnConnect.Size = new System.Drawing.Size(75, 23);
+        btnConnect.TabIndex = 6;
+        btnConnect.Text = "Connect";
+        btnConnect.UseVisualStyleBackColor = true;
+        //
         // btnCancel
-        // 
-        this.btnCancel.DialogResult = System.Windows.Forms.DialogResult.Cancel;
-        this.btnCancel.Location = new System.Drawing.Point(197, 100);
-        this.btnCancel.Name = "btnCancel";
-        this.btnCancel.Size = new System.Drawing.Size(75, 23);
-        this.btnCancel.TabIndex = 7;
-        this.btnCancel.Text = "Cancel";
-        this.btnCancel.UseVisualStyleBackColor = true;
-        // 
+        //
+        btnCancel.DialogResult = DialogResult.Cancel;
+        btnCancel.Location = new System.Drawing.Point(197, 100);
+        btnCancel.Name = "btnCancel";
+        btnCancel.Size = new System.Drawing.Size(75, 23);
+        btnCancel.TabIndex = 7;
+        btnCancel.Text = "Cancel";
+        btnCancel.UseVisualStyleBackColor = true;
+        //
         // FrmConnectWithCredentials
-        // 
-        this.AcceptButton = this.btnConnect;
-        this.CancelButton = this.btnCancel;
-        this.AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
-        this.AutoScaleMode = System.Windows.Forms.AutoScaleMode.Font;
-        this.ClientSize = new System.Drawing.Size(284, 135);
-        this.Controls.Add(this.btnCancel);
-        this.Controls.Add(this.btnConnect);
-        this.Controls.Add(this.txtDomain);
-        this.Controls.Add(this.lblDomain);
-        this.Controls.Add(this.txtPassword);
-        this.Controls.Add(this.lblPassword);
-        this.Controls.Add(this.txtUsername);
-        this.Controls.Add(this.lblUsername);
-        this.FormBorderStyle = System.Windows.Forms.FormBorderStyle.FixedDialog;
-        this.MaximizeBox = false;
-        this.MinimizeBox = false;
-        this.Name = "FrmConnectWithCredentials";
-        this.StartPosition = System.Windows.Forms.FormStartPosition.CenterParent;
-        this.Text = "Connect with Credentials";
-        this.ResumeLayout(false);
-        this.PerformLayout();
+        //
+        AcceptButton = btnConnect;
+        CancelButton = btnCancel;
+        AutoScaleDimensions = new System.Drawing.SizeF(6F, 13F);
+        AutoScaleMode = AutoScaleMode.Font;
+        ClientSize = new System.Drawing.Size(284, 135);
+        Controls.Add(btnCancel);
+        Controls.Add(btnConnect);
+        Controls.Add(txtDomain);
+        Controls.Add(lblDomain);
+        Controls.Add(txtPassword);
+        Controls.Add(lblPassword);
+        Controls.Add(txtUsername);
+        Controls.Add(lblUsername);
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        Name = "FrmConnectWithCredentials";
+        StartPosition = FormStartPosition.CenterParent;
+        Text = "Connect with Credentials";
+        ResumeLayout(false);
+        PerformLayout();
 
     }
 }

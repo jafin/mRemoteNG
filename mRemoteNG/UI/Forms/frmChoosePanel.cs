@@ -11,8 +11,6 @@ namespace mRemoteNG.UI.Forms;
 [SupportedOSPlatform("windows")]
 public partial class FrmChoosePanel
 {
-
-
     public FrmChoosePanel()
     {
         InitializeComponent();
@@ -25,7 +23,7 @@ public partial class FrmChoosePanel
         set => cbPanels.SelectedItem = value;
     }
 
-    private void frmChoosePanel_Load(object sender, System.EventArgs e)
+    private void frmChoosePanel_Load(object sender, EventArgs e)
     {
         ApplyLanguage();
         ApplyTheme();
@@ -55,7 +53,7 @@ public partial class FrmChoosePanel
     {
         cbPanels.Items.Clear();
 
-        for (int i = 0; i <= Runtime.WindowList.Count - 1; i++)
+        for (var i = 0; i <= Runtime.WindowList.Count - 1; i++)
         {
             var window = Runtime.WindowList[i];
             if (window is null) continue;
@@ -75,21 +73,19 @@ public partial class FrmChoosePanel
         }
     }
 
-    private void btnNew_Click(object sender, System.EventArgs e)
+    private void btnNew_Click(object sender, EventArgs e)
     {
-        using (FrmInputBox frmInputBox =
-               new(Language.NewPanel, Language.PanelName + ":", Language.NewPanel))
-        {
-            DialogResult dr = frmInputBox.ShowDialog();
-            if (dr != DialogResult.OK || string.IsNullOrEmpty(frmInputBox.returnValue)) return;
-            PanelAdder.AddPanel(frmInputBox.returnValue);
-            AddAvailablePanels();
-            cbPanels.SelectedItem = frmInputBox.returnValue;
-            cbPanels.Focus();
-        }
+        using FrmInputBox frmInputBox =
+            new(Language.NewPanel, Language.PanelName + ":", Language.NewPanel);
+        var dr = frmInputBox.ShowDialog();
+        if (dr != DialogResult.OK || string.IsNullOrEmpty(frmInputBox.returnValue)) return;
+        PanelAdder.AddPanel(frmInputBox.returnValue);
+        AddAvailablePanels();
+        cbPanels.SelectedItem = frmInputBox.returnValue;
+        cbPanels.Focus();
     }
 
-    private void btnOK_Click(object sender, System.EventArgs e)
+    private void btnOK_Click(object sender, EventArgs e)
     {
         DialogResult = DialogResult.OK;
     }
