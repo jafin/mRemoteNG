@@ -8401,6 +8401,51 @@ namespace mRemoteNG.Resources.Language {
                 return ResourceManager.GetString("OpenSsh", resourceCulture);
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to SSH (native terminal).
+        /// </summary>
+        internal static string SshNative {
+            get {
+                return ResourceManager.GetString("SshNative", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The native SSH terminal needs the Microsoft Edge WebView2 Runtime, which is not installed..
+        /// </summary>
+        internal static string SshNativeWebView2Missing {
+            get {
+                return ResourceManager.GetString("SshNativeWebView2Missing", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The native SSH terminal could not start its terminal host..
+        /// </summary>
+        internal static string SshNativeTerminalHostFailed {
+            get {
+                return ResourceManager.GetString("SshNativeTerminalHostFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The native SSH terminal could not connect..
+        /// </summary>
+        internal static string SshNativeConnectFailed {
+            get {
+                return ResourceManager.GetString("SshNativeConnectFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The clipboard could not be accessed..
+        /// </summary>
+        internal static string SshNativeClipboardFailed {
+            get {
+                return ResourceManager.GetString("SshNativeClipboardFailed", resourceCulture);
+            }
+        }
 
         /// <summary>
         ///   Looks up a localized string similar to WSL.

@@ -2928,6 +2928,21 @@ mRemoteNG will now quit and begin with the installation.</value>
   <data name="OpenSsh" xml:space="preserve">
     <value>OpenSSH</value>
   </data>
+  <data name="SshNative" xml:space="preserve">
+    <value>SSH (native terminal)</value>
+  </data>
+  <data name="SshNativeWebView2Missing" xml:space="preserve">
+    <value>The native SSH terminal needs the Microsoft Edge WebView2 Runtime, which is not installed. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ and reconnect, or set this connection to SSH version 2 to use PuTTY instead.</value>
+  </data>
+  <data name="SshNativeTerminalHostFailed" xml:space="preserve">
+    <value>The native SSH terminal could not start its terminal host.</value>
+  </data>
+  <data name="SshNativeConnectFailed" xml:space="preserve">
+    <value>The native SSH terminal could not connect.</value>
+  </data>
+  <data name="SshNativeClipboardFailed" xml:space="preserve">
+    <value>The clipboard could not be accessed.</value>
+  </data>
   <data name="VaultOpenbaoSecretEngineSSHOTP" xml:space="preserve">
     <value>SSH engine OTP mode</value>
   </data>

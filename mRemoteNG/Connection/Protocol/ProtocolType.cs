@@ -63,7 +63,16 @@ public enum ProtocolType
     OpenSSH = 22,
 
     [LocalizedAttributes.LocalizedDescription(nameof(Language.Winbox))]
-    Winbox = 21
+    Winbox = 21,
+
+    /// <summary>
+    /// SSH hosted in-process — SSH.NET for the transport, xterm.js for the emulator — rather than
+    /// a reparented PuTTY window. Deliberately a separate protocol from <see cref="SSH2"/> so both
+    /// can be run side by side and chosen per connection; see the add-native-ssh-terminal change,
+    /// design.md D1.
+    /// </summary>
+    [LocalizedAttributes.LocalizedDescription(nameof(Language.SshNative))]
+    SSHNative = 23
 }
 
 public static class ProtocolFeature

@@ -9,9 +9,9 @@
 
 ## 2. Vendored front end
 
-- [ ] 2.1 Vendor `xterm.js` with its version and provenance recorded; confirm the MIT licence is compatible and add it wherever third-party licences are listed.
-- [ ] 2.2 Add the host document and the delivery mechanism chosen in 1.3, with a CSP that permits no network origins. — **must include `style-src 'unsafe-inline'`**; xterm's DOM renderer injects `<style>` elements and a strict `style-src 'self'` breaks all theming silently. See design.md S1.3.
-- [ ] 2.3 Ensure assets reach the build output and the installer.
+- [x] 2.1 Vendor `xterm.js` with its version and provenance recorded; confirm the MIT licence is compatible and add it wherever third-party licences are listed. — xterm 6.0.0 + addon-fit 0.11.0, MIT, shasums and update procedure in `Assets/THIRD-PARTY.md`. No central licence list exists in this repo, so the upstream `LICENSE` ships beside the assets and is installed with them.
+- [x] 2.2 Add the host document and the delivery mechanism chosen in 1.3, with a CSP that permits no network origins. — `index.html` + `terminal.js`, served via `SetVirtualHostNameToFolderMapping` with `Deny`. `default-src 'none'`, `script-src 'self'`, `connect-src 'none'`; `style-src` carries `'unsafe-inline'` because xterm's DOM renderer injects `<style>` elements (design.md S1.3).
+- [x] 2.3 Ensure assets reach the build output and the installer. — copied to `TerminalAssets\` beside the executable; verified present in `bind\Release`. `build-msi.ps1` harvests the output tree recursively, so the MSI picks them up with no installer change.
 
 ## 3. Transport
 
@@ -24,12 +24,12 @@
 
 ## 4. Protocol integration
 
-- [ ] 4.1 Add the `ProtocolType` value and its localized description.
-- [ ] 4.2 Add the `ProtocolFactory.CreateProtocol` case.
-- [ ] 4.3 Implement the `ProtocolBase` subclass hosting the WebView2 control as `Control`.
-- [ ] 4.4 Propagate control resize to `ShellStream.ChangeWindowSize`, and send the initial size when the session starts.
-- [ ] 4.5 Fail with a clear, specific message when the WebView2 runtime is absent.
-- [ ] 4.6 Confirm SSH1, SSH2, Telnet, Rlogin and RAW are untouched.
+- [x] 4.1 Add the `ProtocolType` value and its localized description. — `SSHNative = 23`, an unused slot: the numbers are persisted in every connections file, so renumbering would repoint saved connections. Also added the default-port case in `ConnectionInfo.GetDefaultPort`, which silently yields 0 if missed.
+- [x] 4.2 Add the `ProtocolFactory.CreateProtocol` case.
+- [x] 4.3 Implement the `ProtocolBase` subclass hosting the WebView2 control as `Control`. — `ProtocolNativeSsh`. WebView2 init starts in `Initialize` so the engine and the SSH handshake overlap; whichever of page-ready and connect-requested lands last starts the session. Credential diagnostics replayed here, since `Event_ErrorOccured` is protected.
+- [x] 4.4 Propagate control resize to `ShellStream.ChangeWindowSize`, and send the initial size when the session starts. — the page owns the cell arithmetic: `fit` measures and reports cols/rows back, which drives `Resize`. Initial size comes from the page's `ready`.
+- [x] 4.5 Fail with a clear, specific message when the WebView2 runtime is absent. — `WebView2RuntimeNotFoundException` caught ahead of the general handler; the message names the runtime, links the installer, and points at SSH2 as the fallback.
+- [x] 4.6 Confirm SSH1, SSH2, Telnet, Rlogin and RAW are untouched. — asserted rather than eyeballed: `NativeSshProtocolIntegrationTests` pins each one's factory type, default port and enum value. Full suite 7308 passed.
 
 ## 5. Terminal behaviour
 

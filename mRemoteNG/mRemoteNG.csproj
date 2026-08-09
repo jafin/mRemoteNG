@@ -721,6 +721,18 @@
     <RemoveDir Directories="$(TempBuildDir)" />
     <Message Text="Portable output: $(PublishDir)" Importance="high" />
   </Target>
+  <!--
+    Native SSH terminal front end. Flattened into TerminalAssets\ beside the executable because the
+    WebView2 virtual host maps a folder, and mapping one nested six levels deep would tie the
+    served layout to the source tree layout. Vendored, never fetched — see Assets\THIRD-PARTY.md.
+    The MSI harvests the output directory recursively, so this reaches the installer with no
+    change to build-msi.ps1.
+  -->
+  <ItemGroup>
+    <None Include="Connection\Protocol\SSH\Native\Assets\**\*"
+          Link="TerminalAssets\%(RecursiveDir)%(Filename)%(Extension)"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
   <!-- T4 TextTemplating: import only when the targets file exists (VS2026 BuildTools) -->
   <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v18.0\TextTemplating\Microsoft.TextTemplating.targets"
           Condition="Exists('$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v18.0\TextTemplating\Microsoft.TextTemplating.targets')" />

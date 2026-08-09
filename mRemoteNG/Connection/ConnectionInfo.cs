@@ -15,6 +15,7 @@ using mRemoteNG.Connection.Protocol.RDP;
 using mRemoteNG.Connection.Protocol.Rlogin;
 using mRemoteNG.Connection.Protocol.Serial;
 using mRemoteNG.Connection.Protocol.SSH;
+using mRemoteNG.Connection.Protocol.SSH.Native;
 using mRemoteNG.Connection.Protocol.Telnet;
 using mRemoteNG.Connection.Protocol.Terminal;
 using mRemoteNG.Connection.Protocol.VMRC;
@@ -445,6 +446,8 @@ public class ConnectionInfo : AbstractConnectionRecord, IHasParent, IInheritable
                     return (int)ProtocolSSH2.Defaults.Port;
                 case ProtocolType.OpenSSH:
                     return (int)ProtocolOpenSSH.Defaults.Port;
+                case ProtocolType.SSHNative:
+                    return (int)ProtocolNativeSsh.Defaults.Port;
                 case ProtocolType.Telnet:
                     return (int)ProtocolTelnet.Defaults.Port;
                 case ProtocolType.Rlogin:
