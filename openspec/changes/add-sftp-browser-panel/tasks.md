@@ -55,18 +55,20 @@ and only one of them is true.
 
 - [x] 5.1 A tab hosting local pane | remote pane above a queue, opened per connection.
 - [x] 5.2 `ObjectListView` list control used for both panes: name, size, modified, and permissions on the remote side; sortable; folders distinguishable. The permissions column is added only when the browser reports it supports them — an always-present empty column on the local pane would imply the information exists and is blank.
-- [ ] 5.3 Per-pane toolbar: navigation, refresh, new folder, new file, rename, delete, hidden toggle.
+- [x] 5.3 Per-pane toolbar: navigation, refresh, new folder, new file, rename, delete, hidden toggle. Mirrored in a right-click menu. The mutation commands live in `FilePaneCommands` with prompts behind `IFilePanePrompts`: dialogs are what make UI commands untestable, and "declining the confirmation leaves the file alone" is exactly the case that must not regress unnoticed.
 - [x] 5.4 Transfer between panes queues items rather than blocking.
-- [ ] 5.5 Deletion confirmation.
-- [ ] 5.6 Drag and drop from Explorer onto the remote pane queues uploads.
+- [x] 5.5 Deletion confirmation. One prompt for the whole selection, not one per entry — confirming twenty times is a prompt people learn to click through, which is worse than not asking.
+- [x] 5.6 Drag and drop from Explorer onto the remote pane queues uploads. A drop on the *local* pane is reported rather than silently ignored, so the gesture does not just appear to fail. Dropped directories are reported as unsupported instead of being queued as items that could only fail.
 - [x] 5.7 Queue view with per-item progress and cancel. Repaints on a 250 ms timer rather than per event: a transfer reports every buffer, and rebuilding rows at that rate would spend more time drawing the queue than moving the file.
 - [x] 5.8 Connection state indicator; a dropped connection stops the listing being presented as current.
 - [x] 5.9 Open from the connection tree and the session tab's context menu, without disturbing an open session tab. Added beside the existing **Transfer File (SSH)** item, mirroring its enable/disable decisions exactly — the file manager is available in the same circumstances, and it is the successor to that item. Session-tab context menu not done; the tree entry point is enough to reach it.
-- [ ] 5.10 Theme and language resources, matching the other windows.
+- [x] 5.10 Theme and language resources, matching the other windows.
 
-**Section 5 partial, 2026-08-09:** full build green (69.1s); full suite **7098/7098**. 23 new tests, all on `FilePaneController` — the pane's rules live there precisely so they can be asserted without a message pump. The controls themselves are thin views.
+**Section 5 complete, 2026-08-09:** full build green (68.8s); full suite **7113/7113**. 38 new tests across `FilePaneController` and `FilePaneCommands`, none needing a message pump — the rules and the commands both live outside the controls for that reason.
 
-Outstanding in this section: 5.3 (per-pane toolbar mutation commands), 5.5 (deletion confirmation), 5.6 (drag and drop), 5.10 (theme and language). Transfers are currently reachable only through the pane's `TransferRequested` event, which nothing raises yet — there is no toolbar button or drag gesture wired to it.
+Transfers are now reachable: an Upload/Download button and context-menu entry on each pane, plus drag and drop from Explorer onto the remote pane.
+
+Not done, and deliberately: recursive directory transfer. A directory in a selection is reported as unsupported rather than queued, because queueing it would produce an item that could only fail.
 
 ## 6. Editing a remote file
 

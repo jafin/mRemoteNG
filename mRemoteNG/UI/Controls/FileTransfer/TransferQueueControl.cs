@@ -1,10 +1,11 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Windows.Forms;
 using BrightIdeasSoftware;
 using mRemoteNG.FileTransfer;
+using mRemoteNG.Themes;
 
 namespace mRemoteNG.UI.Controls.FileTransfer
 {
@@ -45,6 +46,22 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             _queue.ItemChanged += OnItemChanged;
             _repaint.Tick += OnRepaintTick;
             _repaint.Start();
+        }
+
+        /// <summary>Applies the active theme, when it supplies an extended palette.</summary>
+        public void ApplyTheme(ThemeManager themeManager)
+        {
+            ArgumentNullException.ThrowIfNull(themeManager);
+
+            if (!themeManager.ActiveAndExtended || themeManager.ActiveTheme.ExtendedPalette is not { } palette)
+                return;
+
+            BackColor = palette.getColor("Dialog_Background");
+            ForeColor = palette.getColor("Dialog_Foreground");
+            _list.BackColor = palette.getColor("TextBox_Background");
+            _list.ForeColor = palette.getColor("TextBox_Foreground");
+            _toolbar.BackColor = palette.getColor("Dialog_Background");
+            _toolbar.ForeColor = palette.getColor("Dialog_Foreground");
         }
 
         private void BuildToolbar()

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Globalization;
@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 using BrightIdeasSoftware;
 using mRemoteNG.FileTransfer;
+using mRemoteNG.Resources.Language;
+using mRemoteNG.Themes;
 
 namespace mRemoteNG.UI.Controls.FileTransfer
 {
@@ -31,17 +33,36 @@ namespace mRemoteNG.UI.Controls.FileTransfer
         private readonly ToolStripButton _home = new();
         private readonly ToolStripButton _refresh = new();
         private readonly ToolStripButton _hidden = new();
+        private readonly ToolStripButton _transfer = new();
+        private readonly ToolStripButton _newFolder = new();
+        private readonly ToolStripButton _newFile = new();
+        private readonly ToolStripButton _rename = new();
+        private readonly ToolStripButton _delete = new();
+        private readonly ContextMenuStrip _contextMenu = new();
         private readonly Label _status = new();
+        private readonly FilePaneCommands _commands;
 
-        public FilePaneControl(FilePaneController controller, string caption)
+        public FilePaneControl(FilePaneController controller, string caption, string transferCaption)
+            : this(controller, caption, transferCaption, new FilePanePrompts(null))
+        {
+        }
+
+        public FilePaneControl(FilePaneController controller,
+                               string caption,
+                               string transferCaption,
+                               IFilePanePrompts prompts)
         {
             ArgumentNullException.ThrowIfNull(controller);
+            ArgumentNullException.ThrowIfNull(prompts);
 
             _controller = controller;
             Caption = caption;
+            TransferCaption = transferCaption;
+            _commands = new FilePaneCommands(controller, prompts);
 
             BuildToolbar();
             BuildList();
+            BuildContextMenu();
             BuildStatus();
 
             Controls.Add(_list);
@@ -55,6 +76,12 @@ namespace mRemoteNG.UI.Controls.FileTransfer
 
         /// <summary>Which side this is, for labelling.</summary>
         public string Caption { get; }
+
+        /// <summary>What moving the selection to the other pane is called from here.</summary>
+        public string TransferCaption { get; }
+
+        /// <summary>Raised when files are dropped from outside the application.</summary>
+        public event EventHandler<IReadOnlyList<string>>? ExternalFilesDropped;
 
         public FilePaneController Controller => _controller;
 
@@ -71,6 +98,30 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             _list.SelectedObjects.Cast<FileSystemEntry>().ToArray();
 
         public Task StartAsync() => _controller.NavigateHomeAsync();
+
+        /// <summary>
+        /// Applies the active theme, when it supplies an extended palette.
+        /// </summary>
+        /// <remarks>
+        /// Only the list and toolbar are recoloured. A theme that does not carry an extended palette
+        /// leaves the control at system colours, which is what the rest of the application does.
+        /// </remarks>
+        public void ApplyTheme(ThemeManager themeManager)
+        {
+            ArgumentNullException.ThrowIfNull(themeManager);
+
+            if (!themeManager.ActiveAndExtended || themeManager.ActiveTheme.ExtendedPalette is not { } palette)
+                return;
+
+            BackColor = palette.getColor("Dialog_Background");
+            ForeColor = palette.getColor("Dialog_Foreground");
+            _list.BackColor = palette.getColor("TextBox_Background");
+            _list.ForeColor = palette.getColor("TextBox_Foreground");
+            _toolbar.BackColor = palette.getColor("Dialog_Background");
+            _toolbar.ForeColor = palette.getColor("Dialog_Foreground");
+            _status.BackColor = palette.getColor("Dialog_Background");
+            _status.ForeColor = palette.getColor("Dialog_Foreground");
+        }
 
         private void BuildToolbar()
         {
@@ -93,17 +144,79 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             _pathBox.Width = 320;
             _pathBox.KeyDown += OnPathBoxKeyDown;
 
+            Configure(_transfer, TransferCaption, TransferCaption, () => { RequestTransfer(); return Task.CompletedTask; });
+            Configure(_newFolder, Language.NewFolder, Language.NewFolder, async () => await _commands.NewFolderAsync());
+            Configure(_newFile, Language.NewFile, Language.NewFile, async () => await _commands.NewFileAsync());
+            Configure(_rename, Language.Rename, Language.Rename, RenameSelectionAsync);
+            Configure(_delete, Language.Delete, Language.Delete, DeleteSelectionAsync);
+
             _toolbar.Items.AddRange([_back, _forward, _up, _home, _refresh,
                                      new ToolStripSeparator(), _hidden,
+                                     new ToolStripSeparator(), _transfer,
+                                     new ToolStripSeparator(), _newFolder, _newFile, _rename, _delete,
                                      new ToolStripSeparator(), _pathBox]);
         }
 
-        private static void Configure(ToolStripButton button, string glyph, string tooltip, Func<Task> action)
+        private void BuildContextMenu()
+        {
+            ToolStripMenuItem transfer = new(TransferCaption, null, (_, _) => RequestTransfer());
+            ToolStripMenuItem rename = new(Language.Rename, null, (_, _) => RunCommand(RenameSelectionAsync));
+            ToolStripMenuItem delete = new(Language.Delete, null, (_, _) => RunCommand(DeleteSelectionAsync));
+            ToolStripMenuItem newFolder = new(Language.NewFolder, null, (_, _) => RunCommand(async () => await _commands.NewFolderAsync()));
+            ToolStripMenuItem newFile = new(Language.NewFile, null, (_, _) => RunCommand(async () => await _commands.NewFileAsync()));
+            ToolStripMenuItem refresh = new(Language.Refresh, null, (_, _) => RunCommand(_controller.RefreshAsync));
+
+            _contextMenu.Items.AddRange([transfer, new ToolStripSeparator(),
+                                         rename, delete, new ToolStripSeparator(),
+                                         newFolder, newFile, new ToolStripSeparator(), refresh]);
+
+            _contextMenu.Opening += (_, _) =>
+            {
+                bool hasSelection = SelectedEntries.Count > 0;
+                transfer.Enabled = hasSelection;
+                delete.Enabled = hasSelection;
+                rename.Enabled = SelectedEntries.Count == 1;
+            };
+
+            _list.ContextMenuStrip = _contextMenu;
+        }
+
+        private async Task RenameSelectionAsync()
+        {
+            IReadOnlyList<FileSystemEntry> selection = SelectedEntries;
+            if (selection.Count == 1)
+                await _commands.RenameAsync(selection[0]);
+        }
+
+        private async Task DeleteSelectionAsync() => await _commands.DeleteAsync(SelectedEntries);
+
+        private void Configure(ToolStripButton button, string glyph, string tooltip, Func<Task> action)
         {
             button.Text = glyph;
             button.ToolTipText = tooltip;
             button.DisplayStyle = ToolStripItemDisplayStyle.Text;
-            button.Click += async (_, _) => await action();
+            button.Click += (_, _) => RunCommand(action);
+        }
+
+        /// <summary>
+        /// Starts a command from a UI event.
+        /// </summary>
+        /// <remarks>
+        /// Not an async lambda on the handler: an async void delegate drops its exceptions on the
+        /// floor, and a command that throws would leave the pane looking like nothing happened.
+        /// </remarks>
+        private void RunCommand(Func<Task> action) => _ = RunCommandAsync(action);
+
+        private async Task RunCommandAsync(Func<Task> action)
+        {
+            try
+            {
+                await action();
+            }
+            catch (Exception ex)
+            {
+                Failed?.Invoke(this, ex.Message);
+            }
         }
 
         private void BuildList()
@@ -158,6 +271,23 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             _list.RebuildColumns();
 
             _list.ItemActivate += OnItemActivate;
+            _list.DragEnter += OnDragEnter;
+            _list.DragDrop += OnDragDrop;
+        }
+
+        private static void OnDragEnter(object? sender, DragEventArgs e)
+        {
+            e.Effect = e.Data?.GetDataPresent(DataFormats.FileDrop) == true
+                ? DragDropEffects.Copy
+                : DragDropEffects.None;
+        }
+
+        private void OnDragDrop(object? sender, DragEventArgs e)
+        {
+            if (e.Data?.GetData(DataFormats.FileDrop) is not string[] paths || paths.Length == 0)
+                return;
+
+            ExternalFilesDropped?.Invoke(this, paths);
         }
 
         private void BuildStatus()

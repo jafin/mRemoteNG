@@ -330,6 +330,39 @@
   <data name="FileManager" xml:space="preserve">
     <value>File Manager (SFTP)</value>
   </data>
+  <data name="Upload" xml:space="preserve">
+    <value>Upload</value>
+  </data>
+  <data name="Refresh" xml:space="preserve">
+    <value>Refresh</value>
+  </data>
+  <data name="LocalSite" xml:space="preserve">
+    <value>Local site</value>
+  </data>
+  <data name="RemoteSite" xml:space="preserve">
+    <value>Remote site</value>
+  </data>
+  <data name="TransferQueue" xml:space="preserve">
+    <value>Transfer queue</value>
+  </data>
+  <data name="ShowHiddenEntries" xml:space="preserve">
+    <value>Show hidden entries</value>
+  </data>
+  <data name="NewFile" xml:space="preserve">
+    <value>New file</value>
+  </data>
+  <data name="ConfirmDeleteEntries" xml:space="preserve">
+    <value>Delete the {0} selected item(s)? This cannot be undone.</value>
+  </data>
+  <data name="EnterNewName" xml:space="preserve">
+    <value>Enter a new name:</value>
+  </data>
+  <data name="EnterFolderName" xml:space="preserve">
+    <value>Enter a name for the new folder:</value>
+  </data>
+  <data name="EnterFileName" xml:space="preserve">
+    <value>Enter a name for the new file:</value>
+  </data>
   <data name="CommandExitProgram" xml:space="preserve">
     <value>E&amp;xit {0}</value>
   </data>

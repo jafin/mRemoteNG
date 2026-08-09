@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Runtime.Versioning;
@@ -10,7 +10,9 @@ using mRemoteNG.Connection;
 using mRemoteNG.Connection.Sftp;
 using mRemoteNG.FileTransfer;
 using mRemoteNG.Messages;
+using mRemoteNG.Resources.Language;
 using mRemoteNG.Security.Ssh;
+using mRemoteNG.Themes;
 using mRemoteNG.UI.Controls.FileTransfer;
 using WeifenLuo.WinFormsUI.Docking;
 
@@ -56,9 +58,12 @@ namespace mRemoteNG.UI.Window
             _queue = new TransferQueue(RunTransferAsync);
 
             _local = new FilePaneControl(
-                new FilePaneController(new LocalFileSystemBrowser(), caseSensitivePaths: false), "Local");
+                new FilePaneController(new LocalFileSystemBrowser(), caseSensitivePaths: false),
+                Language.LocalSite, Language.Upload, new FilePanePrompts(this));
+
             _remote = new FilePaneControl(
-                new FilePaneController(new RemoteFileSystemBrowser(session), caseSensitivePaths: true), "Remote");
+                new FilePaneController(new RemoteFileSystemBrowser(session), caseSensitivePaths: true),
+                Language.RemoteSite, Language.Download, new FilePanePrompts(this));
 
             _queueView = new TransferQueueControl(_queue);
 
@@ -68,12 +73,32 @@ namespace mRemoteNG.UI.Window
             _remote.Failed += OnPaneFailed;
             _local.TransferRequested += (_, entries) => QueueTransfer(entries, TransferDirection.Upload);
             _remote.TransferRequested += (_, entries) => QueueTransfer(entries, TransferDirection.Download);
+            _remote.ExternalFilesDropped += OnFilesDroppedOnRemote;
+            _local.ExternalFilesDropped += OnFilesDroppedOnLocal;
             _session.Dropped += OnSessionDropped;
+
+            ApplyTheme();
+            ThemeManager.getInstance().ThemeChanged += ApplyTheme;
 
             Load += OnLoad;
         }
 
         public ConnectionInfo ConnectionInfo => _connectionInfo;
+
+        private void ApplyTheme()
+        {
+            ThemeManager themeManager = ThemeManager.getInstance();
+
+            _local.ApplyTheme(themeManager);
+            _remote.ApplyTheme(themeManager);
+            _queueView.ApplyTheme(themeManager);
+
+            if (themeManager.ActiveAndExtended && themeManager.ActiveTheme.ExtendedPalette is { } palette)
+            {
+                BackColor = palette.getColor("Dialog_Background");
+                ForeColor = palette.getColor("Dialog_Foreground");
+            }
+        }
 
         private void BuildLayout()
         {
@@ -177,6 +202,46 @@ namespace mRemoteNG.UI.Window
         }
 
         /// <summary>
+        /// Files dragged in from Explorer are queued for upload to the remote pane's directory.
+        /// </summary>
+        private void OnFilesDroppedOnRemote(object? sender, IReadOnlyList<string> paths) =>
+            QueueTransfer(DescribeLocalPaths(paths), TransferDirection.Upload);
+
+        /// <summary>
+        /// A drop onto the local pane is a local file copy, which Explorer already does better.
+        /// Reported rather than silently ignored, so the gesture does not just appear to fail.
+        /// </summary>
+        private void OnFilesDroppedOnLocal(object? sender, IReadOnlyList<string> paths) =>
+            Report("Dropped files are only uploaded when dropped on the remote pane.",
+                   MessageClass.InformationMsg);
+
+        private static IReadOnlyList<FileSystemEntry> DescribeLocalPaths(IReadOnlyList<string> paths)
+        {
+            List<FileSystemEntry> entries = [];
+
+            foreach (string path in paths)
+            {
+                if (Directory.Exists(path))
+                {
+                    // Marked as a directory so QueueTransfer reports it as unsupported, rather than
+                    // queueing an item that could only fail.
+                    entries.Add(new FileSystemEntry(Path.GetFileName(path), path, true, 0,
+                                                    DateTime.Now, string.Empty, false));
+                    continue;
+                }
+
+                if (!File.Exists(path))
+                    continue;
+
+                FileInfo info = new(path);
+                entries.Add(new FileSystemEntry(info.Name, info.FullName, false, info.Length,
+                                                info.LastWriteTime, string.Empty, false));
+            }
+
+            return entries;
+        }
+
+        /// <summary>
         /// Moves one queued file.
         /// </summary>
         /// <remarks>
@@ -257,6 +322,7 @@ namespace mRemoteNG.UI.Window
         {
             if (disposing)
             {
+                ThemeManager.getInstance().ThemeChanged -= ApplyTheme;
                 _session.Dropped -= OnSessionDropped;
                 _queue.Dispose();
                 _session.Dispose();
