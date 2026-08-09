@@ -311,9 +311,15 @@ public class ProtocolNativeSsh : ProtocolBase
         if (offeredKey && CredentialProblems(session?.Diagnostics).Count == 0)
         {
             string keyPath = session?.OfferedKeyPath ?? string.Empty;
+            string user = session?.OfferedUsername ?? string.Empty;
+
+            // The username is named because it is the likeliest thing to be wrong and the hardest
+            // to notice: it can be inherited from a folder or supplied by a credential provider,
+            // so it is not necessarily what was typed into this connection. A correct key sent as
+            // the wrong user fails exactly like a wrong key sent as the right one.
             parts.Add(string.IsNullOrEmpty(keyPath)
-                ? Language.SshNativeAuthKeyRefusedNoPath
-                : string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefused, keyPath));
+                ? string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefusedNoPath, user)
+                : string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefused, keyPath, user));
         }
 
         return string.Join(" ", parts);

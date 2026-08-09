@@ -27,6 +27,7 @@ public class NativeSshFailureMessageTests
         public IReadOnlyList<SshCredentialDiagnostic> Diagnostics { get; init; } = [];
         public IReadOnlyList<string> OfferedMethods { get; init; } = [];
         public string? OfferedKeyPath { get; init; }
+        public string OfferedUsername { get; init; } = "someone";
         public IReadOnlyList<string> UnansweredPrompts { get; init; } = [];
 
         public bool IsConnected => false;
@@ -64,7 +65,8 @@ public class NativeSshFailureMessageTests
         using FakeSession session = new()
         {
             OfferedMethods = ["publickey", "keyboard-interactive"],
-            OfferedKeyPath = @"C:\keys\id_ed25519"
+            OfferedKeyPath = @"C:\keys\id_ed25519",
+            OfferedUsername = "alice"
         };
 
         string message = ProtocolNativeSsh.DescribeFailure(Denied, session);
@@ -74,6 +76,9 @@ public class NativeSshFailureMessageTests
             Assert.That(message, Does.StartWith(Denied));
             Assert.That(message, Does.Contain(@"C:\keys\id_ed25519"));
             Assert.That(message, Does.Contain("authorized_keys"));
+            Assert.That(message, Does.Contain("alice"),
+                "a correct key sent as the wrong user fails exactly like a wrong key, so the "
+                + "username has to be in the message");
         });
     }
 

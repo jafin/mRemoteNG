@@ -113,6 +113,12 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
     public string? OfferedKeyPath => _credential.PrivateKeyPath;
 
     /// <summary>
+    /// The username authentication was attempted as — which is not always the one typed into the
+    /// connection, since it can be inherited or supplied by a credential provider.
+    /// </summary>
+    public string OfferedUsername => _authentication.Username;
+
+    /// <summary>
     /// Keyboard-interactive prompts the server asked that nothing could answer — typically a second
     /// factor. Only meaningful after a connection attempt.
     /// </summary>

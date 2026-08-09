@@ -37,6 +37,9 @@ public interface INativeSshTerminalSession : IDisposable
     /// <summary>The key file offered, if any. A path, not a secret.</summary>
     string? OfferedKeyPath { get; }
 
+    /// <summary>The username authentication was attempted as.</summary>
+    string OfferedUsername { get; }
+
     /// <summary>Keyboard-interactive prompts nothing could answer — typically a second factor.</summary>
     IReadOnlyList<string> UnansweredPrompts { get; }
 
