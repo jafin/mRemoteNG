@@ -100,6 +100,13 @@ reports the selected text, or asks for the current clipboard contents.
 Paste is sent back **through the page** rather than written straight to the shell, so xterm applies
 bracketed-paste wrapping. Writing it directly to `ShellStream` would silently lose that protection.
 
+**Binding a paste key is not enough — you must also suppress the browser.** Returning `false` from
+`attachCustomKeyEventHandler` stops *xterm* handling the key, but not the browser's default action
+and not key auto-repeat. Either will paste a second time on top of yours. Observed as an
+intermittent double paste on Ctrl+V, which for a pasted command line means running it twice. Fixed
+by calling `preventDefault()`/`stopPropagation()` and ignoring `event.repeat`. Shift+Insert did not
+show it, which is what made it look like a Ctrl+V-specific quirk rather than a general one.
+
 One decision for task 5.2 rather than for a spike: **Ctrl+V is readline's quoted-insert (`^V`)**.
 Binding it to paste removes the only way to type a literal control character. PuTTY declines that
 trade and uses Shift+Insert; a Windows-native app probably should not. The spike binds it so the

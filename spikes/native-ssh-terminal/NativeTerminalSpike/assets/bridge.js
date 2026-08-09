@@ -100,8 +100,21 @@
     // Copy on select, the way PuTTY does it — that is the behaviour these users have today.
     term.onSelectionChange(copySelection);
 
+    // Returning false from this handler stops *xterm* processing the key. It does not stop the
+    // browser's own default action, and it does not stop key auto-repeat — both of which paste
+    // again on top of ours. Every branch below therefore suppresses the default explicitly and
+    // ignores repeats. Measured symptom without this: a paste that intermittently arrives twice.
+    function claim(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+    }
+
     term.attachCustomKeyEventHandler(function (e) {
         if (e.type !== 'keydown') return true;
+
+        // Holding the chord briefly fires keydown repeatedly; each one would be another paste.
+        if (e.repeat) return true;
 
         var isC = e.key === 'c' || e.key === 'C';
         var isV = e.key === 'v' || e.key === 'V';
@@ -110,7 +123,7 @@
         // sending SIGINT, which is why PuTTY put copy on Ctrl+Insert in the first place.
         if ((e.ctrlKey && e.key === 'Insert') || (e.ctrlKey && e.shiftKey && isC)) {
             copySelection();
-            return false;
+            return claim(e);
         }
 
         // Shift+Insert and Ctrl+Shift+V are the terminal conventions. Plain Ctrl+V is included
@@ -121,7 +134,7 @@
         if ((e.shiftKey && e.key === 'Insert') || (e.ctrlKey && e.shiftKey && isV) ||
             (e.ctrlKey && !e.shiftKey && !e.altKey && isV)) {
             post({ t: 'wantpaste' });
-            return false;
+            return claim(e);
         }
 
         return true;
