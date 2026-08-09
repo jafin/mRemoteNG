@@ -1,21 +1,20 @@
 ﻿using System.Security;
 using mRemoteNG.Security;
 
-namespace mRemoteNG.UI.Controls
+namespace mRemoteNG.UI.Controls;
+
+public partial class SecureTextBox : MrngTextBox
 {
-    public partial class SecureTextBox : MrngTextBox
+    public SecureString SecString { get; private set; } = new SecureString();
+
+    public SecureTextBox()
     {
-        public SecureString SecString { get; private set; } = new SecureString();
+        InitializeComponent();
+        TextChanged += SecureTextBox_TextChanged;
+    }
 
-        public SecureTextBox()
-        {
-            InitializeComponent();
-            TextChanged += SecureTextBox_TextChanged;
-        }
-
-        private void SecureTextBox_TextChanged(object sender, System.EventArgs e)
-        {
-            SecString = Text.ConvertToSecureString();
-        }
+    private void SecureTextBox_TextChanged(object sender, System.EventArgs e)
+    {
+        SecString = Text.ConvertToSecureString();
     }
 }

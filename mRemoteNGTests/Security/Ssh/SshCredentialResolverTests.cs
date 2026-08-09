@@ -7,668 +7,667 @@ using mRemoteNG.Security.Ssh;
 using mRemoteNG.Security.Ssh.Providers;
 using NUnit.Framework;
 
-namespace mRemoteNGTests.Security.Ssh
+namespace mRemoteNGTests.Security.Ssh;
+
+/// <summary>
+/// Covers <c>specs/ssh-credential-resolution/spec.md</c>, and absorbs the coverage originally
+/// scoped to task 1.2 (per design.md D8): provider selection is asserted here against
+/// <see cref="ISshCredentialProvider"/> rather than inferred from PuTTY's command line.
+/// </summary>
+[TestFixture]
+[NonParallelizable]
+public class SshCredentialResolverTests
 {
-    /// <summary>
-    /// Covers <c>specs/ssh-credential-resolution/spec.md</c>, and absorbs the coverage originally
-    /// scoped to task 1.2 (per design.md D8): provider selection is asserted here against
-    /// <see cref="ISshCredentialProvider"/> rather than inferred from PuTTY's command line.
-    /// </summary>
-    [TestFixture]
-    [NonParallelizable]
-    public class SshCredentialResolverTests
+    private string _originalEmptyCredentials = null!;
+    private string _originalDefaultUsername = null!;
+    private string _originalUserViaApiDefault = null!;
+    private ExternalCredentialProvider _originalProviderDefault;
+
+    [SetUp]
+    public void Setup()
     {
-        private string _originalEmptyCredentials = null!;
-        private string _originalDefaultUsername = null!;
-        private string _originalUserViaApiDefault = null!;
-        private ExternalCredentialProvider _originalProviderDefault;
+        var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
+        _originalEmptyCredentials = settings.EmptyCredentials;
+        _originalDefaultUsername = settings.DefaultUsername;
+        _originalUserViaApiDefault = settings.UserViaAPIDefault;
+        _originalProviderDefault = settings.ExternalCredentialProviderDefault;
 
-        [SetUp]
-        public void Setup()
+        settings.EmptyCredentials = "noinfo";
+    }
+
+    [TearDown]
+    public void TearDown()
+    {
+        var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
+        settings.EmptyCredentials = _originalEmptyCredentials;
+        settings.DefaultUsername = _originalDefaultUsername;
+        settings.UserViaAPIDefault = _originalUserViaApiDefault;
+        settings.ExternalCredentialProviderDefault = _originalProviderDefault;
+    }
+
+    private static ConnectionInfo Connection(
+        string username = "alice",
+        string password = "secret123",
+        string domain = "",
+        string hostname = "example-host",
+        string privateKeyPath = "",
+        ExternalCredentialProvider provider = ExternalCredentialProvider.None) =>
+        new()
         {
-            var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
-            _originalEmptyCredentials = settings.EmptyCredentials;
-            _originalDefaultUsername = settings.DefaultUsername;
-            _originalUserViaApiDefault = settings.UserViaAPIDefault;
-            _originalProviderDefault = settings.ExternalCredentialProviderDefault;
+            Protocol = ProtocolType.SSH2,
+            Hostname = hostname,
+            Username = username,
+            Password = password,
+            Domain = domain,
+            PrivateKeyPath = privateKeyPath,
+            ExternalCredentialProvider = provider
+        };
 
-            settings.EmptyCredentials = "noinfo";
-        }
+    private static SshCredentialResolver Resolver(
+        IEnumerable<ISshCredentialProvider>? providers = null,
+        string? discoverableKey = null) =>
+        new(providers ?? [], new StubKeyLocator(discoverableKey));
 
-        [TearDown]
-        public void TearDown()
+    // ---- provider supplies a password ---------------------------------------
+
+    [Test]
+    public void ProviderSuppliedPasswordReplacesTheConnectionPassword()
+    {
+        FakeProvider laps = FakeProvider.Returning(
+            ExternalCredentialProvider.LAPS, username: "Administrator", password: "laps-pw");
+
+        using ResolvedSshCredential credential = Resolver([laps]).Resolve(
+            Connection(provider: ExternalCredentialProvider.LAPS),
+            SshCredentialResolutionOptions.ForPutty);
+
+        Assert.Multiple(() =>
         {
-            var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
-            settings.EmptyCredentials = _originalEmptyCredentials;
-            settings.DefaultUsername = _originalDefaultUsername;
-            settings.UserViaAPIDefault = _originalUserViaApiDefault;
-            settings.ExternalCredentialProviderDefault = _originalProviderDefault;
-        }
+            Assert.That(credential.RevealSecret(), Is.EqualTo("laps-pw"));
+            Assert.That(credential.EffectiveUsername, Is.EqualTo("Administrator"));
+            Assert.That(credential.Provenance, Is.EqualTo(ExternalCredentialProvider.LAPS));
+        });
+    }
 
-        private static ConnectionInfo Connection(
-            string username = "alice",
-            string password = "secret123",
-            string domain = "",
-            string hostname = "example-host",
-            string privateKeyPath = "",
-            ExternalCredentialProvider provider = ExternalCredentialProvider.None) =>
-            new()
-            {
-                Protocol = ProtocolType.SSH2,
-                Hostname = hostname,
-                Username = username,
-                Password = password,
-                Domain = domain,
-                PrivateKeyPath = privateKeyPath,
-                ExternalCredentialProvider = provider
-            };
+    // ---- 1.2 absorbed: one case per provider --------------------------------
 
-        private static SshCredentialResolver Resolver(
-            IEnumerable<ISshCredentialProvider>? providers = null,
-            string? discoverableKey = null) =>
-            new(providers ?? [], new StubKeyLocator(discoverableKey));
+    [TestCase(ExternalCredentialProvider.DelineaSecretServer)]
+    [TestCase(ExternalCredentialProvider.ClickstudiosPasswordState)]
+    [TestCase(ExternalCredentialProvider.OnePassword)]
+    [TestCase(ExternalCredentialProvider.PasswordSafe)]
+    [TestCase(ExternalCredentialProvider.VaultOpenbao)]
+    [TestCase(ExternalCredentialProvider.LAPS)]
+    public void TheConfiguredProviderIsTheOneConsulted(ExternalCredentialProvider configured)
+    {
+        List<ISshCredentialProvider> all =
+        [
+            FakeProvider.Returning(ExternalCredentialProvider.DelineaSecretServer, password: "delinea"),
+            FakeProvider.Returning(ExternalCredentialProvider.ClickstudiosPasswordState, password: "passwordstate"),
+            FakeProvider.Returning(ExternalCredentialProvider.OnePassword, password: "onepassword"),
+            FakeProvider.Returning(ExternalCredentialProvider.PasswordSafe, password: "passwordsafe"),
+            FakeProvider.Returning(ExternalCredentialProvider.VaultOpenbao, password: "vault"),
+            FakeProvider.Returning(ExternalCredentialProvider.LAPS, password: "laps"),
+        ];
 
-        // ---- provider supplies a password ---------------------------------------
+        using ResolvedSshCredential credential = Resolver(all).Resolve(
+            Connection(provider: configured), SshCredentialResolutionOptions.ForPutty);
 
-        [Test]
-        public void ProviderSuppliedPasswordReplacesTheConnectionPassword()
+        Assert.Multiple(() =>
         {
-            FakeProvider laps = FakeProvider.Returning(
-                ExternalCredentialProvider.LAPS, username: "Administrator", password: "laps-pw");
+            Assert.That(credential.Provenance, Is.EqualTo(configured));
+            foreach (FakeProvider p in all.Cast<FakeProvider>())
+                Assert.That(p.CallCount, Is.EqualTo(p.Kind == configured ? 1 : 0),
+                    $"{p.Kind} call count");
+        });
+    }
 
-            using ResolvedSshCredential credential = Resolver([laps]).Resolve(
-                Connection(provider: ExternalCredentialProvider.LAPS),
-                SshCredentialResolutionOptions.ForPutty);
+    [Test]
+    public void NoProviderIsConsultedWhenTheConnectionUsesInlineCredentials()
+    {
+        FakeProvider laps = FakeProvider.Returning(ExternalCredentialProvider.LAPS, password: "laps");
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(credential.RevealSecret(), Is.EqualTo("laps-pw"));
-                Assert.That(credential.EffectiveUsername, Is.EqualTo("Administrator"));
-                Assert.That(credential.Provenance, Is.EqualTo(ExternalCredentialProvider.LAPS));
-            });
-        }
+        using ResolvedSshCredential credential = Resolver([laps]).Resolve(
+            Connection(), SshCredentialResolutionOptions.ForPutty);
 
-        // ---- 1.2 absorbed: one case per provider --------------------------------
-
-        [TestCase(ExternalCredentialProvider.DelineaSecretServer)]
-        [TestCase(ExternalCredentialProvider.ClickstudiosPasswordState)]
-        [TestCase(ExternalCredentialProvider.OnePassword)]
-        [TestCase(ExternalCredentialProvider.PasswordSafe)]
-        [TestCase(ExternalCredentialProvider.VaultOpenbao)]
-        [TestCase(ExternalCredentialProvider.LAPS)]
-        public void TheConfiguredProviderIsTheOneConsulted(ExternalCredentialProvider configured)
+        Assert.Multiple(() =>
         {
-            List<ISshCredentialProvider> all =
-            [
-                FakeProvider.Returning(ExternalCredentialProvider.DelineaSecretServer, password: "delinea"),
-                FakeProvider.Returning(ExternalCredentialProvider.ClickstudiosPasswordState, password: "passwordstate"),
-                FakeProvider.Returning(ExternalCredentialProvider.OnePassword, password: "onepassword"),
-                FakeProvider.Returning(ExternalCredentialProvider.PasswordSafe, password: "passwordsafe"),
-                FakeProvider.Returning(ExternalCredentialProvider.VaultOpenbao, password: "vault"),
-                FakeProvider.Returning(ExternalCredentialProvider.LAPS, password: "laps"),
-            ];
+            Assert.That(laps.CallCount, Is.Zero);
+            Assert.That(credential.RevealSecret(), Is.EqualTo("secret123"));
+            Assert.That(credential.Provenance, Is.EqualTo(ExternalCredentialProvider.None));
+        });
+    }
 
-            using ResolvedSshCredential credential = Resolver(all).Resolve(
-                Connection(provider: configured), SshCredentialResolutionOptions.ForPutty);
+    // ---- provider fails ------------------------------------------------------
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(credential.Provenance, Is.EqualTo(configured));
-                foreach (FakeProvider p in all.Cast<FakeProvider>())
-                    Assert.That(p.CallCount, Is.EqualTo(p.Kind == configured ? 1 : 0),
-                                $"{p.Kind} call count");
-            });
-        }
+    [Test]
+    public void AFailedProviderLeavesTheConfiguredCredentialsIntact()
+    {
+        FakeProvider failing = FakeProvider.Failing(
+            ExternalCredentialProvider.DelineaSecretServer,
+            new SshCredentialDiagnostic(ExternalCredentialProvider.DelineaSecretServer,
+                SshCredentialDiagnosticSeverity.ProtocolError,
+                "Secret Server Interface Error: boom"));
 
-        [Test]
-        public void NoProviderIsConsultedWhenTheConnectionUsesInlineCredentials()
+        using ResolvedSshCredential credential = Resolver([failing]).Resolve(
+            Connection(provider: ExternalCredentialProvider.DelineaSecretServer),
+            SshCredentialResolutionOptions.ForPutty);
+
+        Assert.Multiple(() =>
         {
-            FakeProvider laps = FakeProvider.Returning(ExternalCredentialProvider.LAPS, password: "laps");
+            Assert.That(credential.EffectiveUsername, Is.EqualTo("alice"),
+                "A failed provider must not wipe the configured username.");
+            Assert.That(credential.RevealSecret(), Is.EqualTo("secret123"),
+                "A failed provider must not wipe the configured password.");
+            Assert.That(credential.Provenance, Is.EqualTo(ExternalCredentialProvider.None));
+        });
+    }
 
-            using ResolvedSshCredential credential = Resolver([laps]).Resolve(
-                Connection(), SshCredentialResolutionOptions.ForPutty);
+    [Test]
+    public void AFailedProviderDoesNotThrowAndSurfacesItsDiagnostic()
+    {
+        FakeProvider failing = FakeProvider.Failing(
+            ExternalCredentialProvider.LAPS,
+            new SshCredentialDiagnostic(ExternalCredentialProvider.LAPS,
+                SshCredentialDiagnosticSeverity.Error, "LAPS query failed"));
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(laps.CallCount, Is.Zero);
-                Assert.That(credential.RevealSecret(), Is.EqualTo("secret123"));
-                Assert.That(credential.Provenance, Is.EqualTo(ExternalCredentialProvider.None));
-            });
-        }
+        using ResolvedSshCredential credential = Resolver([failing]).Resolve(
+            Connection(provider: ExternalCredentialProvider.LAPS),
+            SshCredentialResolutionOptions.ForPutty);
 
-        // ---- provider fails ------------------------------------------------------
-
-        [Test]
-        public void AFailedProviderLeavesTheConfiguredCredentialsIntact()
+        Assert.Multiple(() =>
         {
-            FakeProvider failing = FakeProvider.Failing(
-                ExternalCredentialProvider.DelineaSecretServer,
-                new SshCredentialDiagnostic(ExternalCredentialProvider.DelineaSecretServer,
-                                            SshCredentialDiagnosticSeverity.ProtocolError,
-                                            "Secret Server Interface Error: boom"));
+            Assert.That(credential.Diagnostics, Has.Count.EqualTo(1));
+            Assert.That(credential.Diagnostics[0].Provider, Is.EqualTo(ExternalCredentialProvider.LAPS));
+            Assert.That(credential.Diagnostics[0].Severity,
+                Is.EqualTo(SshCredentialDiagnosticSeverity.Error));
+        });
+    }
 
-            using ResolvedSshCredential credential = Resolver([failing]).Resolve(
-                Connection(provider: ExternalCredentialProvider.DelineaSecretServer),
-                SshCredentialResolutionOptions.ForPutty);
+    [Test]
+    public void ASuccessfulProviderMayLegitimatelyReturnEmptyCredentials()
+    {
+        FakeProvider empty = FakeProvider.Returning(
+            ExternalCredentialProvider.LAPS, username: "", password: "");
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(credential.EffectiveUsername, Is.EqualTo("alice"),
-                            "A failed provider must not wipe the configured username.");
-                Assert.That(credential.RevealSecret(), Is.EqualTo("secret123"),
-                            "A failed provider must not wipe the configured password.");
-                Assert.That(credential.Provenance, Is.EqualTo(ExternalCredentialProvider.None));
-            });
-        }
+        using ResolvedSshCredential credential = Resolver([empty]).Resolve(
+            Connection(provider: ExternalCredentialProvider.LAPS),
+            SshCredentialResolutionOptions.ForPutty);
 
-        [Test]
-        public void AFailedProviderDoesNotThrowAndSurfacesItsDiagnostic()
+        Assert.That(credential.HasSecret, Is.False,
+            "Success overwrites unconditionally, even with empty values.");
+    }
+
+    // ---- provider supplies a private key -------------------------------------
+
+    [TestCase(ExternalCredentialProvider.DelineaSecretServer)]
+    [TestCase(ExternalCredentialProvider.ClickstudiosPasswordState)]
+    public void KeyMaterialIsCarriedForProvidersThatMaterialiseIt(ExternalCredentialProvider kind)
+    {
+        FakeProvider p = FakeProvider.Returning(kind, password: "", privateKey: "PRIVATE-KEY-BODY");
+
+        using ResolvedSshCredential credential = Resolver([p]).Resolve(
+            Connection(provider: kind), SshCredentialResolutionOptions.ForPutty);
+
+        Assert.Multiple(() =>
         {
-            FakeProvider failing = FakeProvider.Failing(
-                ExternalCredentialProvider.LAPS,
-                new SshCredentialDiagnostic(ExternalCredentialProvider.LAPS,
-                                            SshCredentialDiagnosticSeverity.Error, "LAPS query failed"));
+            Assert.That(credential.HasKeyMaterial, Is.True);
+            Assert.That(credential.RevealKeyMaterial(), Is.EqualTo("PRIVATE-KEY-BODY"));
+        });
+    }
 
-            using ResolvedSshCredential credential = Resolver([failing]).Resolve(
-                Connection(provider: ExternalCredentialProvider.LAPS),
-                SshCredentialResolutionOptions.ForPutty);
+    [TestCase(ExternalCredentialProvider.OnePassword)]
+    [TestCase(ExternalCredentialProvider.PasswordSafe)]
+    public void KeyMaterialIsDiscardedForProvidersThatNeverMaterialisedIt(ExternalCredentialProvider kind)
+    {
+        // Preserves a live bug: these two branches read a private key into the same local and
+        // then never use it, because the argument builder keys off the temp file path that
+        // only Delinea and Passwordstate write. Pinned so the refactor cannot change it by
+        // accident; fixing it is a separate change.
+        FakeProvider p = FakeProvider.Returning(kind, password: "", privateKey: "PRIVATE-KEY-BODY");
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(credential.Diagnostics, Has.Count.EqualTo(1));
-                Assert.That(credential.Diagnostics[0].Provider, Is.EqualTo(ExternalCredentialProvider.LAPS));
-                Assert.That(credential.Diagnostics[0].Severity,
-                            Is.EqualTo(SshCredentialDiagnosticSeverity.Error));
-            });
-        }
+        using ResolvedSshCredential credential = Resolver([p]).Resolve(
+            Connection(provider: kind), SshCredentialResolutionOptions.ForPutty);
 
-        [Test]
-        public void ASuccessfulProviderMayLegitimatelyReturnEmptyCredentials()
+        Assert.That(credential.HasKeyMaterial, Is.False);
+    }
+
+    // ---- username fallback ----------------------------------------------------
+
+    [Test]
+    public void EmptyUsernameFallsBackToTheWindowsUser()
+    {
+        mRemoteNG.Properties.OptionsCredentialsPage.Default.EmptyCredentials = "windows";
+
+        using ResolvedSshCredential credential = Resolver().Resolve(
+            Connection(username: ""), SshCredentialResolutionOptions.ForPutty);
+
+        Assert.That(credential.EffectiveUsername, Is.EqualTo(Environment.UserName));
+    }
+
+    [Test]
+    public void EmptyUsernameFallsBackToTheConfiguredDefaultUsername()
+    {
+        var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
+        settings.EmptyCredentials = "custom";
+        settings.DefaultUsername = "svc-default";
+
+        using ResolvedSshCredential credential = Resolver().Resolve(
+            Connection(username: ""), SshCredentialResolutionOptions.ForPutty);
+
+        Assert.That(credential.EffectiveUsername, Is.EqualTo("svc-default"));
+    }
+
+    [Test]
+    public void EmptyUsernameUnderNoinfoStaysEmpty()
+    {
+        using ResolvedSshCredential credential = Resolver().Resolve(
+            Connection(username: ""), SshCredentialResolutionOptions.ForPutty);
+
+        Assert.That(credential.EffectiveUsername, Is.Empty);
+    }
+
+    [Test]
+    public void CustomFallbackConsultsTheDefaultProviderWhenNoDefaultUsernameIsSet()
+    {
+        var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
+        settings.EmptyCredentials = "custom";
+        settings.DefaultUsername = "";
+        settings.UserViaAPIDefault = "vault-key";
+        settings.ExternalCredentialProviderDefault = ExternalCredentialProvider.OnePassword;
+
+        FakeProvider op = FakeProvider.Returning(
+            ExternalCredentialProvider.OnePassword, username: "op-user", password: "op-pw");
+
+        using ResolvedSshCredential credential = Resolver([op]).Resolve(
+            Connection(username: ""), SshCredentialResolutionOptions.ForPutty);
+
+        Assert.Multiple(() =>
         {
-            FakeProvider empty = FakeProvider.Returning(
-                ExternalCredentialProvider.LAPS, username: "", password: "");
+            Assert.That(credential.EffectiveUsername, Is.EqualTo("op-user"));
+            Assert.That(credential.RevealSecret(), Is.EqualTo("op-pw"));
+            Assert.That(op.LastRequest.UserViaApi, Is.EqualTo("vault-key"),
+                "The default fallback must use UserViaAPIDefault, not the connection's key.");
+        });
+    }
 
-            using ResolvedSshCredential credential = Resolver([empty]).Resolve(
-                Connection(provider: ExternalCredentialProvider.LAPS),
-                SshCredentialResolutionOptions.ForPutty);
+    [TestCase(ExternalCredentialProvider.VaultOpenbao)]
+    [TestCase(ExternalCredentialProvider.LAPS)]
+    public void VaultAndLapsDoNotParticipateInTheDefaultCredentialFallback(ExternalCredentialProvider kind)
+    {
+        var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
+        settings.EmptyCredentials = "custom";
+        settings.DefaultUsername = "";
+        settings.ExternalCredentialProviderDefault = kind;
 
-            Assert.That(credential.HasSecret, Is.False,
-                        "Success overwrites unconditionally, even with empty values.");
-        }
+        FakeProvider p = FakeProvider.Returning(kind, username: "should-not-be-used");
 
-        // ---- provider supplies a private key -------------------------------------
+        using ResolvedSshCredential credential = Resolver([p]).Resolve(
+            Connection(username: ""), SshCredentialResolutionOptions.ForPutty);
 
-        [TestCase(ExternalCredentialProvider.DelineaSecretServer)]
-        [TestCase(ExternalCredentialProvider.ClickstudiosPasswordState)]
-        public void KeyMaterialIsCarriedForProvidersThatMaterialiseIt(ExternalCredentialProvider kind)
+        Assert.Multiple(() =>
         {
-            FakeProvider p = FakeProvider.Returning(kind, password: "", privateKey: "PRIVATE-KEY-BODY");
-
-            using ResolvedSshCredential credential = Resolver([p]).Resolve(
-                Connection(provider: kind), SshCredentialResolutionOptions.ForPutty);
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(credential.HasKeyMaterial, Is.True);
-                Assert.That(credential.RevealKeyMaterial(), Is.EqualTo("PRIVATE-KEY-BODY"));
-            });
-        }
-
-        [TestCase(ExternalCredentialProvider.OnePassword)]
-        [TestCase(ExternalCredentialProvider.PasswordSafe)]
-        public void KeyMaterialIsDiscardedForProvidersThatNeverMaterialisedIt(ExternalCredentialProvider kind)
-        {
-            // Preserves a live bug: these two branches read a private key into the same local and
-            // then never use it, because the argument builder keys off the temp file path that
-            // only Delinea and Passwordstate write. Pinned so the refactor cannot change it by
-            // accident; fixing it is a separate change.
-            FakeProvider p = FakeProvider.Returning(kind, password: "", privateKey: "PRIVATE-KEY-BODY");
-
-            using ResolvedSshCredential credential = Resolver([p]).Resolve(
-                Connection(provider: kind), SshCredentialResolutionOptions.ForPutty);
-
-            Assert.That(credential.HasKeyMaterial, Is.False);
-        }
-
-        // ---- username fallback ----------------------------------------------------
-
-        [Test]
-        public void EmptyUsernameFallsBackToTheWindowsUser()
-        {
-            mRemoteNG.Properties.OptionsCredentialsPage.Default.EmptyCredentials = "windows";
-
-            using ResolvedSshCredential credential = Resolver().Resolve(
-                Connection(username: ""), SshCredentialResolutionOptions.ForPutty);
-
-            Assert.That(credential.EffectiveUsername, Is.EqualTo(Environment.UserName));
-        }
-
-        [Test]
-        public void EmptyUsernameFallsBackToTheConfiguredDefaultUsername()
-        {
-            var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
-            settings.EmptyCredentials = "custom";
-            settings.DefaultUsername = "svc-default";
-
-            using ResolvedSshCredential credential = Resolver().Resolve(
-                Connection(username: ""), SshCredentialResolutionOptions.ForPutty);
-
-            Assert.That(credential.EffectiveUsername, Is.EqualTo("svc-default"));
-        }
-
-        [Test]
-        public void EmptyUsernameUnderNoinfoStaysEmpty()
-        {
-            using ResolvedSshCredential credential = Resolver().Resolve(
-                Connection(username: ""), SshCredentialResolutionOptions.ForPutty);
-
+            Assert.That(p.CallCount, Is.Zero);
             Assert.That(credential.EffectiveUsername, Is.Empty);
-        }
+        });
+    }
 
-        [Test]
-        public void CustomFallbackConsultsTheDefaultProviderWhenNoDefaultUsernameIsSet()
-        {
-            var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
-            settings.EmptyCredentials = "custom";
-            settings.DefaultUsername = "";
-            settings.UserViaAPIDefault = "vault-key";
-            settings.ExternalCredentialProviderDefault = ExternalCredentialProvider.OnePassword;
+    // ---- domain qualification --------------------------------------------------
 
-            FakeProvider op = FakeProvider.Returning(
-                ExternalCredentialProvider.OnePassword, username: "op-user", password: "op-pw");
+    [TestCase("alice", "CORP", @"CORP\alice")]
+    [TestCase("alice", "", "alice")]
+    [TestCase(@"OTHER\alice", "CORP", @"OTHER\alice")]
+    [TestCase("alice@other.example", "CORP", "alice@other.example")]
+    [TestCase("", "CORP", "")]
+    public void DomainQualificationMatchesThePuttyBehaviour(string username, string domain, string expected)
+    {
+        using ResolvedSshCredential credential = Resolver().Resolve(
+            Connection(username: username, domain: domain), SshCredentialResolutionOptions.ForPutty);
 
-            using ResolvedSshCredential credential = Resolver([op]).Resolve(
-                Connection(username: ""), SshCredentialResolutionOptions.ForPutty);
+        Assert.That(credential.EffectiveUsername, Is.EqualTo(expected));
+    }
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(credential.EffectiveUsername, Is.EqualTo("op-user"));
-                Assert.That(credential.RevealSecret(), Is.EqualTo("op-pw"));
-                Assert.That(op.LastRequest.UserViaApi, Is.EqualTo("vault-key"),
-                            "The default fallback must use UserViaAPIDefault, not the connection's key.");
-            });
-        }
+    [Test]
+    public void DomainQualificationAppliesToAProviderSuppliedUsername()
+    {
+        FakeProvider laps = FakeProvider.Returning(
+            ExternalCredentialProvider.LAPS, username: "Administrator", password: "pw");
 
-        [TestCase(ExternalCredentialProvider.VaultOpenbao)]
-        [TestCase(ExternalCredentialProvider.LAPS)]
-        public void VaultAndLapsDoNotParticipateInTheDefaultCredentialFallback(ExternalCredentialProvider kind)
-        {
-            var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
-            settings.EmptyCredentials = "custom";
-            settings.DefaultUsername = "";
-            settings.ExternalCredentialProviderDefault = kind;
+        using ResolvedSshCredential credential = Resolver([laps]).Resolve(
+            Connection(domain: "CORP", provider: ExternalCredentialProvider.LAPS),
+            SshCredentialResolutionOptions.ForPutty);
 
-            FakeProvider p = FakeProvider.Returning(kind, username: "should-not-be-used");
+        Assert.That(credential.EffectiveUsername, Is.EqualTo(@"CORP\Administrator"));
+    }
 
-            using ResolvedSshCredential credential = Resolver([p]).Resolve(
-                Connection(username: ""), SshCredentialResolutionOptions.ForPutty);
+    // ---- default key discovery --------------------------------------------------
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(p.CallCount, Is.Zero);
-                Assert.That(credential.EffectiveUsername, Is.Empty);
-            });
-        }
+    [Test]
+    public void DiscoveryRunsOnlyWhenThereIsNoPasswordAndNoConfiguredKey()
+    {
+        using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519.ppk")
+            .Resolve(Connection(password: ""), SshCredentialResolutionOptions.ForPutty);
 
-        // ---- domain qualification --------------------------------------------------
+        Assert.That(credential.PrivateKeyPath, Is.EqualTo(@"C:\keys\id_ed25519.ppk"));
+    }
 
-        [TestCase("alice", "CORP", @"CORP\alice")]
-        [TestCase("alice", "", "alice")]
-        [TestCase(@"OTHER\alice", "CORP", @"OTHER\alice")]
-        [TestCase("alice@other.example", "CORP", "alice@other.example")]
-        [TestCase("", "CORP", "")]
-        public void DomainQualificationMatchesThePuttyBehaviour(string username, string domain, string expected)
-        {
-            using ResolvedSshCredential credential = Resolver().Resolve(
-                Connection(username: username, domain: domain), SshCredentialResolutionOptions.ForPutty);
+    [Test]
+    public void DiscoveryIsSkippedWhenAPasswordIsPresent()
+    {
+        using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519.ppk")
+            .Resolve(Connection(), SshCredentialResolutionOptions.ForPutty);
 
-            Assert.That(credential.EffectiveUsername, Is.EqualTo(expected));
-        }
+        Assert.That(credential.PrivateKeyPath, Is.Null);
+    }
 
-        [Test]
-        public void DomainQualificationAppliesToAProviderSuppliedUsername()
-        {
-            FakeProvider laps = FakeProvider.Returning(
-                ExternalCredentialProvider.LAPS, username: "Administrator", password: "pw");
-
-            using ResolvedSshCredential credential = Resolver([laps]).Resolve(
-                Connection(domain: "CORP", provider: ExternalCredentialProvider.LAPS),
+    [Test]
+    public void AConfiguredKeyPathBeatsDiscovery()
+    {
+        using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\discovered.ppk")
+            .Resolve(Connection(password: "", privateKeyPath: @"C:\keys\configured.ppk"),
                 SshCredentialResolutionOptions.ForPutty);
 
-            Assert.That(credential.EffectiveUsername, Is.EqualTo(@"CORP\Administrator"));
-        }
+        Assert.That(credential.PrivateKeyPath, Is.EqualTo(@"C:\keys\configured.ppk"));
+    }
 
-        // ---- default key discovery --------------------------------------------------
+    [Test]
+    public void MaterialisedKeyMaterialSuppressesDiscovery()
+    {
+        FakeProvider delinea = FakeProvider.Returning(
+            ExternalCredentialProvider.DelineaSecretServer, password: "", privateKey: "KEY");
 
-        [Test]
-        public void DiscoveryRunsOnlyWhenThereIsNoPasswordAndNoConfiguredKey()
-        {
-            using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519.ppk")
-                .Resolve(Connection(password: ""), SshCredentialResolutionOptions.ForPutty);
-
-            Assert.That(credential.PrivateKeyPath, Is.EqualTo(@"C:\keys\id_ed25519.ppk"));
-        }
-
-        [Test]
-        public void DiscoveryIsSkippedWhenAPasswordIsPresent()
-        {
-            using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519.ppk")
-                .Resolve(Connection(), SshCredentialResolutionOptions.ForPutty);
-
-            Assert.That(credential.PrivateKeyPath, Is.Null);
-        }
-
-        [Test]
-        public void AConfiguredKeyPathBeatsDiscovery()
-        {
-            using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\discovered.ppk")
-                .Resolve(Connection(password: "", privateKeyPath: @"C:\keys\configured.ppk"),
-                         SshCredentialResolutionOptions.ForPutty);
-
-            Assert.That(credential.PrivateKeyPath, Is.EqualTo(@"C:\keys\configured.ppk"));
-        }
-
-        [Test]
-        public void MaterialisedKeyMaterialSuppressesDiscovery()
-        {
-            FakeProvider delinea = FakeProvider.Returning(
-                ExternalCredentialProvider.DelineaSecretServer, password: "", privateKey: "KEY");
-
-            using ResolvedSshCredential credential = Resolver([delinea], discoverableKey: @"C:\keys\discovered.ppk")
-                .Resolve(Connection(password: "", provider: ExternalCredentialProvider.DelineaSecretServer),
-                         SshCredentialResolutionOptions.ForPutty);
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(credential.HasKeyMaterial, Is.True);
-                Assert.That(credential.PrivateKeyPath, Is.Null);
-            });
-        }
-
-        [Test]
-        public void DiscoveryStillRunsWithAPasswordWhenTheBackendCannotUseOne()
-        {
-            // ssh.exe has no way to accept a password non-interactively, so a stored password is
-            // not an alternative to a key. Gating discovery on the mere presence of a secret would
-            // strip the key an OpenSSH connection authenticates with today.
-            using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519")
-                .Resolve(Connection(password: "secret123"), SshCredentialResolutionOptions.ForOpenSsh);
-
-            Assert.That(credential.PrivateKeyPath, Is.EqualTo(@"C:\keys\id_ed25519"));
-        }
-
-        [Test]
-        public void DiscoveryIsStillSkippedWithAPasswordWhenTheBackendCanUseOne()
-        {
-            using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519.ppk")
-                .Resolve(Connection(password: "secret123"), SshCredentialResolutionOptions.ForPutty);
-
-            Assert.That(credential.PrivateKeyPath, Is.Null);
-        }
-
-        [Test]
-        public void DiscoveryModeNoneFindsNothing()
-        {
-            using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519.ppk")
-                .Resolve(Connection(password: ""), SshCredentialResolutionOptions.None);
-
-            Assert.That(credential.PrivateKeyPath, Is.Null);
-        }
-
-        [Test]
-        public void TheBackendChoosesWhichKeyFormatIsDiscovered()
-        {
-            RecordingKeyLocator locator = new();
-            SshCredentialResolver resolver = new([], locator);
-
-            resolver.Resolve(Connection(password: ""), SshCredentialResolutionOptions.ForPutty).Dispose();
-            resolver.Resolve(Connection(password: ""), SshCredentialResolutionOptions.ForOpenSsh).Dispose();
-
-            Assert.That(locator.Modes, Is.EqualTo(new[]
-            {
-                DefaultKeyDiscoveryMode.PuttyPpk,
-                DefaultKeyDiscoveryMode.OpenSsh
-            }));
-        }
-
-        // ---- default-password guard --------------------------------------------------
-
-        [Test]
-        public void TheDefaultPasswordIsNotAppliedWhenTheProviderDidNotMaterialiseAKey()
-        {
-            var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
-            settings.EmptyCredentials = "custom";
-            settings.DefaultUsername = "svc";
-
-            FakeProvider op = FakeProvider.Returning(
-                ExternalCredentialProvider.OnePassword, username: "u", password: "", privateKey: "KEY");
-
-            using ResolvedSshCredential credential = Resolver([op]).Resolve(
-                Connection(provider: ExternalCredentialProvider.OnePassword),
+        using ResolvedSshCredential credential = Resolver([delinea], discoverableKey: @"C:\keys\discovered.ppk")
+            .Resolve(Connection(password: "", provider: ExternalCredentialProvider.DelineaSecretServer),
                 SshCredentialResolutionOptions.ForPutty);
 
-            Assert.That(credential.HasSecret, Is.False,
-                        "The stored default password only applies when key material was materialised.");
-        }
-
-        [Test]
-        public void TheDefaultPasswordIsNotAppliedUnderNoinfo()
+        Assert.Multiple(() =>
         {
-            FakeProvider delinea = FakeProvider.Returning(
-                ExternalCredentialProvider.DelineaSecretServer, username: "u", password: "", privateKey: "KEY");
+            Assert.That(credential.HasKeyMaterial, Is.True);
+            Assert.That(credential.PrivateKeyPath, Is.Null);
+        });
+    }
 
-            using ResolvedSshCredential credential = Resolver([delinea]).Resolve(
-                Connection(provider: ExternalCredentialProvider.DelineaSecretServer),
-                SshCredentialResolutionOptions.ForPutty);
+    [Test]
+    public void DiscoveryStillRunsWithAPasswordWhenTheBackendCannotUseOne()
+    {
+        // ssh.exe has no way to accept a password non-interactively, so a stored password is
+        // not an alternative to a key. Gating discovery on the mere presence of a secret would
+        // strip the key an OpenSSH connection authenticates with today.
+        using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519")
+            .Resolve(Connection(password: "secret123"), SshCredentialResolutionOptions.ForOpenSsh);
 
-            Assert.That(credential.HasSecret, Is.False);
-        }
+        Assert.That(credential.PrivateKeyPath, Is.EqualTo(@"C:\keys\id_ed25519"));
+    }
 
-        // ---- re-invocable contract (D7) -------------------------------------------------
+    [Test]
+    public void DiscoveryIsStillSkippedWithAPasswordWhenTheBackendCanUseOne()
+    {
+        using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519.ppk")
+            .Resolve(Connection(password: "secret123"), SshCredentialResolutionOptions.ForPutty);
 
-        [Test]
-        public void EveryResolveCallReconsultsTheProvider()
+        Assert.That(credential.PrivateKeyPath, Is.Null);
+    }
+
+    [Test]
+    public void DiscoveryModeNoneFindsNothing()
+    {
+        using ResolvedSshCredential credential = Resolver(discoverableKey: @"C:\keys\id_ed25519.ppk")
+            .Resolve(Connection(password: ""), SshCredentialResolutionOptions.None);
+
+        Assert.That(credential.PrivateKeyPath, Is.Null);
+    }
+
+    [Test]
+    public void TheBackendChoosesWhichKeyFormatIsDiscovered()
+    {
+        RecordingKeyLocator locator = new();
+        SshCredentialResolver resolver = new([], locator);
+
+        resolver.Resolve(Connection(password: ""), SshCredentialResolutionOptions.ForPutty).Dispose();
+        resolver.Resolve(Connection(password: ""), SshCredentialResolutionOptions.ForOpenSsh).Dispose();
+
+        Assert.That(locator.Modes, Is.EqualTo(new[]
         {
-            // Vault SSH-OTP mints single-use credentials, so caching would authenticate the first
-            // connection and fail every one after it.
-            FakeProvider vault = FakeProvider.Sequence(
-                ExternalCredentialProvider.VaultOpenbao, "otp-1", "otp-2", "otp-3");
+            DefaultKeyDiscoveryMode.PuttyPpk,
+            DefaultKeyDiscoveryMode.OpenSsh
+        }));
+    }
 
-            SshCredentialResolver resolver = Resolver([vault]);
-            ConnectionInfo info = Connection(provider: ExternalCredentialProvider.VaultOpenbao);
+    // ---- default-password guard --------------------------------------------------
 
-            using ResolvedSshCredential first = resolver.Resolve(info, SshCredentialResolutionOptions.ForPutty);
-            using ResolvedSshCredential second = resolver.Resolve(info, SshCredentialResolutionOptions.ForPutty);
-            using ResolvedSshCredential third = resolver.Resolve(info, SshCredentialResolutionOptions.ForPutty);
+    [Test]
+    public void TheDefaultPasswordIsNotAppliedWhenTheProviderDidNotMaterialiseAKey()
+    {
+        var settings = mRemoteNG.Properties.OptionsCredentialsPage.Default;
+        settings.EmptyCredentials = "custom";
+        settings.DefaultUsername = "svc";
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(vault.CallCount, Is.EqualTo(3));
-                Assert.That(first.RevealSecret(), Is.EqualTo("otp-1"));
-                Assert.That(second.RevealSecret(), Is.EqualTo("otp-2"));
-                Assert.That(third.RevealSecret(), Is.EqualTo("otp-3"));
-            });
-        }
+        FakeProvider op = FakeProvider.Returning(
+            ExternalCredentialProvider.OnePassword, username: "u", password: "", privateKey: "KEY");
 
-        // ---- agent identities (task 7.1) ------------------------------------------------
+        using ResolvedSshCredential credential = Resolver([op]).Resolve(
+            Connection(provider: ExternalCredentialProvider.OnePassword),
+            SshCredentialResolutionOptions.ForPutty);
 
-        private static readonly SshAgentIdentity AgentKey = new("alice@laptop", "ssh-ed25519");
+        Assert.That(credential.HasSecret, Is.False,
+            "The stored default password only applies when key material was materialised.");
+    }
 
-        [Test]
-        public void AgentIdentitiesAreCarriedWhenTheBackendConsultsTheAgent()
+    [Test]
+    public void TheDefaultPasswordIsNotAppliedUnderNoinfo()
+    {
+        FakeProvider delinea = FakeProvider.Returning(
+            ExternalCredentialProvider.DelineaSecretServer, username: "u", password: "", privateKey: "KEY");
+
+        using ResolvedSshCredential credential = Resolver([delinea]).Resolve(
+            Connection(provider: ExternalCredentialProvider.DelineaSecretServer),
+            SshCredentialResolutionOptions.ForPutty);
+
+        Assert.That(credential.HasSecret, Is.False);
+    }
+
+    // ---- re-invocable contract (D7) -------------------------------------------------
+
+    [Test]
+    public void EveryResolveCallReconsultsTheProvider()
+    {
+        // Vault SSH-OTP mints single-use credentials, so caching would authenticate the first
+        // connection and fail every one after it.
+        FakeProvider vault = FakeProvider.Sequence(
+            ExternalCredentialProvider.VaultOpenbao, "otp-1", "otp-2", "otp-3");
+
+        SshCredentialResolver resolver = Resolver([vault]);
+        ConnectionInfo info = Connection(provider: ExternalCredentialProvider.VaultOpenbao);
+
+        using ResolvedSshCredential first = resolver.Resolve(info, SshCredentialResolutionOptions.ForPutty);
+        using ResolvedSshCredential second = resolver.Resolve(info, SshCredentialResolutionOptions.ForPutty);
+        using ResolvedSshCredential third = resolver.Resolve(info, SshCredentialResolutionOptions.ForPutty);
+
+        Assert.Multiple(() =>
         {
-            SshCredentialResolver resolver = new([], new StubKeyLocator(null), new StubAgentProvider([AgentKey]));
+            Assert.That(vault.CallCount, Is.EqualTo(3));
+            Assert.That(first.RevealSecret(), Is.EqualTo("otp-1"));
+            Assert.That(second.RevealSecret(), Is.EqualTo("otp-2"));
+            Assert.That(third.RevealSecret(), Is.EqualTo("otp-3"));
+        });
+    }
 
-            using ResolvedSshCredential credential = resolver.Resolve(
-                Connection(), SshCredentialResolutionOptions.ForSshNet(agentEnabled: true));
+    // ---- agent identities (task 7.1) ------------------------------------------------
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(credential.HasAgentIdentities, Is.True);
-                Assert.That(credential.AgentIdentities, Is.EqualTo(new[] { AgentKey }));
-            });
-        }
+    private static readonly SshAgentIdentity AgentKey = new("alice@laptop", "ssh-ed25519");
 
-        [Test]
-        public void TheAgentIsNotContactedWhenTheSettingIsOff()
+    [Test]
+    public void AgentIdentitiesAreCarriedWhenTheBackendConsultsTheAgent()
+    {
+        SshCredentialResolver resolver = new([], new StubKeyLocator(null), new StubAgentProvider([AgentKey]));
+
+        using ResolvedSshCredential credential = resolver.Resolve(
+            Connection(), SshCredentialResolutionOptions.ForSshNet(agentEnabled: true));
+
+        Assert.Multiple(() =>
         {
-            StubAgentProvider agent = new([AgentKey]);
-            SshCredentialResolver resolver = new([], new StubKeyLocator(null), agent);
+            Assert.That(credential.HasAgentIdentities, Is.True);
+            Assert.That(credential.AgentIdentities, Is.EqualTo(new[] { AgentKey }));
+        });
+    }
 
-            using ResolvedSshCredential credential = resolver.Resolve(
-                Connection(), SshCredentialResolutionOptions.ForSshNet(agentEnabled: false));
+    [Test]
+    public void TheAgentIsNotContactedWhenTheSettingIsOff()
+    {
+        StubAgentProvider agent = new([AgentKey]);
+        SshCredentialResolver resolver = new([], new StubKeyLocator(null), agent);
 
-            Assert.Multiple(() =>
-            {
-                Assert.That(agent.CallCount, Is.Zero);
-                Assert.That(credential.HasAgentIdentities, Is.False);
-            });
-        }
+        using ResolvedSshCredential credential = resolver.Resolve(
+            Connection(), SshCredentialResolutionOptions.ForSshNet(agentEnabled: false));
 
-        [TestCase(false)]
-        public void BackendsWithANativeAgentNeverContactTheProvider(bool _)
+        Assert.Multiple(() =>
         {
-            StubAgentProvider agent = new([AgentKey]);
-            SshCredentialResolver resolver = new([], new StubKeyLocator(null), agent);
-
-            resolver.Resolve(Connection(), SshCredentialResolutionOptions.ForPutty).Dispose();
-            resolver.Resolve(Connection(), SshCredentialResolutionOptions.ForOpenSsh).Dispose();
-
-            Assert.That(agent.CallCount, Is.Zero,
-                        "PuTTY uses Pageant natively and ssh.exe uses the Windows agent natively.");
-        }
-
-        [Test]
-        public void AResolverWithNoAgentProviderStillResolves()
-        {
-            SshCredentialResolver resolver = new([], new StubKeyLocator(null));
-
-            using ResolvedSshCredential credential = resolver.Resolve(
-                Connection(), SshCredentialResolutionOptions.ForSshNet(agentEnabled: true));
-
+            Assert.That(agent.CallCount, Is.Zero);
             Assert.That(credential.HasAgentIdentities, Is.False);
+        });
+    }
+
+    [TestCase(false)]
+    public void BackendsWithANativeAgentNeverContactTheProvider(bool _)
+    {
+        StubAgentProvider agent = new([AgentKey]);
+        SshCredentialResolver resolver = new([], new StubKeyLocator(null), agent);
+
+        resolver.Resolve(Connection(), SshCredentialResolutionOptions.ForPutty).Dispose();
+        resolver.Resolve(Connection(), SshCredentialResolutionOptions.ForOpenSsh).Dispose();
+
+        Assert.That(agent.CallCount, Is.Zero,
+            "PuTTY uses Pageant natively and ssh.exe uses the Windows agent natively.");
+    }
+
+    [Test]
+    public void AResolverWithNoAgentProviderStillResolves()
+    {
+        SshCredentialResolver resolver = new([], new StubKeyLocator(null));
+
+        using ResolvedSshCredential credential = resolver.Resolve(
+            Connection(), SshCredentialResolutionOptions.ForSshNet(agentEnabled: true));
+
+        Assert.That(credential.HasAgentIdentities, Is.False);
+    }
+
+    [Test]
+    public void AgentIdentitiesDoNotSuppressProviderKeyMaterial()
+    {
+        // An agent holding SOME key says nothing about whether it holds THIS connection's key.
+        // Suppressing the vault-supplied key because an unrelated agent identity exists would
+        // break authentication outright. Agent identities are additive - design.md D5.
+        FakeProvider delinea = FakeProvider.Returning(
+            ExternalCredentialProvider.DelineaSecretServer, password: "", privateKey: "VAULT-KEY");
+
+        SshCredentialResolver resolver = new(
+            [delinea], new StubKeyLocator(null), new StubAgentProvider([AgentKey]));
+
+        using ResolvedSshCredential credential = resolver.Resolve(
+            Connection(password: "", provider: ExternalCredentialProvider.DelineaSecretServer),
+            SshCredentialResolutionOptions.ForSshNet(agentEnabled: true));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(credential.HasAgentIdentities, Is.True);
+            Assert.That(credential.HasKeyMaterial, Is.True, "The vault key must still be offered.");
+            Assert.That(credential.RevealKeyMaterial(), Is.EqualTo("VAULT-KEY"));
+        });
+    }
+
+    [Test]
+    public void AgentIdentitiesDoNotSuppressAConfiguredKeyPath()
+    {
+        SshCredentialResolver resolver = new(
+            [], new StubKeyLocator(null), new StubAgentProvider([AgentKey]));
+
+        using ResolvedSshCredential credential = resolver.Resolve(
+            Connection(password: "", privateKeyPath: @"C:\keys\configured.ppk"),
+            SshCredentialResolutionOptions.ForSshNet(agentEnabled: true));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(credential.HasAgentIdentities, Is.True);
+            Assert.That(credential.PrivateKeyPath, Is.EqualTo(@"C:\keys\configured.ppk"));
+        });
+    }
+
+    // ---- argument validation ------------------------------------------------------
+
+    [Test]
+    public void ANullConnectionIsRejected()
+    {
+        Assert.Throws<ArgumentNullException>(
+            () => Resolver().Resolve(null!, SshCredentialResolutionOptions.ForPutty));
+    }
+
+    // ---- fakes --------------------------------------------------------------------
+
+    private sealed class FakeProvider : ISshCredentialProvider
+    {
+        private readonly Queue<string>? _passwordSequence;
+        private SshProviderResult _result = SshProviderResult.Empty;
+
+        private FakeProvider(ExternalCredentialProvider kind, Queue<string>? passwordSequence = null)
+        {
+            Kind = kind;
+            _passwordSequence = passwordSequence;
         }
 
-        [Test]
-        public void AgentIdentitiesDoNotSuppressProviderKeyMaterial()
+        public ExternalCredentialProvider Kind { get; }
+        public int CallCount { get; private set; }
+        public SshProviderRequest LastRequest { get; private set; }
+
+        public static FakeProvider Returning(
+            ExternalCredentialProvider kind,
+            string username = "provider-user",
+            string password = "provider-pw",
+            string privateKey = "") =>
+            new(kind) { _result = new SshProviderResult(username, password, privateKey, []) };
+
+        public static FakeProvider Failing(ExternalCredentialProvider kind, SshCredentialDiagnostic diagnostic) =>
+            new(kind) { _result = SshProviderResult.Failed(diagnostic) };
+
+        public static FakeProvider Sequence(ExternalCredentialProvider kind, params string[] passwords) =>
+            new(kind, new Queue<string>(passwords));
+
+        public SshProviderResult Fetch(SshProviderRequest request)
         {
-            // An agent holding SOME key says nothing about whether it holds THIS connection's key.
-            // Suppressing the vault-supplied key because an unrelated agent identity exists would
-            // break authentication outright. Agent identities are additive - design.md D5.
-            FakeProvider delinea = FakeProvider.Returning(
-                ExternalCredentialProvider.DelineaSecretServer, password: "", privateKey: "VAULT-KEY");
+            CallCount++;
+            LastRequest = request;
 
-            SshCredentialResolver resolver = new(
-                [delinea], new StubKeyLocator(null), new StubAgentProvider([AgentKey]));
+            if (_passwordSequence is not null)
+                return new SshProviderResult("provider-user", _passwordSequence.Dequeue(), string.Empty, []);
 
-            using ResolvedSshCredential credential = resolver.Resolve(
-                Connection(password: "", provider: ExternalCredentialProvider.DelineaSecretServer),
-                SshCredentialResolutionOptions.ForSshNet(agentEnabled: true));
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(credential.HasAgentIdentities, Is.True);
-                Assert.That(credential.HasKeyMaterial, Is.True, "The vault key must still be offered.");
-                Assert.That(credential.RevealKeyMaterial(), Is.EqualTo("VAULT-KEY"));
-            });
+            return _result;
         }
+    }
 
-        [Test]
-        public void AgentIdentitiesDoNotSuppressAConfiguredKeyPath()
+    private sealed class StubKeyLocator(string? key) : IDefaultSshKeyLocator
+    {
+        public string? Locate(DefaultKeyDiscoveryMode mode) =>
+            mode == DefaultKeyDiscoveryMode.None ? null : key;
+    }
+
+    private sealed class StubAgentProvider(IReadOnlyList<SshAgentIdentity> identities)
+        : mRemoteNG.Security.Ssh.Agent.ISshAgentProvider
+    {
+        public int CallCount { get; private set; }
+
+        public IReadOnlyList<SshAgentIdentity> GetIdentities(
+            mRemoteNG.Security.Ssh.Agent.SshAgentQuery query)
         {
-            SshCredentialResolver resolver = new(
-                [], new StubKeyLocator(null), new StubAgentProvider([AgentKey]));
-
-            using ResolvedSshCredential credential = resolver.Resolve(
-                Connection(password: "", privateKeyPath: @"C:\keys\configured.ppk"),
-                SshCredentialResolutionOptions.ForSshNet(agentEnabled: true));
-
-            Assert.Multiple(() =>
-            {
-                Assert.That(credential.HasAgentIdentities, Is.True);
-                Assert.That(credential.PrivateKeyPath, Is.EqualTo(@"C:\keys\configured.ppk"));
-            });
+            CallCount++;
+            return identities;
         }
+    }
 
-        // ---- argument validation ------------------------------------------------------
+    private sealed class RecordingKeyLocator : IDefaultSshKeyLocator
+    {
+        public List<DefaultKeyDiscoveryMode> Modes { get; } = [];
 
-        [Test]
-        public void ANullConnectionIsRejected()
+        public string? Locate(DefaultKeyDiscoveryMode mode)
         {
-            Assert.Throws<ArgumentNullException>(
-                () => Resolver().Resolve(null!, SshCredentialResolutionOptions.ForPutty));
-        }
-
-        // ---- fakes --------------------------------------------------------------------
-
-        private sealed class FakeProvider : ISshCredentialProvider
-        {
-            private readonly Queue<string>? _passwordSequence;
-            private SshProviderResult _result = SshProviderResult.Empty;
-
-            private FakeProvider(ExternalCredentialProvider kind, Queue<string>? passwordSequence = null)
-            {
-                Kind = kind;
-                _passwordSequence = passwordSequence;
-            }
-
-            public ExternalCredentialProvider Kind { get; }
-            public int CallCount { get; private set; }
-            public SshProviderRequest LastRequest { get; private set; }
-
-            public static FakeProvider Returning(
-                ExternalCredentialProvider kind,
-                string username = "provider-user",
-                string password = "provider-pw",
-                string privateKey = "") =>
-                new(kind) { _result = new SshProviderResult(username, password, privateKey, []) };
-
-            public static FakeProvider Failing(ExternalCredentialProvider kind, SshCredentialDiagnostic diagnostic) =>
-                new(kind) { _result = SshProviderResult.Failed(diagnostic) };
-
-            public static FakeProvider Sequence(ExternalCredentialProvider kind, params string[] passwords) =>
-                new(kind, new Queue<string>(passwords));
-
-            public SshProviderResult Fetch(SshProviderRequest request)
-            {
-                CallCount++;
-                LastRequest = request;
-
-                if (_passwordSequence is not null)
-                    return new SshProviderResult("provider-user", _passwordSequence.Dequeue(), string.Empty, []);
-
-                return _result;
-            }
-        }
-
-        private sealed class StubKeyLocator(string? key) : IDefaultSshKeyLocator
-        {
-            public string? Locate(DefaultKeyDiscoveryMode mode) =>
-                mode == DefaultKeyDiscoveryMode.None ? null : key;
-        }
-
-        private sealed class StubAgentProvider(IReadOnlyList<SshAgentIdentity> identities)
-            : mRemoteNG.Security.Ssh.Agent.ISshAgentProvider
-        {
-            public int CallCount { get; private set; }
-
-            public IReadOnlyList<SshAgentIdentity> GetIdentities(
-                mRemoteNG.Security.Ssh.Agent.SshAgentQuery query)
-            {
-                CallCount++;
-                return identities;
-            }
-        }
-
-        private sealed class RecordingKeyLocator : IDefaultSshKeyLocator
-        {
-            public List<DefaultKeyDiscoveryMode> Modes { get; } = [];
-
-            public string? Locate(DefaultKeyDiscoveryMode mode)
-            {
-                Modes.Add(mode);
-                return null;
-            }
+            Modes.Add(mode);
+            return null;
         }
     }
 }

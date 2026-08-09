@@ -3,84 +3,83 @@ using System.ComponentModel;
 using System.Security;
 
 
-namespace mRemoteNG.Credential
+namespace mRemoteNG.Credential;
+
+public class CredentialRecord : ICredentialRecord
 {
-    public class CredentialRecord : ICredentialRecord
+    private string _title = "New Credential";
+    private string _username = "";
+    private SecureString _password = new();
+    private string _domain = "";
+
+    public Guid Id { get; } = Guid.NewGuid();
+
+    public string Title
     {
-        private string _title = "New Credential";
-        private string _username = "";
-        private SecureString _password = new();
-        private string _domain = "";
-
-        public Guid Id { get; } = Guid.NewGuid();
-
-        public string Title
+        get => _title;
+        set
         {
-            get => _title;
-            set
-            {
-                _title = value;
-                RaisePropertyChangedEvent(nameof(Title));
-            }
+            _title = value;
+            RaisePropertyChangedEvent(nameof(Title));
         }
+    }
 
-        public string Username
+    public string Username
+    {
+        get => _username;
+        set
         {
-            get => _username;
-            set
-            {
-                _username = value;
-                RaisePropertyChangedEvent(nameof(Username));
-            }
+            _username = value;
+            RaisePropertyChangedEvent(nameof(Username));
         }
+    }
 
-        public SecureString Password
+    public SecureString Password
+    {
+        get => _password;
+        set
         {
-            get => _password;
-            set
-            {
-                _password = value;
-                RaisePropertyChangedEvent(nameof(Password));
-            }
+            _password = value;
+            RaisePropertyChangedEvent(nameof(Password));
         }
+    }
 
-        public string Domain
+    public string Domain
+    {
+        get => _domain;
+        set
         {
-            get => _domain;
-            set
-            {
-                _domain = value;
-                RaisePropertyChangedEvent(nameof(Domain));
-            }
+            _domain = value;
+            RaisePropertyChangedEvent(nameof(Domain));
         }
+    }
 
 
-        public CredentialRecord()
-        {
-        }
+    public CredentialRecord()
+    {
+    }
 
-        public CredentialRecord(ICredentialRecord otherCredential)
-        {
-            Username = otherCredential.Username;
-            Password = otherCredential.Password;
-            Domain = otherCredential.Domain;
-        }
+    public CredentialRecord(ICredentialRecord otherCredential)
+    {
+        Username = otherCredential.Username;
+        Password = otherCredential.Password;
+        Domain = otherCredential.Domain;
+    }
 
-        public CredentialRecord(Guid customGuid)
-        {
-            Id = customGuid;
-        }
+    public CredentialRecord(Guid customGuid)
+    {
+        Id = customGuid;
+    }
 
-        public override string ToString()
-        {
-            return Title;
-        }
+    public override string ToString()
+    {
+        return Title;
+    }
 
-        public event PropertyChangedEventHandler? PropertyChanged;
+    public event PropertyChangedEventHandler? PropertyChanged;
 
-        protected virtual void RaisePropertyChangedEvent(string propertyName)
-        {
-            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
-        }
+    protected virtual void RaisePropertyChangedEvent(string propertyName)
+    {
+        PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(propertyName));
     }
 }

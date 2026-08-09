@@ -1,14 +1,13 @@
-﻿namespace mRemoteNG.Connection.Protocol.RDP
+﻿namespace mRemoteNG.Connection.Protocol.RDP;
+
+public enum RdpVersion
 {
-    public enum RdpVersion
-    {
-        Rdc6,
-        Rdc7,
-        Rdc8,
-        Rdc9,
-        Rdc10,
-        Rdc11,
-        //Rdc12,
-        Highest = 1000
-    }
+    Rdc6,
+    Rdc7,
+    Rdc8,
+    Rdc9,
+    Rdc10,
+    Rdc11,
+    //Rdc12,
+    Highest = 1000
 }

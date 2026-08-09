@@ -1,147 +1,146 @@
-﻿using mRemoteNG.App;
-using mRemoteNG.Connection.Protocol;
-using System;
+﻿using System;
 using System.Drawing;
+using System.Runtime.Versioning;
 using System.Windows.Forms;
+using mRemoteNG.App;
+using mRemoteNG.Connection.Protocol;
 using mRemoteNG.UI.Tabs;
 using WeifenLuo.WinFormsUI.Docking;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.Connection
+namespace mRemoteNG.Connection;
+
+[SupportedOSPlatform("windows")]
+public sealed partial class InterfaceControl
 {
-    [SupportedOSPlatform("windows")]
-    public sealed partial class InterfaceControl
+    public ProtocolBase Protocol { get; set; } = null!;
+    public ConnectionInfo Info { get; set; } = null!;
+    // in case the connection is through a SSH tunnel the Info is a copy of original info with hostname and port number overwritten with localhost and local tunnel port
+    // and the original Info is saved in the following variable
+    public ConnectionInfo OriginalInfo { get; set; } = null!;
+    // in case the connection is through a SSH tunnel the Info of the SSHTunnelConnection is also saved for reference in log messages etc.
+    public ConnectionInfo? SSHTunnelInfo { get; set; }
+
+
+    public InterfaceControl(Control parent, ProtocolBase protocol, ConnectionInfo info)
     {
-        public ProtocolBase Protocol { get; set; } = null!;
-        public ConnectionInfo Info { get; set; } = null!;
-        // in case the connection is through a SSH tunnel the Info is a copy of original info with hostname and port number overwritten with localhost and local tunnel port
-        // and the original Info is saved in the following variable
-        public ConnectionInfo OriginalInfo { get; set; } = null!;
-        // in case the connection is through a SSH tunnel the Info of the SSHTunnelConnection is also saved for reference in log messages etc.
-        public ConnectionInfo? SSHTunnelInfo { get; set; }
-
-
-        public InterfaceControl(Control parent, ProtocolBase protocol, ConnectionInfo info)
+        try
         {
-            try
+            Protocol = protocol;
+            Info = info;
+            Parent = parent;
+            Location = new Point(0, 0);
+            Size = Parent.Size;
+            Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
+            InitializeComponent();
+
+            // Enable custom painting for border
+            this.Paint += InterfaceControl_Paint;
+
+            // Set padding to prevent content from covering the frame border
+            UpdatePaddingForFrameColor();
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddMessage(Messages.MessageClass.ErrorMsg,
+                "Couldn\'t create new InterfaceControl" + Environment.NewLine +
+                ex.Message);
+        }
+    }
+
+    private void InterfaceControl_Paint(object sender, PaintEventArgs e)
+    {
+        // Draw colored border based on ConnectionFrameColor property
+        if (Info?.ConnectionFrameColor != null && Info.ConnectionFrameColor != ConnectionFrameColor.None)
+        {
+            Color frameColor = GetFrameColor(Info.ConnectionFrameColor);
+            int borderWidth = 4; // 4 pixel border for visibility
+
+            using (Pen pen = new Pen(frameColor, borderWidth))
             {
-                Protocol = protocol;
-                Info = info;
-                Parent = parent;
-                Location = new Point(0, 0);
-                Size = Parent.Size;
-                Anchor = AnchorStyles.Bottom | AnchorStyles.Left | AnchorStyles.Right | AnchorStyles.Top;
-                InitializeComponent();
-                
-                // Enable custom painting for border
-                this.Paint += InterfaceControl_Paint;
-                
-                // Set padding to prevent content from covering the frame border
-                UpdatePaddingForFrameColor();
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddMessage(Messages.MessageClass.ErrorMsg,
-                                                    "Couldn\'t create new InterfaceControl" + Environment.NewLine +
-                                                    ex.Message);
+                // Draw border inside the control bounds
+                Rectangle rect = new Rectangle(
+                    borderWidth / 2,
+                    borderWidth / 2,
+                    this.Width - borderWidth,
+                    this.Height - borderWidth
+                );
+                e.Graphics.DrawRectangle(pen, rect);
             }
         }
+    }
 
-        private void InterfaceControl_Paint(object sender, PaintEventArgs e)
+    private void UpdatePaddingForFrameColor()
+    {
+        // Add padding to prevent content from covering the frame border
+        if (Info?.ConnectionFrameColor != null && Info.ConnectionFrameColor != ConnectionFrameColor.None)
         {
-            // Draw colored border based on ConnectionFrameColor property
-            if (Info?.ConnectionFrameColor != null && Info.ConnectionFrameColor != ConnectionFrameColor.None)
-            {
-                Color frameColor = GetFrameColor(Info.ConnectionFrameColor);
-                int borderWidth = 4; // 4 pixel border for visibility
-                
-                using (Pen pen = new Pen(frameColor, borderWidth))
-                {
-                    // Draw border inside the control bounds
-                    Rectangle rect = new Rectangle(
-                        borderWidth / 2,
-                        borderWidth / 2,
-                        this.Width - borderWidth,
-                        this.Height - borderWidth
-                    );
-                    e.Graphics.DrawRectangle(pen, rect);
-                }
-            }
+            int borderWidth = 4; // Must match the border width in InterfaceControl_Paint
+            // Add 2px margin so the border is fully visible and not covered by child controls
+            int padding = borderWidth / 2 + 2;
+            this.Padding = new Padding(padding);
         }
-
-        private void UpdatePaddingForFrameColor()
+        else
         {
-            // Add padding to prevent content from covering the frame border
-            if (Info?.ConnectionFrameColor != null && Info.ConnectionFrameColor != ConnectionFrameColor.None)
-            {
-                int borderWidth = 4; // Must match the border width in InterfaceControl_Paint
-                // Add 2px margin so the border is fully visible and not covered by child controls
-                int padding = borderWidth / 2 + 2;
-                this.Padding = new Padding(padding);
-            }
+            this.Padding = new Padding(0);
+        }
+    }
+
+    private static Color GetFrameColor(ConnectionFrameColor frameColor)
+    {
+        return frameColor switch
+        {
+            ConnectionFrameColor.Red => Color.FromArgb(220, 53, 69),      // Bootstrap danger red
+            ConnectionFrameColor.Yellow => Color.FromArgb(255, 193, 7),   // Warning yellow
+            ConnectionFrameColor.Green => Color.FromArgb(40, 167, 69),    // Success green
+            ConnectionFrameColor.Blue => Color.FromArgb(0, 123, 255),     // Primary blue
+            ConnectionFrameColor.Purple => Color.FromArgb(111, 66, 193),  // Purple
+            _ => Color.Transparent
+        };
+    }
+
+    public static InterfaceControl? FindInterfaceControl(DockPanel DockPnl)
+    {
+        // instead of repeating the code, call the routine using ConnectionTab if called by DockPanel
+        if (DockPnl.ActiveDocument is ConnectionTab ct)
+            return FindInterfaceControl(ct);
+        // ActiveDocument is null when the tab is floating (DockState.Float); check ActiveContent too (#1875)
+        if (DockPnl.ActiveContent is ConnectionTab ft)
+            return FindInterfaceControl(ft);
+        return null;
+    }
+
+    public static InterfaceControl? FindInterfaceControl(ConnectionTab tab)
+    {
+        ArgumentNullException.ThrowIfNull(tab);
+
+        // Searches the whole tab rather than indexing Controls[0]/[1]. A tab hosts its session
+        // inside a split so a side panel can share the space, which puts the interface control
+        // a level deeper than it used to be — and indexing a fixed depth is what made this
+        // break in the first place.
+        return FindLastInterfaceControl(tab);
+    }
+
+    /// <summary>
+    /// The last interface control anywhere beneath <paramref name="parent"/>.
+    /// </summary>
+    /// <remarks>
+    /// Last, not first: a connection made through an SSH tunnel puts two in the same tab, the
+    /// tunnel first and the connection the user is actually working with second. Does not
+    /// descend into an interface control, since whatever a protocol hosts inside one is not
+    /// another session.
+    /// </remarks>
+    private static InterfaceControl? FindLastInterfaceControl(Control parent)
+    {
+        InterfaceControl? found = null;
+
+        foreach (Control child in parent.Controls)
+        {
+            if (child is InterfaceControl interfaceControl)
+                found = interfaceControl;
             else
-            {
-                this.Padding = new Padding(0);
-            }
+                found = FindLastInterfaceControl(child) ?? found;
         }
 
-        private static Color GetFrameColor(ConnectionFrameColor frameColor)
-        {
-            return frameColor switch
-            {
-                ConnectionFrameColor.Red => Color.FromArgb(220, 53, 69),      // Bootstrap danger red
-                ConnectionFrameColor.Yellow => Color.FromArgb(255, 193, 7),   // Warning yellow
-                ConnectionFrameColor.Green => Color.FromArgb(40, 167, 69),    // Success green
-                ConnectionFrameColor.Blue => Color.FromArgb(0, 123, 255),     // Primary blue
-                ConnectionFrameColor.Purple => Color.FromArgb(111, 66, 193),  // Purple
-                _ => Color.Transparent
-            };
-        }
-
-        public static InterfaceControl? FindInterfaceControl(DockPanel DockPnl)
-        {
-            // instead of repeating the code, call the routine using ConnectionTab if called by DockPanel
-            if (DockPnl.ActiveDocument is ConnectionTab ct)
-                return FindInterfaceControl(ct);
-            // ActiveDocument is null when the tab is floating (DockState.Float); check ActiveContent too (#1875)
-            if (DockPnl.ActiveContent is ConnectionTab ft)
-                return FindInterfaceControl(ft);
-            return null;
-        }
-
-        public static InterfaceControl? FindInterfaceControl(ConnectionTab tab)
-        {
-            ArgumentNullException.ThrowIfNull(tab);
-
-            // Searches the whole tab rather than indexing Controls[0]/[1]. A tab hosts its session
-            // inside a split so a side panel can share the space, which puts the interface control
-            // a level deeper than it used to be — and indexing a fixed depth is what made this
-            // break in the first place.
-            return FindLastInterfaceControl(tab);
-        }
-
-        /// <summary>
-        /// The last interface control anywhere beneath <paramref name="parent"/>.
-        /// </summary>
-        /// <remarks>
-        /// Last, not first: a connection made through an SSH tunnel puts two in the same tab, the
-        /// tunnel first and the connection the user is actually working with second. Does not
-        /// descend into an interface control, since whatever a protocol hosts inside one is not
-        /// another session.
-        /// </remarks>
-        private static InterfaceControl? FindLastInterfaceControl(Control parent)
-        {
-            InterfaceControl? found = null;
-
-            foreach (Control child in parent.Controls)
-            {
-                if (child is InterfaceControl interfaceControl)
-                    found = interfaceControl;
-                else
-                    found = FindLastInterfaceControl(child) ?? found;
-            }
-
-            return found;
-        }
+        return found;
     }
 }

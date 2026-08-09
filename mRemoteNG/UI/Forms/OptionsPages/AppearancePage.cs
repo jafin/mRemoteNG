@@ -1,171 +1,170 @@
 ﻿using System;
 using System.Globalization;
+using System.Runtime.Versioning;
 using System.Windows.Forms;
 using mRemoteNG.App;
-using mRemoteNG.Properties;
-using mRemoteNG.Tools;
-using mRemoteNG.Resources.Language;
-using System.Runtime.Versioning;
 using mRemoteNG.Config.Settings.Registry;
+using mRemoteNG.Properties;
+using mRemoteNG.Resources.Language;
+using mRemoteNG.Tools;
 
-namespace mRemoteNG.UI.Forms.OptionsPages
+namespace mRemoteNG.UI.Forms.OptionsPages;
+
+[SupportedOSPlatform("windows")]
+public sealed partial class AppearancePage
 {
-    [SupportedOSPlatform("windows")]
-    public sealed partial class AppearancePage
+    private OptRegistryAppearancePage? pageRegSettingsInstance;
+    public AppearancePage()
     {
-        private OptRegistryAppearancePage? pageRegSettingsInstance;
-        public AppearancePage()
+        InitializeComponent();
+        ApplyTheme();
+        PageIcon = Resources.ImageConverter.GetImageAsIcon(Properties.Resources.Panel_16x);
+    }
+
+    public override string PageName
+    {
+        get => Language.Appearance;
+        set { }
+    }
+
+    public override void ApplyLanguage()
+    {
+        base.ApplyLanguage();
+
+        lblLanguage.Text = Language.LanguageString;
+        lblLanguageRestartRequired.Text =
+            string.Format(CultureInfo.CurrentCulture, Language.LanguageRestartRequired, Application.ProductName);
+        chkShowDescriptionTooltipsInTree.Text = Language.ShowDescriptionTooltips;
+        chkShowFullConnectionsFilePathInTitle.Text = Language.ShowFullConsFilePath;
+        chkShowSystemTrayIcon.Text = Language.AlwaysShowSysTrayIcon;
+        chkLockWindowSize.Text = Language.LockWindowSize;
+        chkMinimizeToSystemTray.Text = Language.MinimizeToSysTray;
+        chkCloseToSystemTray.Text = Language.CloseToSysTray;
+        lblRegistrySettingsUsedInfo.Text = Language.OptionsCompanyPolicyMessage;
+    }
+
+    public override void LoadSettings()
+    {
+        cboLanguage.Items.Clear();
+        cboLanguage.Items.Add(Language.LanguageDefault);
+
+        foreach (string nativeName in SupportedCultures.CultureNativeNames)
         {
-            InitializeComponent();
-            ApplyTheme();
-            PageIcon = Resources.ImageConverter.GetImageAsIcon(Properties.Resources.Panel_16x);
+            cboLanguage.Items.Add(nativeName);
         }
 
-        public override string PageName
+        if (!string.IsNullOrEmpty(Settings.Default.OverrideUICulture) &&
+            SupportedCultures.IsNameSupported(Settings.Default.OverrideUICulture))
         {
-            get => Language.Appearance;
-            set { }
+            cboLanguage.SelectedItem = SupportedCultures.GetCultureNativeName(Settings.Default.OverrideUICulture);
         }
 
-        public override void ApplyLanguage()
+        if (cboLanguage.SelectedIndex == -1)
         {
-            base.ApplyLanguage();
-
-            lblLanguage.Text = Language.LanguageString;
-            lblLanguageRestartRequired.Text =
-                string.Format(CultureInfo.CurrentCulture, Language.LanguageRestartRequired, Application.ProductName);
-            chkShowDescriptionTooltipsInTree.Text = Language.ShowDescriptionTooltips;
-            chkShowFullConnectionsFilePathInTitle.Text = Language.ShowFullConsFilePath;
-            chkShowSystemTrayIcon.Text = Language.AlwaysShowSysTrayIcon;
-            chkLockWindowSize.Text = Language.LockWindowSize;
-            chkMinimizeToSystemTray.Text = Language.MinimizeToSysTray;
-            chkCloseToSystemTray.Text = Language.CloseToSysTray;
-            lblRegistrySettingsUsedInfo.Text = Language.OptionsCompanyPolicyMessage;
+            cboLanguage.SelectedIndex = 0;
         }
 
-        public override void LoadSettings()
+        chkShowDescriptionTooltipsInTree.Checked = Properties.OptionsAppearancePage.Default.ShowDescriptionTooltipsInTree;
+        chkShowFullConnectionsFilePathInTitle.Checked = Properties.OptionsAppearancePage.Default.ShowCompleteConsPathInTitle;
+        chkReplaceIconOnConnect.Checked = Properties.OptionsAppearancePage.Default.ReplaceIconOnConnect;
+        chkBoldActiveConnections.Checked = Properties.OptionsAppearancePage.Default.BoldActiveConnections;
+        chkLockWindowSize.Checked = Settings.Default.LockWindowSize;
+        chkShowSystemTrayIcon.Checked = Properties.OptionsAppearancePage.Default.ShowSystemTrayIcon;
+        chkMinimizeToSystemTray.Checked = Properties.OptionsAppearancePage.Default.MinimizeToTray;
+        chkCloseToSystemTray.Checked = Properties.OptionsAppearancePage.Default.CloseToTray;
+    }
+
+    public override void SaveSettings()
+    {
+        var selectedItemStr = Convert.ToString(cboLanguage.SelectedItem, CultureInfo.InvariantCulture) ?? string.Empty;
+        if (cboLanguage.SelectedIndex > 0 &&
+            SupportedCultures.IsNativeNameSupported(selectedItemStr))
         {
-            cboLanguage.Items.Clear();
-            cboLanguage.Items.Add(Language.LanguageDefault);
-
-            foreach (string nativeName in SupportedCultures.CultureNativeNames)
-            {
-                cboLanguage.Items.Add(nativeName);
-            }
-
-            if (!string.IsNullOrEmpty(Settings.Default.OverrideUICulture) &&
-                SupportedCultures.IsNameSupported(Settings.Default.OverrideUICulture))
-            {
-                cboLanguage.SelectedItem = SupportedCultures.GetCultureNativeName(Settings.Default.OverrideUICulture);
-            }
-
-            if (cboLanguage.SelectedIndex == -1)
-            {
-                cboLanguage.SelectedIndex = 0;
-            }
-
-            chkShowDescriptionTooltipsInTree.Checked = Properties.OptionsAppearancePage.Default.ShowDescriptionTooltipsInTree;
-            chkShowFullConnectionsFilePathInTitle.Checked = Properties.OptionsAppearancePage.Default.ShowCompleteConsPathInTitle;
-            chkReplaceIconOnConnect.Checked = Properties.OptionsAppearancePage.Default.ReplaceIconOnConnect;
-            chkBoldActiveConnections.Checked = Properties.OptionsAppearancePage.Default.BoldActiveConnections;
-            chkLockWindowSize.Checked = Settings.Default.LockWindowSize;
-            chkShowSystemTrayIcon.Checked = Properties.OptionsAppearancePage.Default.ShowSystemTrayIcon;
-            chkMinimizeToSystemTray.Checked = Properties.OptionsAppearancePage.Default.MinimizeToTray;
-            chkCloseToSystemTray.Checked = Properties.OptionsAppearancePage.Default.CloseToTray;
+            Settings.Default.OverrideUICulture = SupportedCultures.GetCultureName(selectedItemStr);
+        }
+        else
+        {
+            Settings.Default.OverrideUICulture = string.Empty;
         }
 
-        public override void SaveSettings()
+        Properties.OptionsAppearancePage.Default.ShowDescriptionTooltipsInTree = chkShowDescriptionTooltipsInTree.Checked;
+        Properties.OptionsAppearancePage.Default.ShowCompleteConsPathInTitle = chkShowFullConnectionsFilePathInTitle.Checked;
+        if (FrmMain.IsCreated)
+            FrmMain.Default.ShowFullPathInTitle = chkShowFullConnectionsFilePathInTitle.Checked;
+
+        Settings.Default.LockWindowSize = chkLockWindowSize.Checked;
+
+        Properties.OptionsAppearancePage.Default.ShowSystemTrayIcon = chkShowSystemTrayIcon.Checked;
+        if (Properties.OptionsAppearancePage.Default.ShowSystemTrayIcon)
         {
-            var selectedItemStr = Convert.ToString(cboLanguage.SelectedItem, CultureInfo.InvariantCulture) ?? string.Empty;
-            if (cboLanguage.SelectedIndex > 0 &&
-                SupportedCultures.IsNativeNameSupported(selectedItemStr))
+            if (Runtime.NotificationAreaIcon == null)
             {
-                Settings.Default.OverrideUICulture = SupportedCultures.GetCultureName(selectedItemStr);
+                Runtime.NotificationAreaIcon = new NotificationAreaIcon();
             }
-            else
+        }
+        else
+        {
+            if (Runtime.NotificationAreaIcon != null)
             {
-                Settings.Default.OverrideUICulture = string.Empty;
+                Runtime.NotificationAreaIcon.Dispose();
+                Runtime.NotificationAreaIcon = null;
             }
-
-            Properties.OptionsAppearancePage.Default.ShowDescriptionTooltipsInTree = chkShowDescriptionTooltipsInTree.Checked;
-            Properties.OptionsAppearancePage.Default.ShowCompleteConsPathInTitle = chkShowFullConnectionsFilePathInTitle.Checked;
-            if (FrmMain.IsCreated)
-                FrmMain.Default.ShowFullPathInTitle = chkShowFullConnectionsFilePathInTitle.Checked;
-
-            Settings.Default.LockWindowSize = chkLockWindowSize.Checked;
-
-            Properties.OptionsAppearancePage.Default.ShowSystemTrayIcon = chkShowSystemTrayIcon.Checked;
-            if (Properties.OptionsAppearancePage.Default.ShowSystemTrayIcon)
-            {
-                if (Runtime.NotificationAreaIcon == null)
-                {
-                    Runtime.NotificationAreaIcon = new NotificationAreaIcon();
-                }
-            }
-            else
-            {
-                if (Runtime.NotificationAreaIcon != null)
-                {
-                    Runtime.NotificationAreaIcon.Dispose();
-                    Runtime.NotificationAreaIcon = null;
-                }
-            }
-
-            Properties.OptionsAppearancePage.Default.MinimizeToTray = chkMinimizeToSystemTray.Checked;
-            Properties.OptionsAppearancePage.Default.CloseToTray = chkCloseToSystemTray.Checked;
-
-            Properties.OptionsAppearancePage.Default.ReplaceIconOnConnect = chkReplaceIconOnConnect.Checked;
-            Properties.OptionsAppearancePage.Default.BoldActiveConnections = chkBoldActiveConnections.Checked;
         }
 
-        public override void LoadRegistrySettings()
+        Properties.OptionsAppearancePage.Default.MinimizeToTray = chkMinimizeToSystemTray.Checked;
+        Properties.OptionsAppearancePage.Default.CloseToTray = chkCloseToSystemTray.Checked;
+
+        Properties.OptionsAppearancePage.Default.ReplaceIconOnConnect = chkReplaceIconOnConnect.Checked;
+        Properties.OptionsAppearancePage.Default.BoldActiveConnections = chkBoldActiveConnections.Checked;
+    }
+
+    public override void LoadRegistrySettings()
+    {
+        Type settingsType = typeof(OptRegistryAppearancePage);
+        RegistryLoader.RegistrySettings.TryGetValue(settingsType, out var settings);
+        pageRegSettingsInstance = settings as OptRegistryAppearancePage;
+
+        // If registry settings don't exist, create a default instance to prevent null reference exceptions
+        if (pageRegSettingsInstance == null)
         {
-            Type settingsType = typeof(OptRegistryAppearancePage);
-            RegistryLoader.RegistrySettings.TryGetValue(settingsType, out var settings);
-            pageRegSettingsInstance = settings as OptRegistryAppearancePage;
-
-            // If registry settings don't exist, create a default instance to prevent null reference exceptions
-            if (pageRegSettingsInstance == null)
-            {
-                pageRegSettingsInstance = new OptRegistryAppearancePage();
-                Logger.Instance.Log?.Debug("[AppearancePage.LoadRegistrySettings] pageRegSettingsInstance was null, created default instance");
-            }
-
-            RegistryLoader.Cleanup(settingsType);
-
-            // ***
-            // Disable controls based on the registry settings.
-            //
-            if (pageRegSettingsInstance.ShowDescriptionTooltipsInConTree.IsSet)
-                DisableControl(chkShowDescriptionTooltipsInTree);
-
-            if (pageRegSettingsInstance.ShowCompleteConFilePathInTitle.IsSet)
-                DisableControl(chkShowFullConnectionsFilePathInTitle);
-
-            if (pageRegSettingsInstance.AlwaysShowSystemTrayIcon.IsSet)
-                DisableControl(chkShowSystemTrayIcon);
-
-            if (pageRegSettingsInstance.MinimizeToTray.IsSet)
-                DisableControl(chkMinimizeToSystemTray);
-
-            if (pageRegSettingsInstance.CloseToTray.IsSet)
-                DisableControl(chkCloseToSystemTray);
-
-            // Updates the visibility of the information label indicating whether registry settings are used.
-            lblRegistrySettingsUsedInfo.Visible = ShowRegistrySettingsUsedInfo();
+            pageRegSettingsInstance = new OptRegistryAppearancePage();
+            Logger.Instance.Log?.Debug("[AppearancePage.LoadRegistrySettings] pageRegSettingsInstance was null, created default instance");
         }
 
-        /// <summary>
-        /// Checks if specific registry settings related to appearence page are used.
-        /// </summary>
-        public bool ShowRegistrySettingsUsedInfo()
-        {
-            return pageRegSettingsInstance != null
-                && (pageRegSettingsInstance.ShowDescriptionTooltipsInConTree.IsSet
-                || pageRegSettingsInstance.ShowCompleteConFilePathInTitle.IsSet
-                || pageRegSettingsInstance.AlwaysShowSystemTrayIcon.IsSet
-                || pageRegSettingsInstance.MinimizeToTray.IsSet
-                || pageRegSettingsInstance.CloseToTray.IsSet);
-        }
+        RegistryLoader.Cleanup(settingsType);
+
+        // ***
+        // Disable controls based on the registry settings.
+        //
+        if (pageRegSettingsInstance.ShowDescriptionTooltipsInConTree.IsSet)
+            DisableControl(chkShowDescriptionTooltipsInTree);
+
+        if (pageRegSettingsInstance.ShowCompleteConFilePathInTitle.IsSet)
+            DisableControl(chkShowFullConnectionsFilePathInTitle);
+
+        if (pageRegSettingsInstance.AlwaysShowSystemTrayIcon.IsSet)
+            DisableControl(chkShowSystemTrayIcon);
+
+        if (pageRegSettingsInstance.MinimizeToTray.IsSet)
+            DisableControl(chkMinimizeToSystemTray);
+
+        if (pageRegSettingsInstance.CloseToTray.IsSet)
+            DisableControl(chkCloseToSystemTray);
+
+        // Updates the visibility of the information label indicating whether registry settings are used.
+        lblRegistrySettingsUsedInfo.Visible = ShowRegistrySettingsUsedInfo();
+    }
+
+    /// <summary>
+    /// Checks if specific registry settings related to appearence page are used.
+    /// </summary>
+    public bool ShowRegistrySettingsUsedInfo()
+    {
+        return pageRegSettingsInstance != null
+               && (pageRegSettingsInstance.ShowDescriptionTooltipsInConTree.IsSet
+                   || pageRegSettingsInstance.ShowCompleteConFilePathInTitle.IsSet
+                   || pageRegSettingsInstance.AlwaysShowSystemTrayIcon.IsSet
+                   || pageRegSettingsInstance.MinimizeToTray.IsSet
+                   || pageRegSettingsInstance.CloseToTray.IsSet);
     }
 }

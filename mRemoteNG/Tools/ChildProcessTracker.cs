@@ -3,106 +3,105 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 
-namespace mRemoteNG.Tools
+namespace mRemoteNG.Tools;
+
+/// <summary>
+/// Ensures child processes are terminated when the parent process exits,
+/// even on a crash, by using a Windows Job Object with the
+/// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE flag.
+/// </summary>
+[SupportedOSPlatform("windows")]
+internal static class ChildProcessTracker
 {
-    /// <summary>
-    /// Ensures child processes are terminated when the parent process exits,
-    /// even on a crash, by using a Windows Job Object with the
-    /// JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE flag.
-    /// </summary>
-    [SupportedOSPlatform("windows")]
-    internal static class ChildProcessTracker
+    private static readonly IntPtr JobHandle;
+
+    static ChildProcessTracker()
     {
-        private static readonly IntPtr _jobHandle;
+        JobHandle = CreateJobObject(IntPtr.Zero, null);
+        if (JobHandle == IntPtr.Zero)
+            return;
 
-        static ChildProcessTracker()
+        var info = new JobobjectExtendedLimitInformation
         {
-            _jobHandle = CreateJobObject(IntPtr.Zero, null);
-            if (_jobHandle == IntPtr.Zero)
-                return;
-
-            var info = new JOBOBJECT_EXTENDED_LIMIT_INFORMATION
+            BasicLimitInformation = new JobobjectBasicLimitInformation
             {
-                BasicLimitInformation = new JOBOBJECT_BASIC_LIMIT_INFORMATION
-                {
-                    LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE
-                }
-            };
-
-            int length = Marshal.SizeOf<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>();
-            IntPtr infoPtr = Marshal.AllocHGlobal(length);
-            try
-            {
-                Marshal.StructureToPtr(info, infoPtr, false);
-                SetInformationJobObject(_jobHandle, JobObjectInfoType.ExtendedLimitInformation, infoPtr, (uint)length);
+                LimitFlags = JobObjectLimitKillOnJobClose
             }
-            finally
-            {
-                Marshal.FreeHGlobal(infoPtr);
-            }
-        }
+        };
 
-        /// <summary>
-        /// Adds a process to the job object so it will be killed when this process exits.
-        /// </summary>
-        public static void AddProcess(Process process)
+        int length = Marshal.SizeOf<JobobjectExtendedLimitInformation>();
+        IntPtr infoPtr = Marshal.AllocHGlobal(length);
+        try
         {
-            if (_jobHandle != IntPtr.Zero && process != null && !process.HasExited)
-            {
-                AssignProcessToJobObject(_jobHandle, process.Handle);
-            }
+            Marshal.StructureToPtr(info, infoPtr, false);
+            SetInformationJobObject(JobHandle, JobObjectInfoType.ExtendedLimitInformation, infoPtr, (uint)length);
         }
-
-        private const uint JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE = 0x2000;
-
-        [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
-        private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string? lpName);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool SetInformationJobObject(IntPtr hJob, JobObjectInfoType infoType, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
-
-        [DllImport("kernel32.dll", SetLastError = true)]
-        private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
-
-        private enum JobObjectInfoType
+        finally
         {
-            ExtendedLimitInformation = 9
+            Marshal.FreeHGlobal(infoPtr);
         }
+    }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct JOBOBJECT_BASIC_LIMIT_INFORMATION
+    /// <summary>
+    /// Adds a process to the job object so it will be killed when this process exits.
+    /// </summary>
+    public static void AddProcess(Process process)
+    {
+        if (JobHandle != IntPtr.Zero && process != null && !process.HasExited)
         {
-            public long PerProcessUserTimeLimit;
-            public long PerJobUserTimeLimit;
-            public uint LimitFlags;
-            public nuint MinimumWorkingSetSize;
-            public nuint MaximumWorkingSetSize;
-            public uint ActiveProcessLimit;
-            public long Affinity;
-            public uint PriorityClass;
-            public uint SchedulingClass;
+            AssignProcessToJobObject(JobHandle, process.Handle);
         }
+    }
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct IO_COUNTERS
-        {
-            public ulong ReadOperationCount;
-            public ulong WriteOperationCount;
-            public ulong OtherOperationCount;
-            public ulong ReadTransferCount;
-            public ulong WriteTransferCount;
-            public ulong OtherTransferCount;
-        }
+    private const uint JobObjectLimitKillOnJobClose = 0x2000;
 
-        [StructLayout(LayoutKind.Sequential)]
-        private struct JOBOBJECT_EXTENDED_LIMIT_INFORMATION
-        {
-            public JOBOBJECT_BASIC_LIMIT_INFORMATION BasicLimitInformation;
-            public IO_COUNTERS IoInfo;
-            public nuint ProcessMemoryLimit;
-            public nuint JobMemoryLimit;
-            public nuint PeakProcessMemoryUsed;
-            public nuint PeakJobMemoryUsed;
-        }
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode, SetLastError = true)]
+    private static extern IntPtr CreateJobObject(IntPtr lpJobAttributes, string? lpName);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool SetInformationJobObject(IntPtr hJob, JobObjectInfoType infoType, IntPtr lpJobObjectInfo, uint cbJobObjectInfoLength);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern bool AssignProcessToJobObject(IntPtr hJob, IntPtr hProcess);
+
+    private enum JobObjectInfoType
+    {
+        ExtendedLimitInformation = 9
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobobjectBasicLimitInformation
+    {
+        public long PerProcessUserTimeLimit;
+        public long PerJobUserTimeLimit;
+        public uint LimitFlags;
+        public nuint MinimumWorkingSetSize;
+        public nuint MaximumWorkingSetSize;
+        public uint ActiveProcessLimit;
+        public long Affinity;
+        public uint PriorityClass;
+        public uint SchedulingClass;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct IoCounters
+    {
+        public ulong ReadOperationCount;
+        public ulong WriteOperationCount;
+        public ulong OtherOperationCount;
+        public ulong ReadTransferCount;
+        public ulong WriteTransferCount;
+        public ulong OtherTransferCount;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct JobobjectExtendedLimitInformation
+    {
+        public JobobjectBasicLimitInformation BasicLimitInformation;
+        public IoCounters IoInfo;
+        public nuint ProcessMemoryLimit;
+        public nuint JobMemoryLimit;
+        public nuint PeakProcessMemoryUsed;
+        public nuint PeakJobMemoryUsed;
     }
 }

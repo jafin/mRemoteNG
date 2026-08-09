@@ -6,60 +6,60 @@ using mRemoteNG.App;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 
-namespace mRemoteNG.Connection.Protocol.PowerShell
+namespace mRemoteNG.Connection.Protocol.PowerShell;
+
+[SupportedOSPlatform("windows")]
+public class ProtocolPowerShell(ConnectionInfo connectionInfo) : ExternalProcessProtocolBase
 {
-    [SupportedOSPlatform("windows")]
-    public class ProtocolPowerShell(ConnectionInfo connectionInfo) : ExternalProcessProtocolBase
+    #region Private Fields
+
+    private readonly ConnectionInfo _connectionInfo = connectionInfo;
+    private ConsoleControl.ConsoleControl? _consoleControl;
+
+    #endregion
+
+    #region Public Methods
+
+    public override bool Connect()
     {
-        #region Private Fields
-
-        private readonly ConnectionInfo _connectionInfo = connectionInfo;
-        private ConsoleControl.ConsoleControl? _consoleControl;
-
-        #endregion
-
-        #region Public Methods
-
-        public override bool Connect()
+        try
         {
-            try
+            Runtime.MessageCollector?.AddMessage(MessageClass.InformationMsg, "Attempting to start remote PowerShell session.", true);
+
+            _consoleControl = new ConsoleControl.ConsoleControl
             {
-                Runtime.MessageCollector?.AddMessage(MessageClass.InformationMsg, "Attempting to start remote PowerShell session.", true);
+                Dock = DockStyle.Fill,
+                BackColor = ColorTranslator.FromHtml("#012456"),
+                ForeColor = Color.White,
+                IsInputEnabled = true,
+                Padding = new Padding(0, 20, 0, 0)
+            };
 
-                _consoleControl = new ConsoleControl.ConsoleControl
-                {
-                    Dock = DockStyle.Fill,
-                    BackColor = ColorTranslator.FromHtml("#012456"),
-                    ForeColor = Color.White,
-                    IsInputEnabled = true,
-                    Padding = new Padding(0, 20, 0, 0)
-                };
+            /*
+             * Prepair powershell script parameter and create script
+             */
+            // Path to the Windows PowerShell executable; can be configured through options.
+            //string psExe = @"C:\Windows\system32\WindowsPowerShell\v1.0\PowerShell.exe"; //old ps
+            string psExe = @"C:\Program Files\PowerShell\7\pwsh.exe"; //new ps
+            //string psExe = @"%LocalAppData%\Microsoft\WindowsApps\wt.exe"; //test for terminal
 
-                /*
-                 * Prepair powershell script parameter and create script
-                 */
-                // Path to the Windows PowerShell executable; can be configured through options.
-                //string psExe = @"C:\Windows\system32\WindowsPowerShell\v1.0\PowerShell.exe"; //old ps
-                string psExe = @"C:\Program Files\PowerShell\7\pwsh.exe"; //new ps
-                //string psExe = @"%LocalAppData%\Microsoft\WindowsApps\wt.exe"; //test for terminal
+            // Maximum number of login attempts; can be configured through options.
+            int psLoginAttempts = 3;
 
-                // Maximum number of login attempts; can be configured through options.
-                int psLoginAttempts = 3;
+            string psUsername;
+            if (string.IsNullOrEmpty(_connectionInfo.Domain))
+                // Set the username without domain 
+                psUsername = _connectionInfo.Username;
+            else
+                // Set the username to Domain\Username if Domain is not empty
+                psUsername = $"{_connectionInfo.Domain}\\{_connectionInfo.Username}";
 
-                string psUsername;
-                if (string.IsNullOrEmpty(_connectionInfo.Domain))
-                    // Set the username without domain 
-                    psUsername = _connectionInfo.Username;
-                else
-                    // Set the username to Domain\Username if Domain is not empty
-                    psUsername = $"{_connectionInfo.Domain}\\{_connectionInfo.Username}";
-
-                /* 
-                 * The PowerShell script is designed to facilitate multiple login attempts to a remote host using user-provided credentials,
-                 * with an option to specify the maximum number of attempts.
-                 * It handles username and password entry, attempts to establish a PSSession, and reports on login outcomes, ensuring a graceful exit in case of repeated failures.
-                 */
-                string psScriptBlock = $@"
+            /*
+             * The PowerShell script is designed to facilitate multiple login attempts to a remote host using user-provided credentials,
+             * with an option to specify the maximum number of attempts.
+             * It handles username and password entry, attempts to establish a PSSession, and reports on login outcomes, ensuring a graceful exit in case of repeated failures.
+             */
+            string psScriptBlock = $@"
                     [CmdletBinding()]
                     param (
                         [Parameter(Mandatory=$true)]
@@ -185,50 +185,49 @@ namespace mRemoteNG.Connection.Protocol.PowerShell
                     }}
                 ";
 
-                // Setup process for script with arguments
-                //* The -NoProfile parameter would be a valuable addition but should be able to be deactivated.
-                string arguments = $@"-NoExit -Command ""& {{ {psScriptBlock} }}"" -Hostname ""'{EscapePsString(_connectionInfo.Hostname)}'"" -Username ""'{EscapePsString(psUsername)}'"" -Password ""'{EscapePsString(_connectionInfo.Password)}'"" -LoginAttempts {psLoginAttempts}";
-                string hostname = _connectionInfo.Hostname.Trim().ToLowerInvariant();
-                bool useLocalHost = hostname == "" || hostname.Equals("localhost", StringComparison.Ordinal);
-                if (useLocalHost)
-                {
-                    arguments = $@"-NoExit";
-                }
-                _consoleControl.StartProcess(psExe, arguments);
-
-                _handle = _consoleControl.Handle;
-                NativeMethods.SetParent(_handle, InterfaceControl.Handle);
-
-                Resize(this, EventArgs.Empty);
-                base.Connect();
-                return true;
-            }
-            catch (Exception ex)
+            // Setup process for script with arguments
+            //* The -NoProfile parameter would be a valuable addition but should be able to be deactivated.
+            string arguments = $@"-NoExit -Command ""& {{ {psScriptBlock} }}"" -Hostname ""'{EscapePsString(_connectionInfo.Hostname)}'"" -Username ""'{EscapePsString(psUsername)}'"" -Password ""'{EscapePsString(_connectionInfo.Password)}'"" -LoginAttempts {psLoginAttempts}";
+            string hostname = _connectionInfo.Hostname.Trim().ToLowerInvariant();
+            bool useLocalHost = hostname == "" || hostname.Equals("localhost", StringComparison.Ordinal);
+            if (useLocalHost)
             {
-                Runtime.MessageCollector?.AddExceptionMessage(Language.ConnectionFailed, ex);
-                return false;
+                arguments = $@"-NoExit";
             }
+            _consoleControl.StartProcess(psExe, arguments);
+
+            _handle = _consoleControl.Handle;
+            NativeMethods.SetParent(_handle, InterfaceControl.Handle);
+
+            Resize(this, EventArgs.Empty);
+            base.Connect();
+            return true;
         }
-
-        #endregion
-
-        #region Private Methods
-
-        /// <summary>
-        /// Escapes a value for embedding in a PowerShell single-quoted string literal.
-        /// Single quotes are escaped by doubling them, preventing injection via crafted values.
-        /// </summary>
-        private static string EscapePsString(string value) => value.Replace("'", "''", StringComparison.Ordinal);
-
-        #endregion
-
-        #region Enumerations
-
-        public enum Defaults
+        catch (Exception ex)
         {
-            Port = 5985
+            Runtime.MessageCollector?.AddExceptionMessage(Language.ConnectionFailed, ex);
+            return false;
         }
-
-        #endregion
     }
+
+    #endregion
+
+    #region Private Methods
+
+    /// <summary>
+    /// Escapes a value for embedding in a PowerShell single-quoted string literal.
+    /// Single quotes are escaped by doubling them, preventing injection via crafted values.
+    /// </summary>
+    private static string EscapePsString(string value) => value.Replace("'", "''", StringComparison.Ordinal);
+
+    #endregion
+
+    #region Enumerations
+
+    public enum Defaults
+    {
+        Port = 5985
+    }
+
+    #endregion
 }

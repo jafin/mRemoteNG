@@ -1,121 +1,120 @@
-﻿using mRemoteNG.Security;
+﻿using System;
+using System.Collections;
+using System.Security;
+using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
 using mRemoteNG.Security.SymmetricEncryption;
 using NUnit.Framework;
 using NUnit.Framework.Constraints;
-using System;
-using System.Collections;
-using System.Security;
 
 
-namespace mRemoteNGTests.Security
+namespace mRemoteNGTests.Security;
+
+public class AeadCryptographyProviderTests
 {
-    public class AeadCryptographyProviderTests
+    private AeadCryptographyProvider? _cryptographyProvider;
+    private SecureString _encryptionKey;
+    private string _plainText;
+
+    [SetUp]
+    public void Setup()
     {
-        private AeadCryptographyProvider? _cryptographyProvider;
-        private SecureString _encryptionKey;
-        private string _plainText;
+        _cryptographyProvider = new AeadCryptographyProvider();
+        _encryptionKey = "mypassword111111".ConvertToSecureString();
+        _plainText = "MySecret!";
+    }
 
-        [SetUp]
-        public void Setup()
-        {
-            _cryptographyProvider = new AeadCryptographyProvider();
-            _encryptionKey = "mypassword111111".ConvertToSecureString();
-            _plainText = "MySecret!";
-        }
+    [TearDown]
+    public void TearDown()
+    {
+        _cryptographyProvider = null;
+    }
 
-        [TearDown]
-        public void TearDown()
-        {
-            _cryptographyProvider = null;
-        }
+    [Test]
+    public void GetBlockSizeReturnsProperValueForAes()
+    {
+        Assert.That(_cryptographyProvider.BlockSizeInBytes, Is.EqualTo(16));
+    }
 
-        [Test]
-        public void GetBlockSizeReturnsProperValueForAes()
-        {
-            Assert.That(_cryptographyProvider.BlockSizeInBytes, Is.EqualTo(16));
-        }
+    [Test]
+    public void EncryptionOutputsBase64String()
+    {
+        var cipherText = _cryptographyProvider.Encrypt(_plainText, _encryptionKey);
+        Assert.That(cipherText.IsBase64String, Is.True);
+    }
 
-        [Test]
-        public void EncryptionOutputsBase64String()
-        {
-            var cipherText = _cryptographyProvider.Encrypt(_plainText, _encryptionKey);
-            Assert.That(cipherText.IsBase64String, Is.True);
-        }
+    [TestCaseSource(nameof(GetAllBlockCipherEngineAndModeCombinations))]
+    public void DecryptedTextIsEqualToOriginalPlainText(BlockCipherEngines engine, BlockCipherModes mode)
+    {
+        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
+        var cipherText = cryptoProvider.Encrypt(_plainText, _encryptionKey);
+        var decryptedCipherText = cryptoProvider.Decrypt(cipherText, _encryptionKey);
+        Assert.That(decryptedCipherText, Is.EqualTo(_plainText));
+    }
 
-        [TestCaseSource(nameof(GetAllBlockCipherEngineAndModeCombinations))]
-        public void DecryptedTextIsEqualToOriginalPlainText(BlockCipherEngines engine, BlockCipherModes mode)
-        {
-            var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
-            var cipherText = cryptoProvider.Encrypt(_plainText, _encryptionKey);
-            var decryptedCipherText = cryptoProvider.Decrypt(cipherText, _encryptionKey);
-            Assert.That(decryptedCipherText, Is.EqualTo(_plainText));
-        }
+    [Test]
+    public void EncryptingTheSameValueReturnsNewCipherTextEachTime()
+    {
+        var cipherText1 = _cryptographyProvider.Encrypt(_plainText, _encryptionKey);
+        var cipherText2 = _cryptographyProvider.Encrypt(_plainText, _encryptionKey);
+        Assert.That(cipherText1, Is.Not.EqualTo(cipherText2));
+    }
 
-        [Test]
-        public void EncryptingTheSameValueReturnsNewCipherTextEachTime()
+    private static ArrayList GetAllBlockCipherEngineAndModeCombinations()
+    {
+        var combinationList = new ArrayList();
+        var engineChoices = Enum.GetValues<BlockCipherEngines>();
+        var modeChoices = Enum.GetValues<BlockCipherModes>();
+        foreach (var engine in engineChoices)
         {
-            var cipherText1 = _cryptographyProvider.Encrypt(_plainText, _encryptionKey);
-            var cipherText2 = _cryptographyProvider.Encrypt(_plainText, _encryptionKey);
-            Assert.That(cipherText1, Is.Not.EqualTo(cipherText2));
-        }
-
-        private static ArrayList GetAllBlockCipherEngineAndModeCombinations()
-        {
-            var combinationList = new ArrayList();
-            var engineChoices = Enum.GetValues<BlockCipherEngines>();
-            var modeChoices = Enum.GetValues<BlockCipherModes>();
-            foreach (var engine in engineChoices)
+            foreach (var mode in modeChoices)
             {
-                foreach (var mode in modeChoices)
-                {
-                    combinationList.Add(new object[] { engine, mode });
-                }
+                combinationList.Add(new object[] { engine, mode });
             }
-            return combinationList;
         }
+        return combinationList;
+    }
 
-        [Test]
-        public void DecryptionFailureThrowsException()
+    [Test]
+    public void DecryptionFailureThrowsException()
+    {
+        var cipherText = _cryptographyProvider.Encrypt(_plainText, _encryptionKey);
+        Func<string> decryptMethod = () => _cryptographyProvider.Decrypt(cipherText, "wrongKey".ConvertToSecureString());
+        Assert.That(decryptMethod, Throws.TypeOf<EncryptionException>());
+    }
+
+    [TestCaseSource(typeof(TestCaseSources), nameof(TestCaseSources.AllEngineAndModeCombos))]
+    public void GetCipherEngine(BlockCipherEngines engine, BlockCipherModes mode)
+    {
+        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
+        Assert.That(cryptoProvider.CipherEngine, Is.EqualTo(engine));
+    }
+
+    [TestCaseSource(typeof(TestCaseSources), nameof(TestCaseSources.AllEngineAndModeCombos))]
+    public void GetCipherMode(BlockCipherEngines engine, BlockCipherModes mode)
+    {
+        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
+        Assert.That(cryptoProvider.CipherMode, Is.EqualTo(mode));
+    }
+
+    [Test]
+    public void ProvidingEmptyEncryptionKeyThrowsException()
+    {
+        Assert.Throws<ArgumentException>(() => _cryptographyProvider.Encrypt(_plainText, new SecureString()));
+    }
+
+
+    private static class TestCaseSources
+    {
+        public static IEnumerable AllEngineAndModeCombos
         {
-            var cipherText = _cryptographyProvider.Encrypt(_plainText, _encryptionKey);
-            ActualValueDelegate<string> decryptMethod = () => _cryptographyProvider.Decrypt(cipherText, "wrongKey".ConvertToSecureString());
-            Assert.That(decryptMethod, Throws.TypeOf<EncryptionException>());
-        }
-
-        [TestCaseSource(typeof(TestCaseSources), nameof(TestCaseSources.AllEngineAndModeCombos))]
-        public void GetCipherEngine(BlockCipherEngines engine, BlockCipherModes mode)
-        {
-            var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
-            Assert.That(cryptoProvider.CipherEngine, Is.EqualTo(engine));
-        }
-
-        [TestCaseSource(typeof(TestCaseSources), nameof(TestCaseSources.AllEngineAndModeCombos))]
-        public void GetCipherMode(BlockCipherEngines engine, BlockCipherModes mode)
-        {
-            var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
-            Assert.That(cryptoProvider.CipherMode, Is.EqualTo(mode));
-        }
-
-        [Test]
-        public void ProvidingEmptyEncryptionKeyThrowsException()
-        {
-            Assert.Throws<ArgumentException>(() => _cryptographyProvider.Encrypt(_plainText, new SecureString()));
-        }
-
-
-        private static class TestCaseSources
-        {
-            public static IEnumerable AllEngineAndModeCombos
+            get
             {
-                get
+                foreach (var engine in Enum.GetValues<BlockCipherEngines>())
                 {
-                    foreach (var engine in Enum.GetValues<BlockCipherEngines>())
+                    foreach (var mode in Enum.GetValues<BlockCipherModes>())
                     {
-                        foreach (var mode in Enum.GetValues<BlockCipherModes>())
-                        {
-                            yield return new TestCaseData(engine, mode);
-                        }
+                        yield return new TestCaseData(engine, mode);
                     }
                 }
             }

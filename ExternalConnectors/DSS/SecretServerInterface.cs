@@ -1,4 +1,4 @@
-﻿using System;
+﻿using System.Security.Cryptography;
 using Microsoft.Win32;
 using Org.BouncyCastle.Crypto;
 using Org.BouncyCastle.Crypto.Parameters;
@@ -6,7 +6,6 @@ using Org.BouncyCastle.OpenSsl;
 using Org.BouncyCastle.Security;
 using SecretServerAuthentication.DSS;
 using SecretServerRestClient.DSS;
-using System.Security.Cryptography;
 
 namespace ExternalConnectors.DSS;
 
@@ -14,44 +13,44 @@ public static class SecretServerInterface
 {
     private static class SSConnectionData
     {
-        public static string ssUsername = "";
-        public static string ssPassword = "";
-        public static string ssUrl = "";
-        public static string ssOTP = "";
-        public static bool ssSSO;
-        public static bool initdone;
+        public static string SsUsername = "";
+        public static string SsPassword = "";
+        public static string SsUrl = "";
+        public static string SsOtp = "";
+        public static bool SsSso;
+        public static bool InitDone;
 
         //token 
-        public static string ssTokenBearer = "";
-        public static DateTime ssTokenExpiresOn = DateTime.UtcNow;
-        public static string ssTokenRefresh = "";
+        public static string SsTokenBearer = "";
+        public static DateTime SsTokenExpiresOn = DateTime.UtcNow;
+        public static string SsTokenRefresh = "";
 
         public static void Init()
         {
-            if (initdone == true)
+            if (InitDone)
                 return;
 
-                RegistryKey key = Registry.CurrentUser.CreateSubKey(@"SOFTWARE\mRemoteSSInterface");
-                try
-                {
-                    // display gui and ask for data
-                    SSConnectionForm f = new();
-                    string? un = key.GetValue("Username") as string;
-                    f.tbUsername.Text = un ?? "";
-                    f.tbPassword.Text = SSConnectionData.ssPassword;    // in OTP refresh cases, this value might already be filled
+            var key = Registry.CurrentUser.CreateSubKey(@"SOFTWARE\mRemoteSSInterface");
+            try
+            {
+                // display gui and ask for data
+                SSConnectionForm f = new();
+                var un = key.GetValue("Username") as string;
+                f.tbUsername.Text = un ?? "";
+                f.tbPassword.Text = SsPassword; // in OTP refresh cases, this value might already be filled
 
-                string? url = key.GetValue("URL") as string;
-                if (url == null || !url.Contains("://"))
+                var url = key.GetValue("URL") as string;
+                if (url == null || !url.Contains("://", StringComparison.OrdinalIgnoreCase))
                     url = "https://cred.domain.local/SecretServer";
                 f.tbSSURL.Text = url;
 
                 var b = key.GetValue("SSO");
                 if (b == null || !string.Equals((string)b, "True", StringComparison.Ordinal))
-                    ssSSO = false;
+                    SsSso = false;
                 else
-                    ssSSO = true;
-                f.cbUseSSO.Checked = ssSSO;
-                
+                    SsSso = true;
+                f.cbUseSSO.Checked = SsSso;
+
                 // show dialog
                 while (true)
                 {
@@ -61,24 +60,26 @@ public static class SecretServerInterface
                         return;
 
                     // store values to memory
-                    ssUsername = f.tbUsername.Text;
-                    ssPassword = f.tbPassword.Text;
-                    ssUrl = f.tbSSURL.Text;
-                    ssSSO = f.cbUseSSO.Checked;
+                    SsUsername = f.tbUsername.Text;
+                    SsPassword = f.tbPassword.Text;
+                    SsUrl = f.tbSSURL.Text;
+                    SsSso = f.cbUseSSO.Checked;
 
                     // Require HTTPS for vault connections
-                    if (!ssUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
+                    if (!SsUrl.StartsWith("https://", StringComparison.OrdinalIgnoreCase))
                     {
-                        MessageBox.Show("Secret Server URL must use HTTPS for secure communication.", "Security Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                        MessageBox.Show("Secret Server URL must use HTTPS for secure communication.",
+                            "Security Warning", MessageBoxButtons.OK, MessageBoxIcon.Warning);
                         continue;
                     }
-                    ssOTP = f.tbOTP.Text;
+
+                    SsOtp = f.tbOTP.Text;
                     // check connection first
                     try
                     {
-                        if (TestCredentials() == true)
+                        if (TestCredentials())
                         {
-                            initdone = true;
+                            InitDone = true;
                             break;
                         }
                     }
@@ -90,32 +91,26 @@ public static class SecretServerInterface
 
 
                 // write values to registry
-                key.SetValue("Username", ssUsername);
-                key.SetValue("URL", ssUrl);
-                key.SetValue("SSO", ssSSO);
-            }
-            catch (Exception)
-            {
-                throw;
+                key.SetValue("Username", SsUsername);
+                key.SetValue("URL", SsUrl);
+                key.SetValue("SSO", SsSso);
             }
             finally
             {
                 key.Close();
             }
-
         }
     }
 
     private static bool TestCredentials()
     {
-        if (SSConnectionData.ssSSO)
+        if (SSConnectionData.SsSso)
         {
             // checking creds doesn't really make sense here, as we can't modify them anyway if something is wrong
             return true;
         }
         else
         {
-
             if (!String.IsNullOrEmpty(GetToken()))
             {
                 return true;
@@ -129,43 +124,44 @@ public static class SecretServerInterface
 
     private static SecretsServiceClient ConstructSecretsServiceClient()
     {
-        string baseURL = SSConnectionData.ssUrl;
-        if (SSConnectionData.ssSSO)
+        var baseUrl = SSConnectionData.SsUrl;
+        if (SSConnectionData.SsSso)
         {
             // REQUIRES IIS CONFIG! https://docs.thycotic.com/ss/11.0.0/api-scripting/webservice-iwa-powershell
             var handler = new HttpClientHandler() { UseDefaultCredentials = true };
             var httpClient = new HttpClient(handler);
             {
                 // Call REST API:
-                return new SecretsServiceClient($"{baseURL}/winauthwebservices/api", httpClient);
+                return new SecretsServiceClient($"{baseUrl}/winauthwebservices/api", httpClient);
             }
         }
         else
         {
             var httpClient = new HttpClient();
             {
-
                 var token = GetToken();
                 // Set credentials (token):
-                httpClient.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
+                httpClient.DefaultRequestHeaders.Authorization =
+                    new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", token);
 
                 // Call REST API:
-                return new SecretsServiceClient($"{baseURL}/api", httpClient);
+                return new SecretsServiceClient($"{baseUrl}/api", httpClient);
             }
         }
-
     }
-    private static void FetchSecret(int secretID, out string secretUsername, out string secretPassword, out string secretDomain, out string privatekey)
+
+    private static void FetchSecret(int secretId, out string secretUsername, out string secretPassword,
+        out string secretDomain, out string privatekey)
     {
         var client = ConstructSecretsServiceClient();
-        SecretModel secret = Task.Run(() => client.GetSecretAsync(false, true, secretID, null)).GetAwaiter().GetResult();
+        var secret = Task.Run(() => client.GetSecretAsync(false, true, secretId, null)).GetAwaiter().GetResult();
 
         // clear return variables
         secretDomain = "";
         secretUsername = "";
         secretPassword = "";
         privatekey = "";
-        string privatekeypassphrase = "";
+        var privatekeypassphrase = "";
 
         // parse data and extract what we need
         foreach (var item in secret.Items)
@@ -179,7 +175,8 @@ public static class SecretServerInterface
             else if (item.FieldName.Equals("private key", StringComparison.OrdinalIgnoreCase))
             {
                 client.ReadResponseNoJSONConvert = true;
-                privatekey = Task.Run(() => client.GetFieldAsync(false, false, secretID, "private-key")).GetAwaiter().GetResult();
+                privatekey = Task.Run(() => client.GetFieldAsync(false, false, secretId, "private-key")).GetAwaiter()
+                    .GetResult();
                 client.ReadResponseNoJSONConvert = false;
             }
             else if (item.FieldName.Equals("private key passphrase", StringComparison.OrdinalIgnoreCase))
@@ -194,18 +191,19 @@ public static class SecretServerInterface
                 var key = DecodePrivateKey(privatekey, privatekeypassphrase);
                 privatekey = key;
             }
-            catch(Exception ex)
+            catch (Exception ex)
             {
                 _ = ex; // Intentionally suppressed
             }
         }
 
         // conversion to putty format necessary?
-        if (!string.IsNullOrEmpty(privatekey) && !privatekey.StartsWith("PuTTY-User-Key-File-2", StringComparison.Ordinal))
+        if (!string.IsNullOrEmpty(privatekey) &&
+            !privatekey.StartsWith("PuTTY-User-Key-File-2", StringComparison.Ordinal))
         {
             try
             {
-                RSACryptoServiceProvider key = ImportPrivateKey(privatekey);
+                var key = ImportPrivateKey(privatekey);
                 privatekey = PuttyKeyFileGenerator.ToPuttyPrivateKey(key);
             }
             catch (Exception ex)
@@ -215,89 +213,92 @@ public static class SecretServerInterface
         }
     }
 
-        #region PUTTY KEY HANDLING
-        // decode rsa private key with encryption password
-        private static string DecodePrivateKey(string encryptedPrivateKey, string password)
-        {
-            TextReader textReader = new StringReader(encryptedPrivateKey);
-            PemReader pemReader = new(textReader, new PasswordFinder(password));
+    #region PUTTY KEY HANDLING
 
-        AsymmetricCipherKeyPair keyPair = (AsymmetricCipherKeyPair)pemReader.ReadObject();
+    // decode rsa private key with encryption password
+    private static string DecodePrivateKey(string encryptedPrivateKey, string password)
+    {
+        TextReader textReader = new StringReader(encryptedPrivateKey);
+        PemReader pemReader = new(textReader, new PasswordFinder(password));
+
+        var keyPair = (AsymmetricCipherKeyPair)pemReader.ReadObject();
 
         TextWriter textWriter = new StringWriter();
         var pemWriter = new PemWriter(textWriter);
         pemWriter.WriteObject(keyPair.Private);
         pemWriter.Writer.Flush();
 
-        return ""+textWriter.ToString();
+        return "" + textWriter;
     }
+
     private sealed class PasswordFinder(string password) : IPasswordFinder
     {
-        private string password = password;
-
         public char[] GetPassword()
         {
             return password.ToCharArray();
         }
     }
 
-        // read private key pem string to rsacryptoserviceprovider
-        public static RSACryptoServiceProvider ImportPrivateKey(string pem)
-        {
-            PemReader pr = new(new StringReader(pem));
-            AsymmetricCipherKeyPair KeyPair = (AsymmetricCipherKeyPair)pr.ReadObject();
-            RSAParameters rsaParams = DotNetUtilities.ToRSAParameters((RsaPrivateCrtKeyParameters)KeyPair.Private);
-            RSACryptoServiceProvider rsa = new();
-            rsa.ImportParameters(rsaParams);
-            return rsa;
-        }
-        #endregion
+    // read private key pem string to rsacryptoserviceprovider
+    public static RSACryptoServiceProvider ImportPrivateKey(string pem)
+    {
+        PemReader pr = new(new StringReader(pem));
+        var keyPair = (AsymmetricCipherKeyPair)pr.ReadObject();
+        var rsaParams = DotNetUtilities.ToRSAParameters((RsaPrivateCrtKeyParameters)keyPair.Private);
+        RSACryptoServiceProvider rsa = new();
+        rsa.ImportParameters(rsaParams);
+        return rsa;
+    }
+
+    #endregion
 
 
     #region TOKEN
+
     private static string GetToken()
     {
         // if there is no token, fetch a fresh one
-        if (String.IsNullOrEmpty(SSConnectionData.ssTokenBearer))
+        if (String.IsNullOrEmpty(SSConnectionData.SsTokenBearer))
         {
             return GetTokenFresh();
         }
+
         // if there is a token, check if it is valid
-        if (SSConnectionData.ssTokenExpiresOn >= DateTime.UtcNow)
+        if (SSConnectionData.SsTokenExpiresOn >= DateTime.UtcNow)
         {
-            return SSConnectionData.ssTokenBearer;
+            return SSConnectionData.SsTokenBearer;
         }
         else
         {
             // try using refresh token
             using (var httpClient = new HttpClient())
             {
-                var tokenClient = new OAuth2ServiceClient(SSConnectionData.ssUrl, httpClient);
-                TokenResponse token = new();
+                var tokenClient = new OAuth2ServiceClient(SSConnectionData.SsUrl, httpClient);
                 try
                 {
-                    token = Task.Run(() => tokenClient.AuthorizeAsync(Grant_type.Refresh_token, null, null, SSConnectionData.ssTokenRefresh, null)).GetAwaiter().GetResult();
+                    var token = Task.Run(() => tokenClient.AuthorizeAsync(Grant_type.Refresh_token, null, null,
+                        SSConnectionData.SsTokenRefresh, null)).GetAwaiter().GetResult();
                     var tokenResult = token.Access_token;
 
-                    SSConnectionData.ssTokenBearer = tokenResult;
-                    SSConnectionData.ssTokenRefresh = token.Refresh_token;
-                    SSConnectionData.ssTokenExpiresOn = token.Expires_on;
+                    SSConnectionData.SsTokenBearer = tokenResult;
+                    SSConnectionData.SsTokenRefresh = token.Refresh_token;
+                    SSConnectionData.SsTokenExpiresOn = token.Expires_on;
                     return tokenResult;
                 }
                 catch (Exception)
                 {
                     // refresh token failed. clean memory and start fresh
-                    SSConnectionData.ssTokenBearer = "";
-                    SSConnectionData.ssTokenRefresh = "";
-                    SSConnectionData.ssTokenExpiresOn = DateTime.Now;
+                    SSConnectionData.SsTokenBearer = "";
+                    SSConnectionData.SsTokenRefresh = "";
+                    SSConnectionData.SsTokenExpiresOn = DateTime.Now;
                     // if OTP is required we need to ask user for a new OTP
-                    if (!String.IsNullOrEmpty(SSConnectionData.ssOTP))
+                    if (!String.IsNullOrEmpty(SSConnectionData.SsOtp))
                     {
-                        SSConnectionData.initdone = false;
+                        SSConnectionData.InitDone = false;
                         // the call below executes a connection test, which fetches a valid token
                         SSConnectionData.Init();
                         // we now have a fresh token in memory. return it to caller
-                        return SSConnectionData.ssTokenBearer;
+                        return SSConnectionData.SsTokenBearer;
                     }
                     else
                     {
@@ -308,36 +309,40 @@ public static class SecretServerInterface
             }
         }
     }
+
     static string GetTokenFresh()
     {
         using (var httpClient = new HttpClient())
         {
             // Authenticate:
-            var tokenClient = new OAuth2ServiceClient(SSConnectionData.ssUrl, httpClient);
+            var tokenClient = new OAuth2ServiceClient(SSConnectionData.SsUrl, httpClient);
             // call below will throw an exception if the creds are invalid
-            var token = Task.Run(() => tokenClient.AuthorizeAsync(Grant_type.Password, SSConnectionData.ssUsername, SSConnectionData.ssPassword, null, SSConnectionData.ssOTP)).GetAwaiter().GetResult();
+            var token = Task.Run(() => tokenClient.AuthorizeAsync(Grant_type.Password, SSConnectionData.SsUsername,
+                SSConnectionData.SsPassword, null, SSConnectionData.SsOtp)).GetAwaiter().GetResult();
             // here we can be sure the creds are ok - return success state                   
             var tokenResult = token.Access_token;
 
-            SSConnectionData.ssTokenBearer = tokenResult;
-            SSConnectionData.ssTokenRefresh = token.Refresh_token;
-            SSConnectionData.ssTokenExpiresOn = token.Expires_on;
+            SSConnectionData.SsTokenBearer = tokenResult;
+            SSConnectionData.SsTokenRefresh = token.Refresh_token;
+            SSConnectionData.SsTokenExpiresOn = token.Expires_on;
             return tokenResult;
         }
     }
+
     #endregion
 
 
     // input must be the secret id to fetch
-    public static void FetchSecretFromServer(string input, out string username, out string password, out string domain, out string privatekey)
+    public static void FetchSecretFromServer(string input, out string username, out string password, out string domain,
+        out string privatekey)
     {
         // get secret id
-        int secretID = Int32.Parse(input);
+        var secretId = Int32.Parse(input);
 
         // init connection credentials, display popup if necessary
         SSConnectionData.Init();
 
         // get the secret
-        FetchSecret(secretID, out username, out password, out domain, out privatekey);
+        FetchSecret(secretId, out username, out password, out domain, out privatekey);
     }
 }

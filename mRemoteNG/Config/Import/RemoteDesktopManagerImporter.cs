@@ -13,48 +13,47 @@ using mRemoteNG.Messages;
 
 #endregion
 
-namespace mRemoteNG.Config.Import
+namespace mRemoteNG.Config.Import;
+
+[SupportedOSPlatform("windows")]
+public class RemoteDesktopManagerImporter : IConnectionImporter<string>
 {
-    [SupportedOSPlatform("windows")]
-    public class RemoteDesktopManagerImporter : IConnectionImporter<string>
+    public void Import(string filePath, ContainerInfo destinationContainer)
     {
-        public void Import(string filePath, ContainerInfo destinationContainer)
+        if (string.IsNullOrEmpty(filePath))
         {
-            if (string.IsNullOrEmpty(filePath))
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, $"Unable to import file. File path is null.");
+            return;
+        }
+
+        if (!File.Exists(filePath))
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, $"Unable to import file. File does not exist. Path: {filePath}");
+
+        FileDataProvider dataProvider = new(filePath);
+        string csvString = dataProvider.Load();
+
+        if (!string.IsNullOrEmpty(csvString))
+        {
+            CsvConnectionsDeserializerRdmFormat csvDeserializer = new();
+            Tree.ConnectionTreeModel connectionTreeModel = csvDeserializer.Deserialize(csvString);
+
+            if (Runtime.CredentialProviderCatalog.CredentialProviders.Any())
             {
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, $"Unable to import file. File path is null.");
-                return;
-            }
-
-            if (!File.Exists(filePath))
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, $"Unable to import file. File does not exist. Path: {filePath}");
-
-            FileDataProvider dataProvider = new(filePath);
-            string csvString = dataProvider.Load();
-
-            if (!string.IsNullOrEmpty(csvString))
-            {
-                CsvConnectionsDeserializerRdmFormat csvDeserializer = new();
-                Tree.ConnectionTreeModel connectionTreeModel = csvDeserializer.Deserialize(csvString);
-
-                if (Runtime.CredentialProviderCatalog.CredentialProviders.Any())
+                ICredentialRepository repository = Runtime.CredentialProviderCatalog.CredentialProviders.First();
+                foreach (ConnectionInfo child in connectionTreeModel.RootNodes)
                 {
-                    ICredentialRepository repository = Runtime.CredentialProviderCatalog.CredentialProviders.First();
-                    foreach (ConnectionInfo child in connectionTreeModel.RootNodes)
-                    {
-                        CredentialImportHelper.ExtractCredentials(child, repository);
-                    }
+                    CredentialImportHelper.ExtractCredentials(child, repository);
                 }
+            }
 
-                ContainerInfo rootContainer = new() { Name = Path.GetFileNameWithoutExtension(filePath) };
-                rootContainer.AddChildRange(connectionTreeModel.RootNodes);
-                destinationContainer.AddChild(rootContainer);
-            }
-            else
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, "Unable to import file. File is empty.");
-                return;
-            }
+            ContainerInfo rootContainer = new() { Name = Path.GetFileNameWithoutExtension(filePath) };
+            rootContainer.AddChildRange(connectionTreeModel.RootNodes);
+            destinationContainer.AddChild(rootContainer);
+        }
+        else
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, "Unable to import file. File is empty.");
+            return;
         }
     }
 }

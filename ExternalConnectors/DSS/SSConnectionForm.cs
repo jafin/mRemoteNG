@@ -1,35 +1,34 @@
-﻿namespace ExternalConnectors.DSS
+﻿namespace ExternalConnectors.DSS;
+
+public partial class SSConnectionForm : Form
 {
-    public partial class SSConnectionForm : Form
+    public SSConnectionForm()
     {
-        public SSConnectionForm()
-        {
-            InitializeComponent();
-        }
+        InitializeComponent();
+    }
 
-        private void SSConnectionForm_Activated(object sender, EventArgs e)
+    private void SSConnectionForm_Activated(object sender, EventArgs e)
+    {
+        SetVisibility();
+        if (cbUseSSO.Checked)
+            btnOK.Focus();
+        else
         {
-            SetVisibility();
-            if (cbUseSSO.Checked)
-                btnOK.Focus();
+            if (tbPassword.Text.Length == 0)
+                tbPassword.Focus();
             else
-            {
-                if (tbPassword.Text.Length == 0)
-                    tbPassword.Focus(); 
-                else
-                    tbOTP.Focus();
-            }
+                tbOTP.Focus();
         }
+    }
 
-        private void cbUseSSO_CheckedChanged(object sender, EventArgs e)
-        {
-            SetVisibility();
-        }
-        private void SetVisibility()
-        {
-            bool ch = cbUseSSO.Checked;
-            tbPassword.Enabled = !ch;
-            tbUsername.Enabled = !ch;
-        }
+    private void cbUseSSO_CheckedChanged(object sender, EventArgs e)
+    {
+        SetVisibility();
+    }
+    private void SetVisibility()
+    {
+        bool ch = cbUseSSO.Checked;
+        tbPassword.Enabled = !ch;
+        tbUsername.Enabled = !ch;
     }
 }

@@ -1,256 +1,255 @@
 ﻿using System.Data;
-using mRemoteNG.Config.DatabaseConnectors;
-using mRemoteNG.Messages;
-using mRemoteNG.App;
-using MySql.Data.MySqlClient;
-using Microsoft.Data.SqlClient;
 using System.Data.Odbc;
 using System.Runtime.Versioning;
+using Microsoft.Data.SqlClient;
+using mRemoteNG.App;
+using mRemoteNG.Config.DatabaseConnectors;
+using mRemoteNG.Messages;
+using MySql.Data.MySqlClient;
 
-namespace mRemoteNG.Config.DataProviders
+namespace mRemoteNG.Config.DataProviders;
+
+[SupportedOSPlatform("windows")]
+public class SqlDataProvider(IDatabaseConnector databaseConnector) : IDataProvider<DataTable>
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlDataProvider(IDatabaseConnector databaseConnector) : IDataProvider<DataTable>
+    public IDatabaseConnector DatabaseConnector { get; } = databaseConnector;
+
+    public DataTable Load()
     {
-        public IDatabaseConnector DatabaseConnector { get; } = databaseConnector;
+        return Load(null);
+    }
 
-        public DataTable Load()
+    public DataTable Load(System.Data.Common.DbTransaction? transaction)
+    {
+        DataTable dataTable = new();
+        System.Data.Common.DbCommand dbQuery = DatabaseConnector.DbCommand("SELECT * FROM tblCons ORDER BY PositionID ASC");
+        DatabaseConnector.AssociateItemToThisConnector(dbQuery);
+        // When Load runs inside an open transaction (SqlConnectionsSaver.Save), the
+        // command must enlist in that transaction. SqlClient otherwise throws
+        // "ExecuteReader requires the command to have a transaction when the connection
+        // assigned to the command is in a pending local transaction" (#113).
+        if (transaction != null)
+            dbQuery.Transaction = transaction;
+        if (!DatabaseConnector.IsConnected)
+            OpenConnection();
+        using System.Data.Common.DbDataReader dbDataReader = dbQuery.ExecuteReader();
+        // Always load the reader so table schema is available even when tblCons has 0 rows.
+        // Note: CommandBehavior.CloseConnection must NOT be used here because Load() is
+        // called inside an open transaction (SqlConnectionsSaver.Save). Closing the
+        // connection mid-transaction rolls back the transaction in MySQL, causing all
+        // subsequent INSERT/UPDATE operations to fail with a stale transaction (#2290).
+        dataTable.Load(dbDataReader);
+        // The database-generated `RowVersion` column (MSSQL rowversion / MySQL TIMESTAMP)
+        // is NOT NULL and UNIQUE in the schema, and DataTable.Load copies both constraints.
+        // Brand-new connections have no RowVersion yet, so building their rows would throw
+        // "Column 'RowVersion' does not allow nulls" (single new row) or, when several are
+        // added at once (e.g. importing many connections), "Column 'RowVersion' is
+        // constrained to be unique. Value '' is already present" (multiple empty values).
+        // Relax both local constraints: the server generates and enforces the value, and the
+        // CommandBuilder excludes the rowversion column from the generated INSERT. (#113)
+        if (dataTable.Columns.Contains("RowVersion"))
         {
-            return Load(null);
+            DataColumn rowVersion = dataTable.Columns["RowVersion"]!;
+            rowVersion.Unique = false;
+            rowVersion.AllowDBNull = true;
+        }
+        return dataTable;
+    }
+
+    public void Save(DataTable dataTable)
+    {
+        Save(dataTable, null);
+    }
+
+    public void Save(DataTable dataTable, System.Data.Common.DbTransaction? transaction)
+    {
+        if (DbUserIsReadOnly())
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, "Trying to save connections but the SQL read only checkbox is checked, aborting!");
+            return;
         }
 
-        public DataTable Load(System.Data.Common.DbTransaction? transaction)
+        if (!DatabaseConnector.IsConnected)
+            OpenConnection();
+
+        if (DatabaseConnector.GetType() == typeof(MSSqlDatabaseConnector))
         {
-            DataTable dataTable = new();
-            System.Data.Common.DbCommand dbQuery = DatabaseConnector.DbCommand("SELECT * FROM tblCons ORDER BY PositionID ASC");
-            DatabaseConnector.AssociateItemToThisConnector(dbQuery);
-            // When Load runs inside an open transaction (SqlConnectionsSaver.Save), the
-            // command must enlist in that transaction. SqlClient otherwise throws
-            // "ExecuteReader requires the command to have a transaction when the connection
-            // assigned to the command is in a pending local transaction" (#113).
-            if (transaction != null)
-                dbQuery.Transaction = transaction;
-            if (!DatabaseConnector.IsConnected)
-                OpenConnection();
-            using System.Data.Common.DbDataReader dbDataReader = dbQuery.ExecuteReader();
-            // Always load the reader so table schema is available even when tblCons has 0 rows.
-            // Note: CommandBehavior.CloseConnection must NOT be used here because Load() is
-            // called inside an open transaction (SqlConnectionsSaver.Save). Closing the
-            // connection mid-transaction rolls back the transaction in MySQL, causing all
-            // subsequent INSERT/UPDATE operations to fail with a stale transaction (#2290).
-            dataTable.Load(dbDataReader);
-            // The database-generated `RowVersion` column (MSSQL rowversion / MySQL TIMESTAMP)
-            // is NOT NULL and UNIQUE in the schema, and DataTable.Load copies both constraints.
-            // Brand-new connections have no RowVersion yet, so building their rows would throw
-            // "Column 'RowVersion' does not allow nulls" (single new row) or, when several are
-            // added at once (e.g. importing many connections), "Column 'RowVersion' is
-            // constrained to be unique. Value '' is already present" (multiple empty values).
-            // Relax both local constraints: the server generates and enforces the value, and the
-            // CommandBuilder excludes the rowversion column from the generated INSERT. (#113)
-            if (dataTable.Columns.Contains("RowVersion"))
-            {
-                DataColumn rowVersion = dataTable.Columns["RowVersion"]!;
-                rowVersion.Unique = false;
-                rowVersion.AllowDBNull = true;
-            }
-            return dataTable;
-        }
+            SqlConnection sqlConnection = (SqlConnection)DatabaseConnector.DbConnection();
+            SqlTransaction? sqlTransaction = (SqlTransaction?)transaction;
+            bool mustDisposeTransaction = false;
 
-        public void Save(DataTable dataTable)
-        {
-            Save(dataTable, null);
-        }
-
-        public void Save(DataTable dataTable, System.Data.Common.DbTransaction? transaction)
-        {
-            if (DbUserIsReadOnly())
+            if (sqlTransaction == null)
             {
-                Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, "Trying to save connections but the SQL read only checkbox is checked, aborting!");
-                return;
+                sqlTransaction = sqlConnection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+                mustDisposeTransaction = true;
             }
 
-            if (!DatabaseConnector.IsConnected)
-                OpenConnection();
-
-            if (DatabaseConnector.GetType() == typeof(MSSqlDatabaseConnector))
+            try
             {
-                SqlConnection sqlConnection = (SqlConnection)DatabaseConnector.DbConnection();
-                SqlTransaction? sqlTransaction = (SqlTransaction?)transaction;
-                bool mustDisposeTransaction = false;
+                using SqlCommand sqlCommand = new();
+                sqlCommand.Connection = sqlConnection;
+                sqlCommand.Transaction = sqlTransaction;
+                sqlCommand.CommandText = "SELECT * FROM tblCons";
+                using SqlDataAdapter dataAdapter = new();
+                dataAdapter.SelectCommand = sqlCommand;
 
-                if (sqlTransaction == null)
+                ConflictOption conflictOption = ConflictOption.OverwriteChanges;
+                if (dataTable.Columns.Contains("RowVersion"))
+                    conflictOption = ConflictOption.CompareRowVersion;
+
+                SqlCommandBuilder builder = new(dataAdapter)
                 {
-                    sqlTransaction = sqlConnection.BeginTransaction(System.Data.IsolationLevel.Serializable);
-                    mustDisposeTransaction = true;
-                }
+                    // Avoid optimistic concurrency, check if it is necessary.
+                    ConflictOption = conflictOption
+                };
 
-                try
+                dataAdapter.UpdateCommand = builder.GetUpdateCommand();
+                dataAdapter.DeleteCommand = builder.GetDeleteCommand();
+                dataAdapter.InsertCommand = builder.GetInsertCommand();
+                dataAdapter.Update(dataTable);
+
+                if (mustDisposeTransaction)
                 {
-                    using SqlCommand sqlCommand = new();
-                    sqlCommand.Connection = sqlConnection;
-                    sqlCommand.Transaction = sqlTransaction;
-                    sqlCommand.CommandText = "SELECT * FROM tblCons";
-                    using SqlDataAdapter dataAdapter = new();
-                    dataAdapter.SelectCommand = sqlCommand;
-
-                    ConflictOption conflictOption = ConflictOption.OverwriteChanges;
-                    if (dataTable.Columns.Contains("RowVersion"))
-                        conflictOption = ConflictOption.CompareRowVersion;
-
-                    SqlCommandBuilder builder = new(dataAdapter)
-                    {
-                        // Avoid optimistic concurrency, check if it is necessary.
-                        ConflictOption = conflictOption
-                    };
-
-                    dataAdapter.UpdateCommand = builder.GetUpdateCommand();
-                    dataAdapter.DeleteCommand = builder.GetDeleteCommand();
-                    dataAdapter.InsertCommand = builder.GetInsertCommand();
-                    dataAdapter.Update(dataTable);
-
-                    if (mustDisposeTransaction)
-                    {
-                        sqlTransaction.Commit();
-                    }
-                }
-                catch (DBConcurrencyException ex)
-                {
-                    Runtime.MessageCollector.AddExceptionStackTrace("Database concurrency conflict detected. Please reload connections.", ex);
-                    throw;
-                }
-                finally
-                {
-                    if (mustDisposeTransaction)
-                    {
-                        sqlTransaction.Dispose();
-                    }
+                    sqlTransaction.Commit();
                 }
             }
-            else if (DatabaseConnector.GetType() == typeof(MySqlDatabaseConnector))
+            catch (DBConcurrencyException ex)
             {
-                MySqlConnection dbConnection = (MySqlConnection)DatabaseConnector.DbConnection();
-                MySqlTransaction? mySqlTransaction = (MySqlTransaction?)transaction;
-                bool mustDisposeTransaction = false;
-
-                if (mySqlTransaction == null)
-                {
-                    mySqlTransaction = dbConnection.BeginTransaction(System.Data.IsolationLevel.Serializable);
-                    mustDisposeTransaction = true;
-                }
-
-                try
-                {
-                    using MySqlCommand sqlCommand = new();
-                    sqlCommand.Connection = dbConnection;
-                    sqlCommand.Transaction = mySqlTransaction;
-                    sqlCommand.CommandText = "SELECT * FROM tblCons";
-                    using MySqlDataAdapter dataAdapter = new(sqlCommand);
-                    dataAdapter.UpdateBatchSize = 1000;
-                    using MySqlCommandBuilder cb = new(dataAdapter);
-
-                    ConflictOption conflictOption = ConflictOption.OverwriteChanges;
-                    if (dataTable.Columns.Contains("RowVersion"))
-                        conflictOption = ConflictOption.CompareRowVersion;
-                    cb.ConflictOption = conflictOption;
-                    // Quote column names with backticks so the MySqlCommandBuilder internal
-                    // parameter-to-column dictionary lookup succeeds on MariaDB/MySQL.
-                    // Without this, GetUpdateCommand/GetDeleteCommand/GetInsertCommand throw
-                    // "Given key was not present in dictionary" (#2257).
-                    cb.QuotePrefix = "`";
-                    cb.QuoteSuffix = "`";
-
-                    // Explicitly retrieve commands after setting ConflictOption so the
-                    // generated UPDATE/DELETE/INSERT use only the primary key in their
-                    // WHERE clause (OverwriteChanges semantics). Without this, the adapter
-                    // auto-generates commands at update time and may ignore the option,
-                    // causing DBConcurrencyException in multi-user environments (#1934).
-                    dataAdapter.UpdateCommand = cb.GetUpdateCommand();
-                    dataAdapter.DeleteCommand = cb.GetDeleteCommand();
-                    dataAdapter.InsertCommand = cb.GetInsertCommand();
-                    dataAdapter.Update(dataTable);
-
-                    if (mustDisposeTransaction)
-                    {
-                        mySqlTransaction.Commit();
-                    }
-                }
-                catch (DBConcurrencyException ex)
-                {
-                    Runtime.MessageCollector.AddExceptionStackTrace("Database concurrency conflict detected. Please reload connections.", ex);
-                    throw;
-                }
-                finally
-                {
-                    if (mustDisposeTransaction)
-                    {
-                        mySqlTransaction.Dispose();
-                    }
-                }
+                Runtime.MessageCollector.AddExceptionStackTrace("Database concurrency conflict detected. Please reload connections.", ex);
+                throw;
             }
-            else if (DatabaseConnector.GetType() == typeof(OdbcDatabaseConnector))
+            finally
             {
-                OdbcConnection dbConnection = (OdbcConnection)DatabaseConnector.DbConnection();
-                OdbcTransaction? odbcTransaction = (OdbcTransaction?)transaction;
-                bool mustDisposeTransaction = false;
-
-                if (odbcTransaction == null)
+                if (mustDisposeTransaction)
                 {
-                    odbcTransaction = dbConnection.BeginTransaction(System.Data.IsolationLevel.Serializable);
-                    mustDisposeTransaction = true;
-                }
-
-                try
-                {
-                    using OdbcCommand sqlCommand = new();
-                    sqlCommand.Connection = dbConnection;
-                    sqlCommand.Transaction = odbcTransaction;
-                    sqlCommand.CommandText = "SELECT * FROM tblCons";
-                    using OdbcDataAdapter dataAdapter = new(sqlCommand);
-
-                    OdbcCommandBuilder builder = new(dataAdapter)
-                    {
-                        // Avoid optimistic concurrency, check if it is necessary.
-                        ConflictOption = ConflictOption.OverwriteChanges
-                    };
-
-                    dataAdapter.UpdateCommand = builder.GetUpdateCommand();
-                    dataAdapter.DeleteCommand = builder.GetDeleteCommand();
-                    dataAdapter.InsertCommand = builder.GetInsertCommand();
-                    dataAdapter.Update(dataTable);
-
-                    if (mustDisposeTransaction)
-                    {
-                        odbcTransaction.Commit();
-                    }
-                }
-                catch (DBConcurrencyException ex)
-                {
-                    Runtime.MessageCollector.AddExceptionStackTrace("Database concurrency conflict detected. Please reload connections.", ex);
-                    throw;
-                }
-                finally
-                {
-                    if (mustDisposeTransaction)
-                    {
-                        odbcTransaction.Dispose();
-                    }
+                    sqlTransaction.Dispose();
                 }
             }
         }
-
-        public void OpenConnection()
+        else if (DatabaseConnector.GetType() == typeof(MySqlDatabaseConnector))
         {
-            DatabaseConnector.Connect();
-        }
+            MySqlConnection dbConnection = (MySqlConnection)DatabaseConnector.DbConnection();
+            MySqlTransaction? mySqlTransaction = (MySqlTransaction?)transaction;
+            bool mustDisposeTransaction = false;
 
-        public void CloseConnection()
-        {
-            DatabaseConnector.Disconnect();
-        }
+            if (mySqlTransaction == null)
+            {
+                mySqlTransaction = dbConnection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+                mustDisposeTransaction = true;
+            }
 
-        private static bool DbUserIsReadOnly()
-        {
-            return Properties.OptionsDBsPage.Default.SQLReadOnly;
+            try
+            {
+                using MySqlCommand sqlCommand = new();
+                sqlCommand.Connection = dbConnection;
+                sqlCommand.Transaction = mySqlTransaction;
+                sqlCommand.CommandText = "SELECT * FROM tblCons";
+                using MySqlDataAdapter dataAdapter = new(sqlCommand);
+                dataAdapter.UpdateBatchSize = 1000;
+                using MySqlCommandBuilder cb = new(dataAdapter);
+
+                ConflictOption conflictOption = ConflictOption.OverwriteChanges;
+                if (dataTable.Columns.Contains("RowVersion"))
+                    conflictOption = ConflictOption.CompareRowVersion;
+                cb.ConflictOption = conflictOption;
+                // Quote column names with backticks so the MySqlCommandBuilder internal
+                // parameter-to-column dictionary lookup succeeds on MariaDB/MySQL.
+                // Without this, GetUpdateCommand/GetDeleteCommand/GetInsertCommand throw
+                // "Given key was not present in dictionary" (#2257).
+                cb.QuotePrefix = "`";
+                cb.QuoteSuffix = "`";
+
+                // Explicitly retrieve commands after setting ConflictOption so the
+                // generated UPDATE/DELETE/INSERT use only the primary key in their
+                // WHERE clause (OverwriteChanges semantics). Without this, the adapter
+                // auto-generates commands at update time and may ignore the option,
+                // causing DBConcurrencyException in multi-user environments (#1934).
+                dataAdapter.UpdateCommand = cb.GetUpdateCommand();
+                dataAdapter.DeleteCommand = cb.GetDeleteCommand();
+                dataAdapter.InsertCommand = cb.GetInsertCommand();
+                dataAdapter.Update(dataTable);
+
+                if (mustDisposeTransaction)
+                {
+                    mySqlTransaction.Commit();
+                }
+            }
+            catch (DBConcurrencyException ex)
+            {
+                Runtime.MessageCollector.AddExceptionStackTrace("Database concurrency conflict detected. Please reload connections.", ex);
+                throw;
+            }
+            finally
+            {
+                if (mustDisposeTransaction)
+                {
+                    mySqlTransaction.Dispose();
+                }
+            }
         }
+        else if (DatabaseConnector.GetType() == typeof(OdbcDatabaseConnector))
+        {
+            OdbcConnection dbConnection = (OdbcConnection)DatabaseConnector.DbConnection();
+            OdbcTransaction? odbcTransaction = (OdbcTransaction?)transaction;
+            bool mustDisposeTransaction = false;
+
+            if (odbcTransaction == null)
+            {
+                odbcTransaction = dbConnection.BeginTransaction(System.Data.IsolationLevel.Serializable);
+                mustDisposeTransaction = true;
+            }
+
+            try
+            {
+                using OdbcCommand sqlCommand = new();
+                sqlCommand.Connection = dbConnection;
+                sqlCommand.Transaction = odbcTransaction;
+                sqlCommand.CommandText = "SELECT * FROM tblCons";
+                using OdbcDataAdapter dataAdapter = new(sqlCommand);
+
+                OdbcCommandBuilder builder = new(dataAdapter)
+                {
+                    // Avoid optimistic concurrency, check if it is necessary.
+                    ConflictOption = ConflictOption.OverwriteChanges
+                };
+
+                dataAdapter.UpdateCommand = builder.GetUpdateCommand();
+                dataAdapter.DeleteCommand = builder.GetDeleteCommand();
+                dataAdapter.InsertCommand = builder.GetInsertCommand();
+                dataAdapter.Update(dataTable);
+
+                if (mustDisposeTransaction)
+                {
+                    odbcTransaction.Commit();
+                }
+            }
+            catch (DBConcurrencyException ex)
+            {
+                Runtime.MessageCollector.AddExceptionStackTrace("Database concurrency conflict detected. Please reload connections.", ex);
+                throw;
+            }
+            finally
+            {
+                if (mustDisposeTransaction)
+                {
+                    odbcTransaction.Dispose();
+                }
+            }
+        }
+    }
+
+    public void OpenConnection()
+    {
+        DatabaseConnector.Connect();
+    }
+
+    public void CloseConnection()
+    {
+        DatabaseConnector.Disconnect();
+    }
+
+    private static bool DbUserIsReadOnly()
+    {
+        return Properties.OptionsDBsPage.Default.SQLReadOnly;
     }
 }

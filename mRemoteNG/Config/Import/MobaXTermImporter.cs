@@ -7,28 +7,27 @@ using mRemoteNG.Connection;
 using mRemoteNG.Container;
 using mRemoteNG.Credential;
 
-namespace mRemoteNG.Config.Import
+namespace mRemoteNG.Config.Import;
+
+[SupportedOSPlatform("windows")]
+public class MobaXTermImporter : IConnectionImporter<string>
 {
-    [SupportedOSPlatform("windows")]
-    public class MobaXTermImporter : IConnectionImporter<string>
+    public void Import(string fileName, ContainerInfo destinationContainer)
     {
-        public void Import(string fileName, ContainerInfo destinationContainer)
+        string content = File.ReadAllText(fileName);
+
+        MobaXTermSessionDeserializer deserializer = new();
+        Tree.ConnectionTreeModel connectionTreeModel = deserializer.Deserialize(content);
+
+        foreach (ConnectionInfo child in connectionTreeModel.RootNodes.First().Children.ToList())
         {
-            string content = File.ReadAllText(fileName);
-
-            MobaXTermSessionDeserializer deserializer = new();
-            Tree.ConnectionTreeModel connectionTreeModel = deserializer.Deserialize(content);
-
-            foreach (ConnectionInfo child in connectionTreeModel.RootNodes.First().Children.ToList())
+            if (Runtime.CredentialProviderCatalog.CredentialProviders.Any())
             {
-                if (Runtime.CredentialProviderCatalog.CredentialProviders.Any())
-                {
-                    ICredentialRepository repository = Runtime.CredentialProviderCatalog.CredentialProviders.First();
-                    CredentialImportHelper.ExtractCredentials(child, repository);
-                }
-
-                destinationContainer.AddChild(child);
+                ICredentialRepository repository = Runtime.CredentialProviderCatalog.CredentialProviders.First();
+                CredentialImportHelper.ExtractCredentials(child, repository);
             }
+
+            destinationContainer.AddChild(child);
         }
     }
 }

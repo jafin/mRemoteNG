@@ -7,209 +7,208 @@ using mRemoteNG.App;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 
-namespace mRemoteNG.Connection.Protocol.Terminal
+namespace mRemoteNG.Connection.Protocol.Terminal;
+
+[SupportedOSPlatform("windows")]
+public class ProtocolTerminal(ConnectionInfo connectionInfo) : ExternalProcessProtocolBase
 {
-    [SupportedOSPlatform("windows")]
-    public class ProtocolTerminal(ConnectionInfo connectionInfo) : ExternalProcessProtocolBase
+    #region Private Fields
+
+    private readonly ConnectionInfo _connectionInfo = connectionInfo;
+    private ConsoleControl.ConsoleControl? _consoleControl;
+
+    #endregion
+
+    #region Public Methods
+
+    public override bool Connect()
     {
-        #region Private Fields
-
-        private readonly ConnectionInfo _connectionInfo = connectionInfo;
-        private ConsoleControl.ConsoleControl? _consoleControl;
-
-        #endregion
-
-        #region Public Methods
-
-        public override bool Connect()
+        try
         {
-            try
+            Runtime.MessageCollector?.AddMessage(MessageClass.InformationMsg, "Attempting to start Terminal session.", true);
+
+            _consoleControl = new ConsoleControl.ConsoleControl
             {
-                Runtime.MessageCollector?.AddMessage(MessageClass.InformationMsg, "Attempting to start Terminal session.", true);
+                Dock = DockStyle.Fill,
+                BackColor = ColorTranslator.FromHtml("#012456"),
+                ForeColor = Color.White,
+                IsInputEnabled = true,
+                Padding = new Padding(0, 20, 0, 0)
+            };
 
-                _consoleControl = new ConsoleControl.ConsoleControl
-                {
-                    Dock = DockStyle.Fill,
-                    BackColor = ColorTranslator.FromHtml("#012456"),
-                    ForeColor = Color.White,
-                    IsInputEnabled = true,
-                    Padding = new Padding(0, 20, 0, 0)
-                };
+            string hostname = _connectionInfo.Hostname.Trim();
+            bool useLocalHost = hostname.Length == 0 || hostname.Equals("localhost", StringComparison.OrdinalIgnoreCase);
 
-                string hostname = _connectionInfo.Hostname.Trim();
-                bool useLocalHost = hostname.Length == 0 || hostname.Equals("localhost", StringComparison.OrdinalIgnoreCase);
+            string processExe;
+            string arguments;
 
-                string processExe;
-                string arguments;
-
-                if (!useLocalHost)
-                {
-                    // Remote session: launch the OpenSSH client (ssh.exe) DIRECTLY.
-                    //
-                    // The previous implementation ran "cmd.exe /K ssh <host>", concatenating the
-                    // attacker-controllable Hostname/Username connection fields into a string that
-                    // cmd.exe then re-parsed. That allowed command injection through shell
-                    // metacharacters (& | < > ^) — see issue #3335. Invoking ssh.exe directly means
-                    // no shell interprets the arguments, and BuildSshArguments rejects any value that
-                    // could be mis-parsed as an additional ssh argument.
-                    string? sshExe = FindSshExe();
-                    if (sshExe == null)
-                    {
-                        Runtime.MessageCollector?.AddMessage(MessageClass.ErrorMsg,
-                            "Windows OpenSSH client (ssh.exe) was not found. " +
-                            "Please install the OpenSSH Client optional feature via Settings > Apps > Optional Features.", true);
-                        return false;
-                    }
-
-                    processExe = sshExe;
-                    arguments = BuildSshArguments(_connectionInfo.Hostname, _connectionInfo.Username, _connectionInfo.Port);
-                }
-                else
-                {
-                    // Local session: open the system command processor. No user-controlled input is
-                    // passed, so there is nothing to inject.
-                    processExe = Environment.GetEnvironmentVariable("COMSPEC") ?? @"C:\Windows\System32\cmd.exe";
-                    arguments = "/K";
-                }
-
-                _consoleControl.StartProcess(processExe, arguments);
-
-                // Wait for the console control to create its handle
-                int maxWaitMs = 5000; // 5 seconds timeout
-                long startTicks = Environment.TickCount64;
-                while (!_consoleControl.IsHandleCreated &&
-                       Environment.TickCount64 < startTicks + maxWaitMs)
-                {
-                    System.Threading.Thread.Sleep(50);
-                }
-
-                if (!_consoleControl.IsHandleCreated)
-                {
-                    throw new TimeoutException("Failed to initialize terminal console within 5 seconds. This may indicate system resource constraints or permission issues.");
-                }
-
-                _handle = _consoleControl.Handle;
-                NativeMethods.SetParent(_handle, InterfaceControl.Handle);
-
-                Resize(this, EventArgs.Empty);
-                base.Connect();
-                return true;
-            }
-            catch (Exception ex)
+            if (!useLocalHost)
             {
-                Runtime.MessageCollector?.AddExceptionMessage(Language.ConnectionFailed, ex);
-                return false;
-            }
-        }
-
-        #endregion
-
-        #region Private Methods
-
-        /// <summary>
-        /// Builds the argument string passed to ssh.exe. The hostname and username come straight from
-        /// the (potentially malicious) connections file, so both are validated: any value containing
-        /// whitespace/control characters, a double quote, or starting with '-' is rejected, because
-        /// ssh.exe would parse such a value as one or more additional arguments (e.g. -oProxyCommand=...)
-        /// rather than as the target. ssh.exe is launched directly with no intervening shell, so shell
-        /// metacharacters (&amp; | &lt; &gt; ^) carry no special meaning and cannot execute commands.
-        /// </summary>
-        private static string BuildSshArguments(string rawHostname, string rawUsername, int port)
-        {
-            string hostname = (rawHostname ?? string.Empty).Trim();
-            string username = (rawUsername ?? string.Empty).Trim();
-
-            // Deliberately do NOT echo the offending value: it is attacker-controlled and, in the
-            // invalid case, may contain control characters/newlines that would be written verbatim into
-            // logs and UI messages (log forging / message spoofing).
-            if (!IsSafeSshToken(hostname))
-                throw new ArgumentException("Refusing to start SSH session: the hostname contains characters that are not allowed.");
-
-            if (username.Length > 0 && !IsSafeSshToken(username))
-                throw new ArgumentException("Refusing to start SSH session: the username contains characters that are not allowed.");
-
-            string args = "";
-
-            if (port > 0 && port != (int)Defaults.Port)
-                args += $"-p {port} ";
-
-            if (username.Length > 0)
-                args += $"{username}@{hostname}";
-            else
-                args += hostname;
-
-            return args.Trim();
-        }
-
-        /// <summary>
-        /// Returns true only for values that are safe to place on the ssh.exe command line as a single
-        /// token: non-empty, no whitespace or control characters, no double quotes, and not starting
-        /// with '-' (which ssh would treat as an option switch). Double quotes are rejected because
-        /// Windows argument parsing (CommandLineToArgvW) strips them, so a value such as
-        /// "-oProxyCommand=..." does not literally start with '-' here yet reaches ssh.exe as an argv
-        /// token that does — re-enabling option injection.
-        /// </summary>
-        private static bool IsSafeSshToken(string value)
-        {
-            if (string.IsNullOrEmpty(value))
-                return false;
-
-            if (value[0] == '-')
-                return false;
-
-            foreach (char c in value)
-            {
-                if (char.IsWhiteSpace(c) || char.IsControl(c) || c == '"')
+                // Remote session: launch the OpenSSH client (ssh.exe) DIRECTLY.
+                //
+                // The previous implementation ran "cmd.exe /K ssh <host>", concatenating the
+                // attacker-controllable Hostname/Username connection fields into a string that
+                // cmd.exe then re-parsed. That allowed command injection through shell
+                // metacharacters (& | < > ^) — see issue #3335. Invoking ssh.exe directly means
+                // no shell interprets the arguments, and BuildSshArguments rejects any value that
+                // could be mis-parsed as an additional ssh argument.
+                string? sshExe = FindSshExe();
+                if (sshExe == null)
+                {
+                    Runtime.MessageCollector?.AddMessage(MessageClass.ErrorMsg,
+                        "Windows OpenSSH client (ssh.exe) was not found. " +
+                        "Please install the OpenSSH Client optional feature via Settings > Apps > Optional Features.", true);
                     return false;
+                }
+
+                processExe = sshExe;
+                arguments = BuildSshArguments(_connectionInfo.Hostname, _connectionInfo.Username, _connectionInfo.Port);
+            }
+            else
+            {
+                // Local session: open the system command processor. No user-controlled input is
+                // passed, so there is nothing to inject.
+                processExe = Environment.GetEnvironmentVariable("COMSPEC") ?? @"C:\Windows\System32\cmd.exe";
+                arguments = "/K";
             }
 
+            _consoleControl.StartProcess(processExe, arguments);
+
+            // Wait for the console control to create its handle
+            int maxWaitMs = 5000; // 5 seconds timeout
+            long startTicks = Environment.TickCount64;
+            while (!_consoleControl.IsHandleCreated &&
+                   Environment.TickCount64 < startTicks + maxWaitMs)
+            {
+                System.Threading.Thread.Sleep(50);
+            }
+
+            if (!_consoleControl.IsHandleCreated)
+            {
+                throw new TimeoutException("Failed to initialize terminal console within 5 seconds. This may indicate system resource constraints or permission issues.");
+            }
+
+            _handle = _consoleControl.Handle;
+            NativeMethods.SetParent(_handle, InterfaceControl.Handle);
+
+            Resize(this, EventArgs.Empty);
+            base.Connect();
             return true;
         }
-
-        private static string? FindSshExe()
+        catch (Exception ex)
         {
-            // Try the standard Windows OpenSSH location first
-            string systemSsh = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.System),
-                "OpenSSH", "ssh.exe");
-
-            if (File.Exists(systemSsh))
-                return systemSsh;
-
-            // Fallback: try to find ssh.exe on PATH
-            string? pathVar = Environment.GetEnvironmentVariable("PATH");
-            if (pathVar != null)
-            {
-                foreach (string dir in pathVar.Split(Path.PathSeparator))
-                {
-                    // PATH segments may be quoted, blank, or contain %VAR% placeholders. Normalize each
-                    // before probing so we don't build a quoted or relative "ssh.exe" candidate.
-                    string segment = dir.Trim().Trim('"');
-                    if (segment.Length == 0)
-                        continue;
-
-                    segment = Environment.ExpandEnvironmentVariables(segment);
-                    if (!Path.IsPathRooted(segment))
-                        continue;
-
-                    string candidate = Path.Combine(segment, "ssh.exe");
-                    if (File.Exists(candidate))
-                        return candidate;
-                }
-            }
-
-            return null;
+            Runtime.MessageCollector?.AddExceptionMessage(Language.ConnectionFailed, ex);
+            return false;
         }
-
-        #endregion
-
-        #region Enumerations
-
-        public enum Defaults
-        {
-            Port = 22
-        }
-
-        #endregion
     }
+
+    #endregion
+
+    #region Private Methods
+
+    /// <summary>
+    /// Builds the argument string passed to ssh.exe. The hostname and username come straight from
+    /// the (potentially malicious) connections file, so both are validated: any value containing
+    /// whitespace/control characters, a double quote, or starting with '-' is rejected, because
+    /// ssh.exe would parse such a value as one or more additional arguments (e.g. -oProxyCommand=...)
+    /// rather than as the target. ssh.exe is launched directly with no intervening shell, so shell
+    /// metacharacters (&amp; | &lt; &gt; ^) carry no special meaning and cannot execute commands.
+    /// </summary>
+    private static string BuildSshArguments(string rawHostname, string rawUsername, int port)
+    {
+        string hostname = (rawHostname ?? string.Empty).Trim();
+        string username = (rawUsername ?? string.Empty).Trim();
+
+        // Deliberately do NOT echo the offending value: it is attacker-controlled and, in the
+        // invalid case, may contain control characters/newlines that would be written verbatim into
+        // logs and UI messages (log forging / message spoofing).
+        if (!IsSafeSshToken(hostname))
+            throw new ArgumentException("Refusing to start SSH session: the hostname contains characters that are not allowed.");
+
+        if (username.Length > 0 && !IsSafeSshToken(username))
+            throw new ArgumentException("Refusing to start SSH session: the username contains characters that are not allowed.");
+
+        string args = "";
+
+        if (port > 0 && port != (int)Defaults.Port)
+            args += $"-p {port} ";
+
+        if (username.Length > 0)
+            args += $"{username}@{hostname}";
+        else
+            args += hostname;
+
+        return args.Trim();
+    }
+
+    /// <summary>
+    /// Returns true only for values that are safe to place on the ssh.exe command line as a single
+    /// token: non-empty, no whitespace or control characters, no double quotes, and not starting
+    /// with '-' (which ssh would treat as an option switch). Double quotes are rejected because
+    /// Windows argument parsing (CommandLineToArgvW) strips them, so a value such as
+    /// "-oProxyCommand=..." does not literally start with '-' here yet reaches ssh.exe as an argv
+    /// token that does — re-enabling option injection.
+    /// </summary>
+    private static bool IsSafeSshToken(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return false;
+
+        if (value[0] == '-')
+            return false;
+
+        foreach (char c in value)
+        {
+            if (char.IsWhiteSpace(c) || char.IsControl(c) || c == '"')
+                return false;
+        }
+
+        return true;
+    }
+
+    private static string? FindSshExe()
+    {
+        // Try the standard Windows OpenSSH location first
+        string systemSsh = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.System),
+            "OpenSSH", "ssh.exe");
+
+        if (File.Exists(systemSsh))
+            return systemSsh;
+
+        // Fallback: try to find ssh.exe on PATH
+        string? pathVar = Environment.GetEnvironmentVariable("PATH");
+        if (pathVar != null)
+        {
+            foreach (string dir in pathVar.Split(Path.PathSeparator))
+            {
+                // PATH segments may be quoted, blank, or contain %VAR% placeholders. Normalize each
+                // before probing so we don't build a quoted or relative "ssh.exe" candidate.
+                string segment = dir.Trim().Trim('"');
+                if (segment.Length == 0)
+                    continue;
+
+                segment = Environment.ExpandEnvironmentVariables(segment);
+                if (!Path.IsPathRooted(segment))
+                    continue;
+
+                string candidate = Path.Combine(segment, "ssh.exe");
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+        }
+
+        return null;
+    }
+
+    #endregion
+
+    #region Enumerations
+
+    public enum Defaults
+    {
+        Port = 22
+    }
+
+    #endregion
 }

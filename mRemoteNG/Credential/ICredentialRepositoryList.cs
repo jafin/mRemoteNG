@@ -2,23 +2,22 @@
 using System.Collections.Generic;
 using mRemoteNG.Tools.CustomCollections;
 
-namespace mRemoteNG.Credential
+namespace mRemoteNG.Credential;
+
+public interface ICredentialRepositoryList : IEnumerable<ICredentialRepository>
 {
-    public interface ICredentialRepositoryList : IEnumerable<ICredentialRepository>
-    {
-        IEnumerable<ICredentialRepository> CredentialProviders { get; }
+    IEnumerable<ICredentialRepository> CredentialProviders { get; }
 
-        void AddProvider(ICredentialRepository credentialProvider);
+    void AddProvider(ICredentialRepository credentialProvider);
 
-        void RemoveProvider(ICredentialRepository credentialProvider);
+    void RemoveProvider(ICredentialRepository credentialProvider);
 
-        bool Contains(Guid repositoryId);
+    bool Contains(Guid repositoryId);
 
-        IEnumerable<ICredentialRecord> GetCredentialRecords();
+    IEnumerable<ICredentialRecord> GetCredentialRecords();
 
-        ICredentialRecord? GetCredentialRecord(Guid id);
+    ICredentialRecord? GetCredentialRecord(Guid id);
 
-        event EventHandler<CollectionUpdatedEventArgs<ICredentialRepository>> RepositoriesUpdated;
-        event EventHandler<CollectionUpdatedEventArgs<ICredentialRecord>> CredentialsUpdated;
-    }
+    event EventHandler<CollectionUpdatedEventArgs<ICredentialRepository>> RepositoriesUpdated;
+    event EventHandler<CollectionUpdatedEventArgs<ICredentialRecord>> CredentialsUpdated;
 }

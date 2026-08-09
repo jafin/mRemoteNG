@@ -1,107 +1,106 @@
 using System;
-using System.Management;
 using System.Collections;
 using System.Collections.Generic;
+using System.Management;
 using System.Text.RegularExpressions;
 
-namespace CustomActions
+namespace CustomActions;
+
+public class InstalledWindowsUpdateChecker
 {
-    public class InstalledWindowsUpdateChecker
+    private readonly ManagementScope _managementScope;
+    private static readonly Regex KbPattern = new Regex(@"^(?:KB)?\d+$", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
+
+    public InstalledWindowsUpdateChecker()
     {
-        private readonly ManagementScope _managementScope;
-        private static readonly Regex KbPattern = new Regex(@"^(?:KB)?\d+$", RegexOptions.IgnoreCase | RegexOptions.Compiled | RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(1));
+        _managementScope = Connect();
+    }
 
-        public InstalledWindowsUpdateChecker()
+
+    public static ManagementScope Connect()
+    {
+        try
         {
-            _managementScope = Connect();
+            return new ManagementScope(@"root\cimv2");
         }
-
-
-        public static ManagementScope Connect()
+        catch (ManagementException e)
         {
-            try
-            {
-                return new ManagementScope(@"root\cimv2");
-            }
-            catch (ManagementException e)
-            {
-                Console.WriteLine($"Failed to connect: {e.Message}");
-                throw;
-            }
+            Console.WriteLine($"Failed to connect: {e.Message}");
+            throw;
         }
+    }
 
-        public ArrayList GetInstalledUpdates()
+    public ArrayList GetInstalledUpdates()
+    {
+        const string query = "SELECT * FROM Win32_QuickFixEngineering";
+        var installedUpdates = new ArrayList();
+        var searcher = new ManagementObjectSearcher(_managementScope, new ObjectQuery(query));
+        foreach(var o in searcher.Get())
         {
-            const string query = "SELECT * FROM Win32_QuickFixEngineering";
-            var installedUpdates = new ArrayList();
-            var searcher = new ManagementObjectSearcher(_managementScope, new ObjectQuery(query));
-            foreach(var o in searcher.Get())
-            {
-                var queryObj = (ManagementObject) o;
-                installedUpdates.Add(queryObj["HotFixID"]);
-            }
-            return installedUpdates;
+            var queryObj = (ManagementObject) o;
+            installedUpdates.Add(queryObj["HotFixID"]);
         }
+        return installedUpdates;
+    }
 
-        public bool IsUpdateInstalled(string kb) => IsUpdateInstalled(new[] {kb});
+    public bool IsUpdateInstalled(string kb) => IsUpdateInstalled(new[] {kb});
 
-        public bool IsUpdateInstalled(IEnumerable<string> kbList)
+    public bool IsUpdateInstalled(IEnumerable<string> kbList)
+    {
+        var updateIsInstalled = false;
+        var whereClause = BuildWhereClauseFromKbList(kbList);
+        if (whereClause == "") return false;
+        var query = $"SELECT HotFixID FROM Win32_QuickFixEngineering WHERE {whereClause}";
+        var searcher = new ManagementObjectSearcher(_managementScope, new ObjectQuery(query));
+        if (searcher.Get().Count > 0)
+            updateIsInstalled = true;
+        return updateIsInstalled;
+    }
+
+    private static string BuildWhereClauseFromKbList(IEnumerable<string> kbList)
+    {
+        var whereClause = "";
+        var counter = 0;
+        foreach (var kb in kbList)
         {
-            var updateIsInstalled = false;
-            var whereClause = BuildWhereClauseFromKbList(kbList);
-            if (whereClause == "") return false;
-            var query = $"SELECT HotFixID FROM Win32_QuickFixEngineering WHERE {whereClause}";
-            var searcher = new ManagementObjectSearcher(_managementScope, new ObjectQuery(query));
-            if (searcher.Get().Count > 0)
-                updateIsInstalled = true;
-            return updateIsInstalled;
+            var sanitizedKb = SanitizeKbId(kb);
+            if (string.IsNullOrEmpty(sanitizedKb))
+                continue; // Skip invalid KB IDs
+
+            if (counter > 0)
+                whereClause += " OR ";
+            whereClause += $"HotFixID='{sanitizedKb}'";
+            counter++;
         }
+        return whereClause;
+    }
 
-        private static string BuildWhereClauseFromKbList(IEnumerable<string> kbList)
-        {
-            var whereClause = "";
-            var counter = 0;
-            foreach (var kb in kbList)
-            {
-                var sanitizedKb = SanitizeKbId(kb);
-                if (string.IsNullOrEmpty(sanitizedKb))
-                    continue; // Skip invalid KB IDs
+    /// <summary>
+    /// Sanitizes a KB ID to prevent WQL injection attacks.
+    /// KB IDs must match the pattern: optional "KB" prefix followed by digits,
+    /// or just digits. Any other characters are rejected.
+    /// </summary>
+    /// <param name="kbId">The KB ID to sanitize</param>
+    /// <returns>The sanitized KB ID, or empty string if invalid</returns>
+    private static string SanitizeKbId(string kbId)
+    {
+        if (string.IsNullOrWhiteSpace(kbId))
+            return string.Empty;
 
-                if (counter > 0)
-                    whereClause += " OR ";
-                whereClause += $"HotFixID='{sanitizedKb}'";
-                counter++;
-            }
-            return whereClause;
-        }
+        // KB IDs should match the pattern: optional KB prefix followed by digits
+        // (e.g., KB1234567 or 1234567)
+        // Trim whitespace and check if it matches the expected pattern
+        var trimmedKb = kbId.Trim();
+        if (!KbPattern.IsMatch(trimmedKb))
+            return string.Empty;
 
-        /// <summary>
-        /// Sanitizes a KB ID to prevent WQL injection attacks.
-        /// KB IDs must match the pattern: optional "KB" prefix followed by digits,
-        /// or just digits. Any other characters are rejected.
-        /// </summary>
-        /// <param name="kbId">The KB ID to sanitize</param>
-        /// <returns>The sanitized KB ID, or empty string if invalid</returns>
-        private static string SanitizeKbId(string kbId)
-        {
-            if (string.IsNullOrWhiteSpace(kbId))
-                return string.Empty;
+        // Normalize to uppercase
+        var normalizedKb = trimmedKb.ToUpperInvariant();
 
-            // KB IDs should match the pattern: optional KB prefix followed by digits
-            // (e.g., KB1234567 or 1234567)
-            // Trim whitespace and check if it matches the expected pattern
-            var trimmedKb = kbId.Trim();
-            if (!KbPattern.IsMatch(trimmedKb))
-                return string.Empty;
+        // Ensure KB prefix is present (Win32_QuickFixEngineering always uses the KB prefix)
+        if (!normalizedKb.StartsWith("KB", StringComparison.Ordinal))
+            normalizedKb = "KB" + normalizedKb;
 
-            // Normalize to uppercase
-            var normalizedKb = trimmedKb.ToUpperInvariant();
-
-            // Ensure KB prefix is present (Win32_QuickFixEngineering always uses the KB prefix)
-            if (!normalizedKb.StartsWith("KB", StringComparison.Ordinal))
-                normalizedKb = "KB" + normalizedKb;
-
-            return normalizedKb;
-        }
+        return normalizedKb;
     }
 }

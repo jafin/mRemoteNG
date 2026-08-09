@@ -1,9 +1,8 @@
 ﻿using System.Drawing;
 
-namespace mRemoteNG.UI.GraphicsUtilities
+namespace mRemoteNG.UI.GraphicsUtilities;
+
+public interface IGraphicsProvider
 {
-    public interface IGraphicsProvider
-    {
-        SizeF GetResolutionScalingFactor();
-    }
+    SizeF GetResolutionScalingFactor();
 }

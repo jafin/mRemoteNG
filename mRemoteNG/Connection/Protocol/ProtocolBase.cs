@@ -1,577 +1,575 @@
-﻿using mRemoteNG.App;
-using mRemoteNG.Connection;
-using mRemoteNG.Tools;
-using mRemoteNG.UI.Forms;
-using Microsoft.Win32;
-using System;
+﻿using System;
+using System.Runtime.Versioning;
 using System.Threading;
 using System.Windows.Forms;
+using Microsoft.Win32;
+using mRemoteNG.App;
+using mRemoteNG.Tools;
+using mRemoteNG.UI.Forms;
 using mRemoteNG.UI.Tabs;
-using System.Runtime.Versioning;
 
 // ReSharper disable UnusedMember.Local
 
-namespace mRemoteNG.Connection.Protocol
+namespace mRemoteNG.Connection.Protocol;
+
+/// <summary>
+/// Abstract base class for all remote connection protocols (RDP, SSH, VNC, etc.).
+/// Each protocol implementation handles connecting, disconnecting, and hosting
+/// its UI control within a <see cref="InterfaceControl"/> on a
+/// <see cref="UI.Tabs.ConnectionTab"/>. Provides lifecycle events
+/// (Connecting, Connected, Disconnected, Closed, ErrorOccured) that are consumed
+/// by <see cref="ConnectionInitiator"/> for connection management and audit logging.
+/// </summary>
+[SupportedOSPlatform("windows")]
+public abstract class ProtocolBase : IDisposable
 {
-    /// <summary>
-    /// Abstract base class for all remote connection protocols (RDP, SSH, VNC, etc.).
-    /// Each protocol implementation handles connecting, disconnecting, and hosting
-    /// its UI control within a <see cref="InterfaceControl"/> on a
-    /// <see cref="UI.Tabs.ConnectionTab"/>. Provides lifecycle events
-    /// (Connecting, Connected, Disconnected, Closed, ErrorOccured) that are consumed
-    /// by <see cref="ConnectionInitiator"/> for connection management and audit logging.
-    /// </summary>
-    [SupportedOSPlatform("windows")]
-    public abstract class ProtocolBase : IDisposable
+    #region Private Variables
+
+    private ConnectionTab? _connectionTab;
+    private InterfaceControl _interfaceControl = null!;
+    private ConnectingEventHandler? ConnectingEvent;
+    private ConnectedEventHandler? ConnectedEvent;
+    private DisconnectedEventHandler? DisconnectedEvent;
+    private ErrorOccuredEventHandler? ErrorOccuredEvent;
+    private ClosingEventHandler? ClosingEvent;
+    private ClosedEventHandler? ClosedEvent;
+
+    #endregion
+
+    #region Public Properties
+
+    #region Control
+
+    private string? Name { get; }
+
+    private ConnectionTab? ConnectionTab
     {
-        #region Private Variables
-
-        private ConnectionTab? _connectionTab;
-        private InterfaceControl _interfaceControl = null!;
-        private ConnectingEventHandler? ConnectingEvent;
-        private ConnectedEventHandler? ConnectedEvent;
-        private DisconnectedEventHandler? DisconnectedEvent;
-        private ErrorOccuredEventHandler? ErrorOccuredEvent;
-        private ClosingEventHandler? ClosingEvent;
-        private ClosedEventHandler? ClosedEvent;
-
-        #endregion
-
-        #region Public Properties
-
-        #region Control
-
-        private string? Name { get; }
-
-        private ConnectionTab? ConnectionTab
+        get => _connectionTab;
+        set
         {
-            get => _connectionTab;
-            set
+            if (_connectionTab != null)
             {
-                if (_connectionTab != null)
-                {
-                    _connectionTab.ResizeBegin -= ResizeBegin;
-                    _connectionTab.Resize -= Resize;
-                    _connectionTab.ResizeEnd -= ResizeEnd;
-                }
+                _connectionTab.ResizeBegin -= ResizeBegin;
+                _connectionTab.Resize -= Resize;
+                _connectionTab.ResizeEnd -= ResizeEnd;
+            }
 
-                _connectionTab = value;
-                if (_connectionTab != null)
-                {
-                    _connectionTab.ResizeBegin += ResizeBegin;
-                    _connectionTab.Resize += Resize;
-                    _connectionTab.ResizeEnd += ResizeEnd;
-                }
+            _connectionTab = value;
+            if (_connectionTab != null)
+            {
+                _connectionTab.ResizeBegin += ResizeBegin;
+                _connectionTab.Resize += Resize;
+                _connectionTab.ResizeEnd += ResizeEnd;
             }
         }
+    }
 
-        public InterfaceControl InterfaceControl
+    public InterfaceControl InterfaceControl
+    {
+        get => _interfaceControl;
+        set
         {
-            get => _interfaceControl;
-            set
-            {
-                _interfaceControl = value;
+            _interfaceControl = value;
 
-                ConnectionTab? owner = mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl);
-                if (owner != null)
-                    ConnectionTab = owner;
+            ConnectionTab? owner = mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl);
+            if (owner != null)
+                ConnectionTab = owner;
+        }
+    }
+
+    protected Control? Control { get; set; }
+
+    #endregion
+
+    public ConnectionInfo.Force Force { get; set; }
+
+    public bool IsSessionDisconnected { get; set; }
+
+    public DateTime? ConnectedAt { get; private set; }
+
+    protected readonly System.Windows.Forms.Timer tmrReconnect = new() { Interval = 5000 };
+    protected ReconnectGroup? ReconnectGroup;
+
+    protected ProtocolBase(string name)
+    {
+        Name = name;
+    }
+
+    protected ProtocolBase()
+    {
+    }
+
+    #endregion
+
+    #region Methods
+
+    public virtual void SendText(string text)
+    {
+        if (string.IsNullOrEmpty(text)) return;
+        try
+        {
+            Focus();
+            System.Windows.Forms.SendKeys.SendWait(EscapeSendKeys(text));
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddExceptionStackTrace("SendText failed (ProtocolBase)", ex);
+        }
+    }
+
+    protected static string EscapeSendKeys(string str)
+    {
+        System.Text.StringBuilder sb = new System.Text.StringBuilder();
+        foreach (char c in str)
+        {
+            if (c == '+' || c == '^' || c == '%' || c == '~' || c == '!' || c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']')
+            {
+                sb.Append('{');
+                sb.Append(c);
+                sb.Append('}');
+            }
+            else
+            {
+                sb.Append(c);
             }
         }
+        return sb.ToString();
+    }
 
-        protected Control? Control { get; set; }
+    //public abstract int GetDefaultPort();
 
-        #endregion
-
-        public ConnectionInfo.Force Force { get; set; }
-
-        public bool IsSessionDisconnected { get; set; }
-
-        public DateTime? ConnectedAt { get; private set; }
-
-        protected readonly System.Windows.Forms.Timer tmrReconnect = new() { Interval = 5000 };
-        protected ReconnectGroup? ReconnectGroup;
-
-        protected ProtocolBase(string name)
+    public virtual void Focus()
+    {
+        try
         {
-            Name = name;
+            Control?.Focus();
         }
-
-        protected ProtocolBase()
+        catch (Exception ex)
         {
+            Runtime.MessageCollector.AddExceptionStackTrace("Couldn't focus Control (Connection.Protocol.Base)", ex);
         }
+    }
 
-        #endregion
+    protected virtual void ResizeBegin(object sender, EventArgs e)
+    {
+    }
 
-        #region Methods
+    protected virtual void Resize(object sender, EventArgs e)
+    {
+    }
 
-        public virtual void SendText(string text)
+    protected virtual void ResizeEnd(object sender, EventArgs e)
+    {
+        // Some callers synthesize only a resize-end notification.
+        // Run the base resize path so protocols that override Resize()
+        // still get a final layout pass.
+        Resize(sender, e);
+    }
+
+    /// <summary>
+    /// Called when system display settings change (e.g., monitor connected/disconnected).
+    /// Override in protocol implementations that need to adapt to new screen dimensions.
+    /// </summary>
+    public virtual void OnDisplaySettingsChanged()
+    {
+    }
+
+    /// <summary>
+    /// Called when system power mode changes (e.g., suspend/resume).
+    /// Override in protocol implementations that need to restore layout after resume.
+    /// </summary>
+    public virtual void OnPowerModeChanged(PowerModes powerMode)
+    {
+    }
+
+    public virtual bool Initialize()
+    {
+        try
         {
-            if (string.IsNullOrEmpty(text)) return;
-            try
-            {
-                Focus();
-                System.Windows.Forms.SendKeys.SendWait(EscapeSendKeys(text));
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace("SendText failed (ProtocolBase)", ex);
-            }
-        }
+            // The tag goes on the owning tab, which is what looks it up again when deciding
+            // whether a connection already has a tab open.
+            ConnectionTab? owner = mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl);
+            if (owner != null)
+                owner.Tag = _interfaceControl;
+            _interfaceControl.Show();
 
-        protected static string EscapeSendKeys(string str)
-        {
-            System.Text.StringBuilder sb = new System.Text.StringBuilder();
-            foreach (char c in str)
-            {
-                if (c == '+' || c == '^' || c == '%' || c == '~' || c == '!' || c == '(' || c == ')' || c == '{' || c == '}' || c == '[' || c == ']')
-                {
-                    sb.Append('{');
-                    sb.Append(c);
-                    sb.Append('}');
-                }
-                else
-                {
-                    sb.Append(c);
-                }
-            }
-            return sb.ToString();
-        }
-
-        //public abstract int GetDefaultPort();
-
-        public virtual void Focus()
-        {
-            try
-            {
-                Control?.Focus();
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace("Couldn't focus Control (Connection.Protocol.Base)", ex);
-            }
-        }
-
-        protected virtual void ResizeBegin(object sender, EventArgs e)
-        {
-        }
-
-        protected virtual void Resize(object sender, EventArgs e)
-        {
-        }
-
-        protected virtual void ResizeEnd(object sender, EventArgs e)
-        {
-            // Some callers synthesize only a resize-end notification.
-            // Run the base resize path so protocols that override Resize()
-            // still get a final layout pass.
-            Resize(sender, e);
-        }
-
-        /// <summary>
-        /// Called when system display settings change (e.g., monitor connected/disconnected).
-        /// Override in protocol implementations that need to adapt to new screen dimensions.
-        /// </summary>
-        public virtual void OnDisplaySettingsChanged()
-        {
-        }
-
-        /// <summary>
-        /// Called when system power mode changes (e.g., suspend/resume).
-        /// Override in protocol implementations that need to restore layout after resume.
-        /// </summary>
-        public virtual void OnPowerModeChanged(PowerModes powerMode)
-        {
-        }
-
-        public virtual bool Initialize()
-        {
-            try
-            {
-                // The tag goes on the owning tab, which is what looks it up again when deciding
-                // whether a connection already has a tab open.
-                ConnectionTab? owner = mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl);
-                if (owner != null)
-                    owner.Tag = _interfaceControl;
-                _interfaceControl.Show();
-
-                if (Control == null)
-                    return true;
-
-
-                Control.Name = Name;
-                // Use Dock.Fill to respect padding (e.g., for connection frame color)
-                Control.Dock = DockStyle.Fill;
-                _interfaceControl.Controls.Add(Control);
-
+            if (Control == null)
                 return true;
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace("Couldn't SetProps (Connection.Protocol.Base)", ex);
-                return false;
-            }
-        }
 
-        public virtual System.Threading.Tasks.Task<bool> InitializeAsync()
-        {
-            return System.Threading.Tasks.Task.FromResult(Initialize());
-        }
 
-        public virtual bool Connect()
-        {
-            if (InterfaceControl.Info.Protocol == ProtocolType.RDP) return false;
-            if (ConnectedEvent == null) return false;
-            ConnectedEvent(this);
+            Control.Name = Name;
+            // Use Dock.Fill to respect padding (e.g., for connection frame color)
+            Control.Dock = DockStyle.Fill;
+            _interfaceControl.Controls.Add(Control);
+
             return true;
         }
-
-        public virtual void Disconnect()
+        catch (Exception ex)
         {
-            Close();
+            Runtime.MessageCollector.AddExceptionStackTrace("Couldn't SetProps (Connection.Protocol.Base)", ex);
+            return false;
         }
+    }
 
-        public virtual void Close()
+    public virtual System.Threading.Tasks.Task<bool> InitializeAsync()
+    {
+        return System.Threading.Tasks.Task.FromResult(Initialize());
+    }
+
+    public virtual bool Connect()
+    {
+        if (InterfaceControl.Info.Protocol == ProtocolType.RDP) return false;
+        if (ConnectedEvent == null) return false;
+        ConnectedEvent(this);
+        return true;
+    }
+
+    public virtual void Disconnect()
+    {
+        Close();
+    }
+
+    public virtual void Close()
+    {
+        Thread t = new(CloseBG);
+        t.SetApartmentState(ApartmentState.STA);
+        t.IsBackground = true;
+        t.Start();
+    }
+
+    private void CloseBG()
+    {
+        if (_interfaceControl != null && !_interfaceControl.IsDisposed && _interfaceControl.InvokeRequired)
         {
-            Thread t = new(CloseBG);
-            t.SetApartmentState(ApartmentState.STA);
-            t.IsBackground = true;
-            t.Start();
-        }
-
-        private void CloseBG()
-        {
-            if (_interfaceControl != null && !_interfaceControl.IsDisposed && _interfaceControl.InvokeRequired)
-            {
-                try
-                {
-                    _interfaceControl.Invoke(new MethodInvoker(CloseBG));
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Control was disposed between the IsDisposed check and the Invoke call (race condition).
-                    // Nothing left to close — the panel/tab is already gone.
-                }
-                catch (InvalidOperationException)
-                {
-                    // Window handle is no longer valid.
-                }
-
-                return;
-            }
-
-            ClosedEvent?.Invoke(this);
             try
             {
-                tmrReconnect.Enabled = false;
+                _interfaceControl.Invoke(new MethodInvoker(CloseBG));
+            }
+            catch (ObjectDisposedException)
+            {
+                // Control was disposed between the IsDisposed check and the Invoke call (race condition).
+                // Nothing left to close — the panel/tab is already gone.
+            }
+            catch (InvalidOperationException)
+            {
+                // Window handle is no longer valid.
+            }
 
-                if (Control != null)
-                {
-                    try
-                    {
-                        DisposeControl();
-                    }
-                    catch (Exception ex)
-                    {
-                        Runtime.MessageCollector?.AddExceptionStackTrace(
-                            "Couldn't dispose control, probably form is already closed (Connection.Protocol.Base)", ex);
-                    }
-                }
+            return;
+        }
 
-                if (_interfaceControl == null) return;
+        ClosedEvent?.Invoke(this);
+        try
+        {
+            tmrReconnect.Enabled = false;
 
+            if (Control != null)
+            {
                 try
                 {
-                    if (_interfaceControl.Parent == null) return;
-
-                    if (mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl)?.Tag != null)
-                    {
-                        SetTagToNothing();
-                    }
-
-                    DisposeInterface();
+                    DisposeControl();
                 }
                 catch (Exception ex)
                 {
                     Runtime.MessageCollector?.AddExceptionStackTrace(
-                        "Couldn't set InterfaceControl.Parent.Tag or Dispose Interface, " +
-                        "probably form is already closed (Connection.Protocol.Base)", ex);
+                        "Couldn't dispose control, probably form is already closed (Connection.Protocol.Base)", ex);
                 }
+            }
+
+            if (_interfaceControl == null) return;
+
+            try
+            {
+                if (_interfaceControl.Parent == null) return;
+
+                if (mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl)?.Tag != null)
+                {
+                    SetTagToNothing();
+                }
+
+                DisposeInterface();
             }
             catch (Exception ex)
             {
                 Runtime.MessageCollector?.AddExceptionStackTrace(
-                    "Couldn't Close InterfaceControl BG (Connection.Protocol.Base)", ex);
+                    "Couldn't set InterfaceControl.Parent.Tag or Dispose Interface, " +
+                    "probably form is already closed (Connection.Protocol.Base)", ex);
             }
         }
-
-        private delegate void DisposeInterfaceCB();
-
-        private void DisposeInterface()
+        catch (Exception ex)
         {
-            if (_interfaceControl.IsDisposed)
+            Runtime.MessageCollector?.AddExceptionStackTrace(
+                "Couldn't Close InterfaceControl BG (Connection.Protocol.Base)", ex);
+        }
+    }
+
+    private delegate void DisposeInterfaceCB();
+
+    private void DisposeInterface()
+    {
+        if (_interfaceControl.IsDisposed)
+        {
+            return;
+        }
+        if (_interfaceControl.InvokeRequired)
+        {
+            DisposeInterfaceCB s = new(DisposeInterface);
+            try
             {
-                return;
+                _interfaceControl.Invoke(s);
             }
-            if (_interfaceControl.InvokeRequired)
+            catch (ObjectDisposedException)
             {
-                DisposeInterfaceCB s = new(DisposeInterface);
-                try
-                {
-                    _interfaceControl.Invoke(s);
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Parent panel was disposed between the IsDisposed check and Invoke (race on panel close).
-                }
-                catch (InvalidOperationException)
-                {
-                    // Window handle is no longer valid.
-                }
+                // Parent panel was disposed between the IsDisposed check and Invoke (race on panel close).
             }
-            else
+            catch (InvalidOperationException)
             {
-                _interfaceControl.Dispose();
+                // Window handle is no longer valid.
             }
         }
-
-        private delegate void SetTagToNothingCB();
-
-        private void SetTagToNothing()
+        else
         {
-            if (!_interfaceControl.IsAccessible || _interfaceControl.IsDisposed ||
-                _interfaceControl.Parent == null ||
-                !_interfaceControl.Parent.IsAccessible || _interfaceControl.Parent.IsDisposed)
-            { return; }
+            _interfaceControl.Dispose();
+        }
+    }
 
-            if (_interfaceControl.Parent.InvokeRequired)
+    private delegate void SetTagToNothingCB();
+
+    private void SetTagToNothing()
+    {
+        if (!_interfaceControl.IsAccessible || _interfaceControl.IsDisposed ||
+            _interfaceControl.Parent == null ||
+            !_interfaceControl.Parent.IsAccessible || _interfaceControl.Parent.IsDisposed)
+        { return; }
+
+        if (_interfaceControl.Parent.InvokeRequired)
+        {
+            SetTagToNothingCB s = new(SetTagToNothing);
+            try
             {
-                SetTagToNothingCB s = new(SetTagToNothing);
-                try
-                {
-                    _interfaceControl.Parent.Invoke(s);
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Parent panel was disposed between the IsDisposed check and Invoke (race on panel close).
-                }
-                catch (InvalidOperationException)
-                {
-                    // Window handle is no longer valid.
-                }
+                _interfaceControl.Parent.Invoke(s);
             }
-            else
+            catch (ObjectDisposedException)
             {
-                _interfaceControl.Parent.Tag = null;
+                // Parent panel was disposed between the IsDisposed check and Invoke (race on panel close).
             }
-        }
-
-        private delegate void DisposeControlCB();
-
-        private void DisposeControl()
-        {
-            // do not attempt to dispose the control if the control is already closed, closing or disposed
-            if (Control == null || !Control.IsAccessible || Control.IsDisposed) { return; }
-
-            if (Control.InvokeRequired)
+            catch (InvalidOperationException)
             {
-                DisposeControlCB s = new(DisposeControl);
-                try
-                {
-                    Control.Invoke(s);
-                }
-                catch (ObjectDisposedException)
-                {
-                    // Parent panel was disposed between the IsDisposed check and Invoke (race on panel close).
-                }
-                catch (InvalidOperationException)
-                {
-                    // Window handle is no longer valid.
-                }
+                // Window handle is no longer valid.
             }
-            else
+        }
+        else
+        {
+            _interfaceControl.Parent.Tag = null;
+        }
+    }
+
+    private delegate void DisposeControlCB();
+
+    private void DisposeControl()
+    {
+        // do not attempt to dispose the control if the control is already closed, closing or disposed
+        if (Control == null || !Control.IsAccessible || Control.IsDisposed) { return; }
+
+        if (Control.InvokeRequired)
+        {
+            DisposeControlCB s = new(DisposeControl);
+            try
             {
-                Control.Dispose();
+                Control.Invoke(s);
+            }
+            catch (ObjectDisposedException)
+            {
+                // Parent panel was disposed between the IsDisposed check and Invoke (race on panel close).
+            }
+            catch (InvalidOperationException)
+            {
+                // Window handle is no longer valid.
             }
         }
-
-        #endregion
-
-        #region Events
-
-        public delegate void ConnectingEventHandler(object sender);
-
-        public event ConnectingEventHandler Connecting
+        else
         {
-            add => ConnectingEvent = (ConnectingEventHandler?)Delegate.Combine(ConnectingEvent, value);
-            remove => ConnectingEvent = (ConnectingEventHandler?)Delegate.Remove(ConnectingEvent, value);
+            Control.Dispose();
         }
+    }
 
-        public delegate void ConnectedEventHandler(object sender);
+    #endregion
 
-        public event ConnectedEventHandler Connected
-        {
-            add => ConnectedEvent = (ConnectedEventHandler?)Delegate.Combine(ConnectedEvent, value);
-            remove => ConnectedEvent = (ConnectedEventHandler?)Delegate.Remove(ConnectedEvent, value);
-        }
+    #region Events
 
-        public delegate void DisconnectedEventHandler(object sender, string disconnectedMessage, int? reasonCode);
+    public delegate void ConnectingEventHandler(object sender);
 
-        public event DisconnectedEventHandler Disconnected
-        {
-            add => DisconnectedEvent = (DisconnectedEventHandler?)Delegate.Combine(DisconnectedEvent, value);
-            remove => DisconnectedEvent = (DisconnectedEventHandler?)Delegate.Remove(DisconnectedEvent, value);
-        }
+    public event ConnectingEventHandler Connecting
+    {
+        add => ConnectingEvent = (ConnectingEventHandler?)Delegate.Combine(ConnectingEvent, value);
+        remove => ConnectingEvent = (ConnectingEventHandler?)Delegate.Remove(ConnectingEvent, value);
+    }
 
-        public delegate void ErrorOccuredEventHandler(object sender, string errorMessage, int? errorCode);
+    public delegate void ConnectedEventHandler(object sender);
 
-        public event ErrorOccuredEventHandler ErrorOccured
-        {
-            add => ErrorOccuredEvent = (ErrorOccuredEventHandler?)Delegate.Combine(ErrorOccuredEvent, value);
-            remove => ErrorOccuredEvent = (ErrorOccuredEventHandler?)Delegate.Remove(ErrorOccuredEvent, value);
-        }
+    public event ConnectedEventHandler Connected
+    {
+        add => ConnectedEvent = (ConnectedEventHandler?)Delegate.Combine(ConnectedEvent, value);
+        remove => ConnectedEvent = (ConnectedEventHandler?)Delegate.Remove(ConnectedEvent, value);
+    }
 
-        public delegate void ClosingEventHandler(object sender);
+    public delegate void DisconnectedEventHandler(object sender, string disconnectedMessage, int? reasonCode);
 
-        public event ClosingEventHandler Closing
-        {
-            add => ClosingEvent = (ClosingEventHandler?)Delegate.Combine(ClosingEvent, value);
-            remove => ClosingEvent = (ClosingEventHandler?)Delegate.Remove(ClosingEvent, value);
-        }
+    public event DisconnectedEventHandler Disconnected
+    {
+        add => DisconnectedEvent = (DisconnectedEventHandler?)Delegate.Combine(DisconnectedEvent, value);
+        remove => DisconnectedEvent = (DisconnectedEventHandler?)Delegate.Remove(DisconnectedEvent, value);
+    }
 
-        public delegate void ClosedEventHandler(object sender);
+    public delegate void ErrorOccuredEventHandler(object sender, string errorMessage, int? errorCode);
 
-        public event ClosedEventHandler Closed
-        {
-            add => ClosedEvent = (ClosedEventHandler?)Delegate.Combine(ClosedEvent, value);
-            remove => ClosedEvent = (ClosedEventHandler?)Delegate.Remove(ClosedEvent, value);
-        }
+    public event ErrorOccuredEventHandler ErrorOccured
+    {
+        add => ErrorOccuredEvent = (ErrorOccuredEventHandler?)Delegate.Combine(ErrorOccuredEvent, value);
+        remove => ErrorOccuredEvent = (ErrorOccuredEventHandler?)Delegate.Remove(ErrorOccuredEvent, value);
+    }
+
+    public delegate void ClosingEventHandler(object sender);
+
+    public event ClosingEventHandler Closing
+    {
+        add => ClosingEvent = (ClosingEventHandler?)Delegate.Combine(ClosingEvent, value);
+        remove => ClosingEvent = (ClosingEventHandler?)Delegate.Remove(ClosingEvent, value);
+    }
+
+    public delegate void ClosedEventHandler(object sender);
+
+    public event ClosedEventHandler Closed
+    {
+        add => ClosedEvent = (ClosedEventHandler?)Delegate.Combine(ClosedEvent, value);
+        remove => ClosedEvent = (ClosedEventHandler?)Delegate.Remove(ClosedEvent, value);
+    }
 
 
 #pragma warning disable CA1707 // Legacy event handler naming convention; renaming would break many protocol subclasses
-        public void Event_Closing(object sender)
-        {
-            ClosingEvent?.Invoke(sender);
-        }
+    public void Event_Closing(object sender)
+    {
+        ClosingEvent?.Invoke(sender);
+    }
 
-        protected void Event_Closed(object sender)
-        {
-            ClosedEvent?.Invoke(sender);
-        }
+    protected void Event_Closed(object sender)
+    {
+        ClosedEvent?.Invoke(sender);
+    }
 
-        protected void Event_Connecting(object sender)
-        {
-            ConnectingEvent?.Invoke(sender);
-        }
+    protected void Event_Connecting(object sender)
+    {
+        ConnectingEvent?.Invoke(sender);
+    }
 
-        protected void Event_Connected(object sender)
-        {
-            IsSessionDisconnected = false;
-            ConnectedAt = DateTime.Now;
-            ConnectedEvent?.Invoke(sender);
-        }
+    protected void Event_Connected(object sender)
+    {
+        IsSessionDisconnected = false;
+        ConnectedAt = DateTime.Now;
+        ConnectedEvent?.Invoke(sender);
+    }
 
-        protected void Event_Disconnected(object sender, string disconnectedMessage, int? reasonCode)
-        {
-            IsSessionDisconnected = true;
-            DisconnectedEvent?.Invoke(sender, disconnectedMessage, reasonCode);
-        }
+    protected void Event_Disconnected(object sender, string disconnectedMessage, int? reasonCode)
+    {
+        IsSessionDisconnected = true;
+        DisconnectedEvent?.Invoke(sender, disconnectedMessage, reasonCode);
+    }
 
-        protected void Event_ErrorOccured(object sender, string errorMsg, int? errorCode)
-        {
-            ErrorOccuredEvent?.Invoke(sender, errorMsg, errorCode);
-        }
+    protected void Event_ErrorOccured(object sender, string errorMsg, int? errorCode)
+    {
+        ErrorOccuredEvent?.Invoke(sender, errorMsg, errorCode);
+    }
 
-        protected void Event_ReconnectGroupCloseClicked()
-        {
-            Close();
-        }
+    protected void Event_ReconnectGroupCloseClicked()
+    {
+        Close();
+    }
 #pragma warning restore CA1707
 
-        /// <summary>
-        /// Prompts the user to enter a new password after an authentication failure
-        /// and saves it to the connection info if confirmed.
-        /// </summary>
-        protected void PromptToUpdatePassword()
+    /// <summary>
+    /// Prompts the user to enter a new password after an authentication failure
+    /// and saves it to the connection info if confirmed.
+    /// </summary>
+    protected void PromptToUpdatePassword()
+    {
+        try
         {
-            try
+            ConnectionInfo? originalInfo = InterfaceControl?.OriginalInfo;
+            if (originalInfo == null)
+                return;
+
+            // Don't prompt for connections using external credential providers
+            if (originalInfo.ExternalCredentialProvider != ExternalCredentialProvider.None)
+                return;
+
+            void DoPrompt()
             {
-                ConnectionInfo? originalInfo = InterfaceControl?.OriginalInfo;
-                if (originalInfo == null)
+                using FrmInputBox inputBox = new(
+                    "Update Password",
+                    $"Authentication failed for {originalInfo.Hostname}.\nWould you like to save a new password?",
+                    "",
+                    isPassword: true);
+
+                if (inputBox.ShowDialog() != DialogResult.OK || string.IsNullOrEmpty(inputBox.returnValue))
                     return;
 
-                // Don't prompt for connections using external credential providers
-                if (originalInfo.ExternalCredentialProvider != ExternalCredentialProvider.None)
-                    return;
-
-                void DoPrompt()
-                {
-                    using FrmInputBox inputBox = new(
-                        "Update Password",
-                        $"Authentication failed for {originalInfo.Hostname}.\nWould you like to save a new password?",
-                        "",
-                        isPassword: true);
-
-                    if (inputBox.ShowDialog() != DialogResult.OK || string.IsNullOrEmpty(inputBox.returnValue))
-                        return;
-
-                    originalInfo.Password = inputBox.returnValue;
-                    Runtime.ConnectionsService.SaveConnectionsAsync();
-                }
-
-                if (_interfaceControl != null && !_interfaceControl.IsDisposed && _interfaceControl.InvokeRequired)
-                {
-                    try { _interfaceControl.BeginInvoke((Action)DoPrompt); }
-                    catch (ObjectDisposedException)
-
-                    {
-
-                        _ = 0; // Intentionally empty — control may be disposed
-
-                    }
-                    catch (InvalidOperationException)
-
-                    {
-
-                        _ = 0; // Intentionally empty — control may be disposed
-
-                    }
-                }
-                else
-                {
-                    DoPrompt();
-                }
+                originalInfo.Password = inputBox.returnValue;
+                Runtime.ConnectionsService.SaveConnectionsAsync();
             }
-            catch (Exception ex)
+
+            if (_interfaceControl != null && !_interfaceControl.IsDisposed && _interfaceControl.InvokeRequired)
             {
-                Runtime.MessageCollector.AddExceptionStackTrace("Failed to prompt for password update", ex);
-            }
-        }
+                try { _interfaceControl.BeginInvoke((Action)DoPrompt); }
+                catch (ObjectDisposedException)
 
-        #endregion
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                tmrReconnect?.Dispose();
-
-                // Detach the tab resize handlers subscribed in the ConnectionTab setter. The tab can
-                // outlive this protocol (KeepTabsOpenAfterDisconnect reuses the same tab across
-                // reconnects), so without this each reconnect leaves a dead handler - and the closed
-                // protocol instance it roots - attached to the tab.
-                if (_connectionTab != null)
                 {
-                    _connectionTab.ResizeBegin -= ResizeBegin;
-                    _connectionTab.Resize -= Resize;
-                    _connectionTab.ResizeEnd -= ResizeEnd;
+
+                    _ = 0; // Intentionally empty — control may be disposed
+
+                }
+                catch (InvalidOperationException)
+
+                {
+
+                    _ = 0; // Intentionally empty — control may be disposed
+
                 }
             }
+            else
+            {
+                DoPrompt();
+            }
         }
-
-        public void Dispose()
+        catch (Exception ex)
         {
-            Dispose(true);
-            GC.SuppressFinalize(this);
+            Runtime.MessageCollector.AddExceptionStackTrace("Failed to prompt for password update", ex);
         }
+    }
+
+    #endregion
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
+        {
+            tmrReconnect?.Dispose();
+
+            // Detach the tab resize handlers subscribed in the ConnectionTab setter. The tab can
+            // outlive this protocol (KeepTabsOpenAfterDisconnect reuses the same tab across
+            // reconnects), so without this each reconnect leaves a dead handler - and the closed
+            // protocol instance it roots - attached to the tab.
+            if (_connectionTab != null)
+            {
+                _connectionTab.ResizeBegin -= ResizeBegin;
+                _connectionTab.Resize -= Resize;
+                _connectionTab.ResizeEnd -= ResizeEnd;
+            }
+        }
+    }
+
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
     }
 }

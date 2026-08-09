@@ -8,146 +8,145 @@ using mRemoteNG.Tools;
 using mRemoteNG.UI.Controls;
 using mRemoteNG.UI.Forms;
 
-namespace mRemoteNG.Config.Settings
+namespace mRemoteNG.Config.Settings;
+
+[SupportedOSPlatform("windows")]
+public static class SettingsSaver
 {
-    [SupportedOSPlatform("windows")]
-    public static class SettingsSaver
+    public static void SaveSettings(Control quickConnectToolStrip, ExternalToolsToolStrip externalToolsToolStrip, MultiSshToolStrip multiSshToolStrip, MenuStrip mainMenu, FrmMain frmMain)
     {
-        public static void SaveSettings(Control quickConnectToolStrip, ExternalToolsToolStrip externalToolsToolStrip, MultiSshToolStrip multiSshToolStrip, MenuStrip mainMenu, FrmMain frmMain)
+        try
         {
-            try
+            WindowPlacement windowPlacement = new(FrmMain.Default);
+            if (frmMain.WindowState == FormWindowState.Minimized & windowPlacement.RestoreToMaximized)
             {
-                WindowPlacement windowPlacement = new(FrmMain.Default);
-                if (frmMain.WindowState == FormWindowState.Minimized & windowPlacement.RestoreToMaximized)
-                {
-                    frmMain.Opacity = 0;
-                    frmMain.WindowState = FormWindowState.Maximized;
-                }
-
-                Properties.App.Default.MainFormLocation = frmMain.Location;
-                Properties.App.Default.MainFormSize = frmMain.Size;
-
-                if (frmMain.WindowState != FormWindowState.Normal)
-                {
-                    Properties.App.Default.MainFormRestoreLocation = frmMain.RestoreBounds.Location;
-                    Properties.App.Default.MainFormRestoreSize = frmMain.RestoreBounds.Size;
-                }
-
-                Properties.App.Default.MainFormState = frmMain.WindowState;
-
-                if (frmMain.Fullscreen != null)
-                {
-                    Properties.App.Default.MainFormKiosk = frmMain.Fullscreen.Value;
-                }
-
-                Properties.App.Default.FirstStart = false;
-                Properties.App.Default.ResetPanels = false;
-                Properties.App.Default.ResetToolbars = false;
-
-                SaveExternalAppsToolbarLocation(externalToolsToolStrip);
-                SaveQuickConnectToolbarLocation(quickConnectToolStrip);
-                SaveMultiSshToolbarLocation(multiSshToolStrip);
-                SaveMainMenuToolbarLocation(mainMenu);
-
-                Properties.App.Default.Save();
-                Properties.AppUI.Default.Save();
-                Properties.OptionsAdvancedPage.Default.Save();
-                Properties.OptionsAppearancePage.Default.Save();
-                Properties.OptionsBackupPage.Default.Save();
-                Properties.OptionsConnectionsPage.Default.Save();
-                Properties.OptionsCredentialsPage.Default.Save();
-                Properties.OptionsDBsPage.Default.Save();
-                Properties.OptionsNotificationsPage.Default.Save();
-                Properties.OptionsSecurityPage.Default.Save();
-                Properties.OptionsStartupExitPage.Default.Save();
-                Properties.OptionsTabsPanelsPage.Default.Save();
-                Properties.OptionsThemePage.Default.Save();
-                Properties.OptionsUpdatesPage.Default.Save();
-                
-                Properties.Settings.Default.Save();
-
-                SaveExternalApps();
-                SaveQuickConnectHistory(quickConnectToolStrip as QuickConnectToolStrip);
+                frmMain.Opacity = 0;
+                frmMain.WindowState = FormWindowState.Maximized;
             }
-            catch (Exception ex)
+
+            Properties.App.Default.MainFormLocation = frmMain.Location;
+            Properties.App.Default.MainFormSize = frmMain.Size;
+
+            if (frmMain.WindowState != FormWindowState.Normal)
             {
-                Runtime.MessageCollector.AddExceptionStackTrace("Saving settings failed", ex);
+                Properties.App.Default.MainFormRestoreLocation = frmMain.RestoreBounds.Location;
+                Properties.App.Default.MainFormRestoreSize = frmMain.RestoreBounds.Size;
             }
-        }
 
-        private static void SaveExternalAppsToolbarLocation(ExternalToolsToolStrip externalToolsToolStrip)
-        {
-            Properties.Settings.Default.ExtAppsTBLocation = externalToolsToolStrip.Location;
-            // Do NOT read externalToolsToolStrip.Visible here (#134): SaveSettings runs from
-            // Shutdown.Cleanup after FrmMain.Hide(), and a hidden parent makes Control.Visible
-            // report false for every child, so the toolbar would be persisted hidden on every
-            // exit. The ViewMenu toggle keeps Settings.ViewMenuExternalTools in sync (same
-            // approach as QuickConnect #117).
-            Properties.Settings.Default.ExtAppsTBVisible = Properties.Settings.Default.ViewMenuExternalTools;
-            Properties.Settings.Default.ExtAppsTBShowText = externalToolsToolStrip.CMenToolbarShowText.Checked;
+            Properties.App.Default.MainFormState = frmMain.WindowState;
 
-            if (externalToolsToolStrip.Parent != null)
+            if (frmMain.Fullscreen != null)
             {
-                Properties.Settings.Default.ExtAppsTBParentDock = externalToolsToolStrip.Parent.Dock.ToString();
+                Properties.App.Default.MainFormKiosk = frmMain.Fullscreen.Value;
             }
-        }
 
-        private static void SaveQuickConnectToolbarLocation(Control quickConnectToolStrip)
+            Properties.App.Default.FirstStart = false;
+            Properties.App.Default.ResetPanels = false;
+            Properties.App.Default.ResetToolbars = false;
+
+            SaveExternalAppsToolbarLocation(externalToolsToolStrip);
+            SaveQuickConnectToolbarLocation(quickConnectToolStrip);
+            SaveMultiSshToolbarLocation(multiSshToolStrip);
+            SaveMainMenuToolbarLocation(mainMenu);
+
+            Properties.App.Default.Save();
+            Properties.AppUI.Default.Save();
+            Properties.OptionsAdvancedPage.Default.Save();
+            Properties.OptionsAppearancePage.Default.Save();
+            Properties.OptionsBackupPage.Default.Save();
+            Properties.OptionsConnectionsPage.Default.Save();
+            Properties.OptionsCredentialsPage.Default.Save();
+            Properties.OptionsDBsPage.Default.Save();
+            Properties.OptionsNotificationsPage.Default.Save();
+            Properties.OptionsSecurityPage.Default.Save();
+            Properties.OptionsStartupExitPage.Default.Save();
+            Properties.OptionsTabsPanelsPage.Default.Save();
+            Properties.OptionsThemePage.Default.Save();
+            Properties.OptionsUpdatesPage.Default.Save();
+
+            Properties.Settings.Default.Save();
+
+            SaveExternalApps();
+            SaveQuickConnectHistory(quickConnectToolStrip as QuickConnectToolStrip);
+        }
+        catch (Exception ex)
         {
-            Properties.Settings.Default.QuickyTBLocation = quickConnectToolStrip.Location;
-            // Do NOT persist QuickyTBVisible from quickConnectToolStrip.Visible here (#117):
-            // SaveSettings runs from Shutdown.Cleanup after FrmMain.Hide(), and a hidden parent
-            // makes Control.Visible report false for every child, so the toolbar would be saved
-            // as hidden on every exit (also true for the CloseToTray exit path). The ViewMenu
-            // toggle already keeps Settings.QuickyTBVisible in sync, and both restore paths
-            // (SettingsLoader.AddQuickConnectPanel + FrmMain.SetLayout) read that value.
-
-            if (quickConnectToolStrip.Parent != null)
-            {
-                Properties.Settings.Default.QuickyTBParentDock = quickConnectToolStrip.Parent.Dock.ToString();
-            }
+            Runtime.MessageCollector.AddExceptionStackTrace("Saving settings failed", ex);
         }
+    }
 
-        private static void SaveMultiSshToolbarLocation(MultiSshToolStrip multiSshToolStrip)
+    private static void SaveExternalAppsToolbarLocation(ExternalToolsToolStrip externalToolsToolStrip)
+    {
+        Properties.Settings.Default.ExtAppsTBLocation = externalToolsToolStrip.Location;
+        // Do NOT read externalToolsToolStrip.Visible here (#134): SaveSettings runs from
+        // Shutdown.Cleanup after FrmMain.Hide(), and a hidden parent makes Control.Visible
+        // report false for every child, so the toolbar would be persisted hidden on every
+        // exit. The ViewMenu toggle keeps Settings.ViewMenuExternalTools in sync (same
+        // approach as QuickConnect #117).
+        Properties.Settings.Default.ExtAppsTBVisible = Properties.Settings.Default.ViewMenuExternalTools;
+        Properties.Settings.Default.ExtAppsTBShowText = externalToolsToolStrip.CMenToolbarShowText.Checked;
+
+        if (externalToolsToolStrip.Parent != null)
         {
-            Properties.Settings.Default.MultiSshToolbarLocation = multiSshToolStrip.Location;
-            Properties.Settings.Default.MultiSshToolbarVisible = multiSshToolStrip.Visible;
-
-            if (multiSshToolStrip.Parent != null)
-            {
-                Properties.Settings.Default.MultiSshToolbarParentDock = multiSshToolStrip.Parent.Dock.ToString();
-            }
+            Properties.Settings.Default.ExtAppsTBParentDock = externalToolsToolStrip.Parent.Dock.ToString();
         }
+    }
 
-        private static void SaveMainMenuToolbarLocation(MenuStrip mainMenu)
+    private static void SaveQuickConnectToolbarLocation(Control quickConnectToolStrip)
+    {
+        Properties.Settings.Default.QuickyTBLocation = quickConnectToolStrip.Location;
+        // Do NOT persist QuickyTBVisible from quickConnectToolStrip.Visible here (#117):
+        // SaveSettings runs from Shutdown.Cleanup after FrmMain.Hide(), and a hidden parent
+        // makes Control.Visible report false for every child, so the toolbar would be saved
+        // as hidden on every exit (also true for the CloseToTray exit path). The ViewMenu
+        // toggle already keeps Settings.QuickyTBVisible in sync, and both restore paths
+        // (SettingsLoader.AddQuickConnectPanel + FrmMain.SetLayout) read that value.
+
+        if (quickConnectToolStrip.Parent != null)
         {
-            Properties.Settings.Default.MainMenuLocation = mainMenu.Location;
-
-            if (mainMenu.Parent != null)
-            {
-                Properties.Settings.Default.MainMenuParentDock = mainMenu.Parent.Dock.ToString();
-            }
+            Properties.Settings.Default.QuickyTBParentDock = quickConnectToolStrip.Parent.Dock.ToString();
         }
+    }
 
-        public static void SaveDockPanelLayout()
+    private static void SaveMultiSshToolbarLocation(MultiSshToolStrip multiSshToolStrip)
+    {
+        Properties.Settings.Default.MultiSshToolbarLocation = multiSshToolStrip.Location;
+        Properties.Settings.Default.MultiSshToolbarVisible = multiSshToolStrip.Visible;
+
+        if (multiSshToolStrip.Parent != null)
         {
-            string panelLayoutXmlFilePath = SettingsFileInfo.SettingsPath + "\\" + SettingsFileInfo.LayoutFileName;
-            DockPanelLayoutSaver panelLayoutSaver = new(
-                                                            new DockPanelLayoutSerializer(),
-                                                            new FileDataProvider(panelLayoutXmlFilePath)
-                                                           );
-            panelLayoutSaver.Save();
+            Properties.Settings.Default.MultiSshToolbarParentDock = multiSshToolStrip.Parent.Dock.ToString();
         }
+    }
 
-        private static void SaveExternalApps()
-        {
-            ExternalAppsSaver.Save(Runtime.ExternalToolsService.ExternalTools);
-        }
+    private static void SaveMainMenuToolbarLocation(MenuStrip mainMenu)
+    {
+        Properties.Settings.Default.MainMenuLocation = mainMenu.Location;
 
-        private static void SaveQuickConnectHistory(QuickConnectToolStrip? quickConnectToolStrip)
+        if (mainMenu.Parent != null)
         {
-            if (quickConnectToolStrip?.QuickConnectComboBox == null) return;
-            QuickConnectHistorySaver.Save(quickConnectToolStrip.QuickConnectComboBox);
+            Properties.Settings.Default.MainMenuParentDock = mainMenu.Parent.Dock.ToString();
         }
+    }
+
+    public static void SaveDockPanelLayout()
+    {
+        string panelLayoutXmlFilePath = SettingsFileInfo.SettingsPath + "\\" + SettingsFileInfo.LayoutFileName;
+        DockPanelLayoutSaver panelLayoutSaver = new(
+            new DockPanelLayoutSerializer(),
+            new FileDataProvider(panelLayoutXmlFilePath)
+        );
+        panelLayoutSaver.Save();
+    }
+
+    private static void SaveExternalApps()
+    {
+        ExternalAppsSaver.Save(Runtime.ExternalToolsService.ExternalTools);
+    }
+
+    private static void SaveQuickConnectHistory(QuickConnectToolStrip? quickConnectToolStrip)
+    {
+        if (quickConnectToolStrip?.QuickConnectComboBox == null) return;
+        QuickConnectHistorySaver.Save(quickConnectToolStrip.QuickConnectComboBox);
     }
 }

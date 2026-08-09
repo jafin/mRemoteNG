@@ -1,12 +1,11 @@
 ﻿using System.Security;
 
 
-namespace mRemoteNG.Security.PasswordCreation
-{
-    public interface IPasswordConstraint
-    {
-        string ConstraintHint { get; }
+namespace mRemoteNG.Security.PasswordCreation;
 
-        bool Validate(SecureString password);
-    }
+public interface IPasswordConstraint
+{
+    string ConstraintHint { get; }
+
+    bool Validate(SecureString password);
 }

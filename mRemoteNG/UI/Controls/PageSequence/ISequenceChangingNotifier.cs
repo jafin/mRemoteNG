@@ -1,11 +1,10 @@
 ﻿using System;
 
-namespace mRemoteNG.UI.Controls.PageSequence
+namespace mRemoteNG.UI.Controls.PageSequence;
+
+public interface ISequenceChangingNotifier
 {
-    public interface ISequenceChangingNotifier
-    {
-        event EventHandler? Next;
-        event EventHandler? Previous;
-        event SequencedPageReplcementRequestHandler? PageReplacementRequested;
-    }
+    event EventHandler? Next;
+    event EventHandler? Previous;
+    event SequencedPageReplacementRequestHandler? PageReplacementRequested;
 }

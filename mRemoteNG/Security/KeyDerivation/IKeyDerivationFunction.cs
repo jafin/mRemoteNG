@@ -1,7 +1,6 @@
-﻿namespace mRemoteNG.Security.KeyDerivation
+﻿namespace mRemoteNG.Security.KeyDerivation;
+
+public interface IKeyDerivationFunction
 {
-    public interface IKeyDerivationFunction
-    {
-        byte[] DeriveKey(string password, byte[] salt);
-    }
+    byte[] DeriveKey(string password, byte[] salt);
 }

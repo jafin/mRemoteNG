@@ -9,140 +9,139 @@ using mRemoteNG.App.Info;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 
-namespace mRemoteNG.App.Initialization
+namespace mRemoteNG.App.Initialization;
+
+[SupportedOSPlatform("windows")]
+public class StartupDataLogger(MessageCollector messageCollector)
 {
-    [SupportedOSPlatform("windows")]
-    public class StartupDataLogger(MessageCollector messageCollector)
+    private readonly MessageCollector _messageCollector = messageCollector ?? throw new ArgumentNullException(nameof(messageCollector));
+
+    public void LogStartupData()
     {
-        private readonly MessageCollector _messageCollector = messageCollector ?? throw new ArgumentNullException(nameof(messageCollector));
+        LogApplicationData();
+        LogSettingsData();
+        LogCmdLineArgs();
+        LogClrData();
+        LogCultureData();
+        // WMI queries are slow (200-1000ms) — run on background thread.
+        // The data is purely informational logging, no startup behavior depends on it.
+        System.Threading.Tasks.Task.Run(LogSystemData);
+    }
 
-        public void LogStartupData()
+    private void LogSystemData()
+    {
+        string osData = GetOperatingSystemData();
+        string architecture = GetArchitectureData();
+        string[] nonEmptyData = Array.FindAll(new[] {osData, architecture}, s => !string.IsNullOrEmpty(s));
+        string data = string.Join(" ", nonEmptyData);
+        _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
+    }
+
+    private string GetOperatingSystemData()
+    {
+        string osVersion = string.Empty;
+        string servicePack = string.Empty;
+
+        try
         {
-            LogApplicationData();
-            LogSettingsData();
-            LogCmdLineArgs();
-            LogClrData();
-            LogCultureData();
-            // WMI queries are slow (200-1000ms) — run on background thread.
-            // The data is purely informational logging, no startup behavior depends on it.
-            System.Threading.Tasks.Task.Run(LogSystemData);
-        }
-
-        private void LogSystemData()
-        {
-            string osData = GetOperatingSystemData();
-            string architecture = GetArchitectureData();
-            string[] nonEmptyData = Array.FindAll(new[] {osData, architecture}, s => !string.IsNullOrEmpty(s));
-            string data = string.Join(" ", nonEmptyData);
-            _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
-        }
-
-        private string GetOperatingSystemData()
-        {
-            string osVersion = string.Empty;
-            string servicePack = string.Empty;
-
-            try
+            foreach (ManagementBaseObject o in new ManagementObjectSearcher("SELECT * FROM Win32_OperatingSystem WHERE Primary=True")
+                         .Get())
             {
-                foreach (ManagementBaseObject o in new ManagementObjectSearcher("SELECT * FROM Win32_OperatingSystem WHERE Primary=True")
-                    .Get())
-                {
-                    ManagementObject managementObject = (ManagementObject)o;
-                    osVersion = Convert.ToString(managementObject.GetPropertyValue("Caption"), CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
-                    servicePack = GetOSServicePack(servicePack, managementObject);
-                }
+                ManagementObject managementObject = (ManagementObject)o;
+                osVersion = Convert.ToString(managementObject.GetPropertyValue("Caption"), CultureInfo.InvariantCulture)?.Trim() ?? string.Empty;
+                servicePack = GetOSServicePack(servicePack, managementObject);
             }
-            catch (Exception ex)
-            {
-                _messageCollector.AddExceptionMessage("Error retrieving operating system information from WMI.", ex);
-            }
-
-            string osData = string.Join(" ", osVersion, servicePack);
-            return osData;
         }
-
-        private static string GetOSServicePack(string servicePack, ManagementObject managementObject)
+        catch (Exception ex)
         {
-            int servicePackNumber = Convert.ToInt32(managementObject.GetPropertyValue("ServicePackMajorVersion"), CultureInfo.InvariantCulture);
-            if (servicePackNumber != 0)
-            {
-                servicePack = $"Service Pack {servicePackNumber}";
-            }
-
-            return servicePack;
+            _messageCollector.AddExceptionMessage("Error retrieving operating system information from WMI.", ex);
         }
 
-        private string GetArchitectureData()
+        string osData = string.Join(" ", osVersion, servicePack);
+        return osData;
+    }
+
+    private static string GetOSServicePack(string servicePack, ManagementObject managementObject)
+    {
+        int servicePackNumber = Convert.ToInt32(managementObject.GetPropertyValue("ServicePackMajorVersion"), CultureInfo.InvariantCulture);
+        if (servicePackNumber != 0)
         {
-            string architecture = string.Empty;
-            try
-            {
-                foreach (ManagementBaseObject o in new ManagementObjectSearcher("SELECT AddressWidth FROM Win32_Processor WHERE DeviceID=\'CPU0\'").Get())
-                {
-                    ManagementObject managementObject = (ManagementObject)o;
-                    int addressWidth = Convert.ToInt32(managementObject.GetPropertyValue("AddressWidth"), CultureInfo.InvariantCulture);
-                    architecture = $"{addressWidth}-bit";
-                }
-            }
-            catch (Exception ex)
-            {
-                _messageCollector.AddExceptionMessage("Error retrieving operating system address width from WMI.", ex);
-            }
-
-            return architecture;
+            servicePack = $"Service Pack {servicePackNumber}";
         }
 
-        private void LogApplicationData()
+        return servicePack;
+    }
+
+    private string GetArchitectureData()
+    {
+        string architecture = string.Empty;
+        try
         {
-            string data = $"{Application.ProductName} {Application.ProductVersion}";
-            if (Runtime.IsPortableEdition)
-                data += $" {Language.PortableEdition}";
-            data += " starting.";
-            _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
-        }
-
-        private void LogSettingsData()
-        {
-            if (string.IsNullOrWhiteSpace(SettingsFileInfo.UserSettingsFilePath))
+            foreach (ManagementBaseObject o in new ManagementObjectSearcher("SELECT AddressWidth FROM Win32_Processor WHERE DeviceID=\'CPU0\'").Get())
             {
-                _messageCollector.AddMessage(MessageClass.InformationMsg,
-                    "User settings file path could not be determined.", true);
-                return;
+                ManagementObject managementObject = (ManagementObject)o;
+                int addressWidth = Convert.ToInt32(managementObject.GetPropertyValue("AddressWidth"), CultureInfo.InvariantCulture);
+                architecture = $"{addressWidth}-bit";
             }
-
-            string path = SettingsFileInfo.UserSettingsFilePath;
-            string detail;
-            try
-            {
-                FileInfo fi = new(path);
-                detail = fi.Exists
-                    ? $"User settings file: {path} (size: {fi.Length} bytes, modified: {fi.LastWriteTime:yyyy-MM-dd HH:mm:ss})"
-                    : $"User settings file: {path} (file does not exist — using defaults)";
-            }
-            catch (Exception ex)
-            {
-                detail = $"User settings file: {path} (could not read file info: {ex.Message})";
-            }
-
-            _messageCollector.AddMessage(MessageClass.InformationMsg, detail, true);
         }
-
-        private void LogCmdLineArgs()
+        catch (Exception ex)
         {
-            string data = $"Command Line: {string.Join(" ", Environment.GetCommandLineArgs())}";
-            _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
+            _messageCollector.AddExceptionMessage("Error retrieving operating system address width from WMI.", ex);
         }
 
-        private void LogClrData()
+        return architecture;
+    }
+
+    private void LogApplicationData()
+    {
+        string data = $"{Application.ProductName} {Application.ProductVersion}";
+        if (Runtime.IsPortableEdition)
+            data += $" {Language.PortableEdition}";
+        data += " starting.";
+        _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
+    }
+
+    private void LogSettingsData()
+    {
+        if (string.IsNullOrWhiteSpace(SettingsFileInfo.UserSettingsFilePath))
         {
-            string data = $"Microsoft .NET CLR {Environment.Version}";
-            _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
+            _messageCollector.AddMessage(MessageClass.InformationMsg,
+                "User settings file path could not be determined.", true);
+            return;
         }
 
-        private void LogCultureData()
+        string path = SettingsFileInfo.UserSettingsFilePath;
+        string detail;
+        try
         {
-            string data = $"System Culture: {Thread.CurrentThread.CurrentUICulture.Name}/{Thread.CurrentThread.CurrentUICulture.NativeName}";
-            _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
+            FileInfo fi = new(path);
+            detail = fi.Exists
+                ? $"User settings file: {path} (size: {fi.Length} bytes, modified: {fi.LastWriteTime:yyyy-MM-dd HH:mm:ss})"
+                : $"User settings file: {path} (file does not exist — using defaults)";
         }
+        catch (Exception ex)
+        {
+            detail = $"User settings file: {path} (could not read file info: {ex.Message})";
+        }
+
+        _messageCollector.AddMessage(MessageClass.InformationMsg, detail, true);
+    }
+
+    private void LogCmdLineArgs()
+    {
+        string data = $"Command Line: {string.Join(" ", Environment.GetCommandLineArgs())}";
+        _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
+    }
+
+    private void LogClrData()
+    {
+        string data = $"Microsoft .NET CLR {Environment.Version}";
+        _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
+    }
+
+    private void LogCultureData()
+    {
+        string data = $"System Culture: {Thread.CurrentThread.CurrentUICulture.Name}/{Thread.CurrentThread.CurrentUICulture.NativeName}";
+        _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
     }
 }

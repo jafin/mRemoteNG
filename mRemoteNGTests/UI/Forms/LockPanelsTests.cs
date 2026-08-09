@@ -1,61 +1,60 @@
-using NUnit.Framework;
-using System.Reflection;
 using System;
+using System.Reflection;
 using mRemoteNG.UI.Forms;
+using NUnit.Framework;
 
-namespace mRemoteNGTests.UI.Forms
+namespace mRemoteNGTests.UI.Forms;
+
+[TestFixture]
+public class LockPanelsTests
 {
-    [TestFixture]
-    public class LockPanelsTests
+    private static void SetLockPanels(bool value)
     {
-        private static void SetLockPanels(bool value)
-        {
-            var optionsType = typeof(FrmMain).Assembly.GetType("mRemoteNG.Properties.OptionsTabsPanelsPage")
-                ?? throw new InvalidOperationException("Could not find OptionsTabsPanelsPage type");
-            var defaultProp = optionsType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
-                ?? throw new InvalidOperationException("Could not find Default property");
-            var defaultInstance = defaultProp.GetValue(null);
-            var lockPanelsProp = optionsType.GetProperty("LockPanels", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
-                ?? throw new InvalidOperationException("Could not find LockPanels property");
-            lockPanelsProp.SetValue(defaultInstance, value);
-        }
+        var optionsType = typeof(FrmMain).Assembly.GetType("mRemoteNG.Properties.OptionsTabsPanelsPage")
+                          ?? throw new InvalidOperationException("Could not find OptionsTabsPanelsPage type");
+        var defaultProp = optionsType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)
+                          ?? throw new InvalidOperationException("Could not find Default property");
+        var defaultInstance = defaultProp.GetValue(null);
+        var lockPanelsProp = optionsType.GetProperty("LockPanels", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)
+                             ?? throw new InvalidOperationException("Could not find LockPanels property");
+        lockPanelsProp.SetValue(defaultInstance, value);
+    }
 
-        private static bool GetLockPanels()
-        {
-            var optionsType = typeof(FrmMain).Assembly.GetType("mRemoteNG.Properties.OptionsTabsPanelsPage")!;
-            var defaultInstance = optionsType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(null);
-            return (bool)optionsType.GetProperty("LockPanels", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(defaultInstance)!;
-        }
+    private static bool GetLockPanels()
+    {
+        var optionsType = typeof(FrmMain).Assembly.GetType("mRemoteNG.Properties.OptionsTabsPanelsPage")!;
+        var defaultInstance = optionsType.GetProperty("Default", BindingFlags.Static | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(null);
+        return (bool)optionsType.GetProperty("LockPanels", BindingFlags.Instance | BindingFlags.Public | BindingFlags.NonPublic)!.GetValue(defaultInstance)!;
+    }
 
-        /// <summary>
-        /// Verifies that SetPanelLock logic maps LockPanels=true to AllowEndUserDocking=false.
-        /// The actual FrmMain.SetPanelLock() does: AllowEndUserDocking = !LockPanels
-        /// </summary>
-        [Test]
-        public void SetPanelLock_LocksPanels_WhenSettingIsTrue()
-        {
-            SetLockPanels(true);
-            var lockPanels = GetLockPanels();
-            Assert.That(lockPanels, Is.True, "LockPanels should be true");
+    /// <summary>
+    /// Verifies that SetPanelLock logic maps LockPanels=true to AllowEndUserDocking=false.
+    /// The actual FrmMain.SetPanelLock() does: AllowEndUserDocking = !LockPanels
+    /// </summary>
+    [Test]
+    public void SetPanelLock_LocksPanels_WhenSettingIsTrue()
+    {
+        SetLockPanels(true);
+        var lockPanels = GetLockPanels();
+        Assert.That(lockPanels, Is.True, "LockPanels should be true");
 
-            // FrmMain.SetPanelLock: AllowEndUserDocking = !LockPanels
-            var allowDocking = !lockPanels;
-            Assert.That(allowDocking, Is.False, "When LockPanels=true, docking should be disallowed");
-        }
+        // FrmMain.SetPanelLock: AllowEndUserDocking = !LockPanels
+        var allowDocking = !lockPanels;
+        Assert.That(allowDocking, Is.False, "When LockPanels=true, docking should be disallowed");
+    }
 
-        /// <summary>
-        /// Verifies that SetPanelLock logic maps LockPanels=false to AllowEndUserDocking=true.
-        /// </summary>
-        [Test]
-        public void SetPanelLock_UnlocksPanels_WhenSettingIsFalse()
-        {
-            SetLockPanels(false);
-            var lockPanels = GetLockPanels();
-            Assert.That(lockPanels, Is.False, "LockPanels should be false");
+    /// <summary>
+    /// Verifies that SetPanelLock logic maps LockPanels=false to AllowEndUserDocking=true.
+    /// </summary>
+    [Test]
+    public void SetPanelLock_UnlocksPanels_WhenSettingIsFalse()
+    {
+        SetLockPanels(false);
+        var lockPanels = GetLockPanels();
+        Assert.That(lockPanels, Is.False, "LockPanels should be false");
 
-            // FrmMain.SetPanelLock: AllowEndUserDocking = !LockPanels
-            var allowDocking = !lockPanels;
-            Assert.That(allowDocking, Is.True, "When LockPanels=false, docking should be allowed");
-        }
+        // FrmMain.SetPanelLock: AllowEndUserDocking = !LockPanels
+        var allowDocking = !lockPanels;
+        Assert.That(allowDocking, Is.True, "When LockPanels=false, docking should be allowed");
     }
 }

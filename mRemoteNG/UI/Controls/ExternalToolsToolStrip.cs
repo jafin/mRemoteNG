@@ -1,166 +1,165 @@
 ﻿using System;
 using System.ComponentModel;
+using System.Runtime.Versioning;
 using System.Windows.Forms;
 using mRemoteNG.App;
 using mRemoteNG.Connection;
 using mRemoteNG.Messages;
 using mRemoteNG.Properties;
+using mRemoteNG.Resources.Language;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree;
 using mRemoteNG.UI.Tabs;
-using mRemoteNG.Resources.Language;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.UI.Controls
+namespace mRemoteNG.UI.Controls;
+
+[SupportedOSPlatform("windows")]
+public class ExternalToolsToolStrip : ToolStrip
 {
-    [SupportedOSPlatform("windows")]
-    public class ExternalToolsToolStrip : ToolStrip
+    private IContainer components = null!;
+    private ContextMenuStrip _cMenExtAppsToolbar = null!;
+    internal ToolStripMenuItem CMenToolbarShowText = null!;
+
+    public ExternalToolsToolStrip()
     {
-        private IContainer components = null!;
-        private ContextMenuStrip _cMenExtAppsToolbar = null!;
-        internal ToolStripMenuItem CMenToolbarShowText = null!;
+        Initialize();
+        Runtime.ExternalToolsService.ExternalTools.CollectionUpdated += (sender, args) => AddExternalToolsToToolBar();
+    }
 
-        public ExternalToolsToolStrip()
+    private void Initialize()
+    {
+        components = new System.ComponentModel.Container();
+        _cMenExtAppsToolbar = new ContextMenuStrip(components);
+        CMenToolbarShowText = new ToolStripMenuItem();
+
+        // 
+        // tsExternalTools
+        // 
+        ContextMenuStrip = _cMenExtAppsToolbar;
+        Dock = DockStyle.None;
+        Location = new System.Drawing.Point(39, 49);
+        Name = "tsExternalTools";
+        Size = new System.Drawing.Size(111, 25);
+        TabIndex = 17;
+        // 
+        // cMenExtAppsToolbar
+        // 
+        _cMenExtAppsToolbar.Items.Add(CMenToolbarShowText);
+        _cMenExtAppsToolbar.Name = "cMenToolbar";
+        _cMenExtAppsToolbar.Size = new System.Drawing.Size(129, 26);
+        // 
+        // cMenToolbarShowText
+        // 
+        CMenToolbarShowText.Checked = true;
+        CMenToolbarShowText.CheckState = CheckState.Checked;
+        CMenToolbarShowText.Name = "cMenToolbarShowText";
+        CMenToolbarShowText.Size = new System.Drawing.Size(128, 22);
+        CMenToolbarShowText.Text = Language.ShowText;
+        CMenToolbarShowText.Click += CMenToolbarShowText_Click;
+    }
+
+    #region Ext Apps Toolbar
+
+    private void CMenToolbarShowText_Click(object sender, EventArgs e)
+    {
+        SwitchToolBarText(!CMenToolbarShowText.Checked);
+    }
+
+    public void AddExternalToolsToToolBar()
+    {
+        try
         {
-            Initialize();
-            Runtime.ExternalToolsService.ExternalTools.CollectionUpdated += (sender, args) => AddExternalToolsToToolBar();
-        }
+            SuspendLayout();
 
-        private void Initialize()
-        {
-            components = new System.ComponentModel.Container();
-            _cMenExtAppsToolbar = new ContextMenuStrip(components);
-            CMenToolbarShowText = new ToolStripMenuItem();
+            for (int index = Items.Count - 1; index >= 0; index--)
+                Items[index].Dispose();
+            Items.Clear();
 
-            // 
-            // tsExternalTools
-            // 
-            ContextMenuStrip = _cMenExtAppsToolbar;
-            Dock = DockStyle.None;
-            Location = new System.Drawing.Point(39, 49);
-            Name = "tsExternalTools";
-            Size = new System.Drawing.Size(111, 25);
-            TabIndex = 17;
-            // 
-            // cMenExtAppsToolbar
-            // 
-            _cMenExtAppsToolbar.Items.Add(CMenToolbarShowText);
-            _cMenExtAppsToolbar.Name = "cMenToolbar";
-            _cMenExtAppsToolbar.Size = new System.Drawing.Size(129, 26);
-            // 
-            // cMenToolbarShowText
-            // 
-            CMenToolbarShowText.Checked = true;
-            CMenToolbarShowText.CheckState = CheckState.Checked;
-            CMenToolbarShowText.Name = "cMenToolbarShowText";
-            CMenToolbarShowText.Size = new System.Drawing.Size(128, 22);
-            CMenToolbarShowText.Text = Language.ShowText;
-            CMenToolbarShowText.Click += CMenToolbarShowText_Click;
-        }
-
-        #region Ext Apps Toolbar
-
-        private void CMenToolbarShowText_Click(object sender, EventArgs e)
-        {
-            SwitchToolBarText(!CMenToolbarShowText.Checked);
-        }
-
-        public void AddExternalToolsToToolBar()
-        {
-            try
+            foreach (ExternalTool tool in Runtime.ExternalToolsService.ExternalTools)
             {
-                SuspendLayout();
-
-                for (int index = Items.Count - 1; index >= 0; index--)
-                    Items[index].Dispose();
-                Items.Clear();
-
-                foreach (ExternalTool tool in Runtime.ExternalToolsService.ExternalTools)
-                {
-                    if (!tool.ShowOnToolbar) continue;
-                    ToolStripButton button = (ToolStripButton)Items.Add(tool.DisplayName, tool.Image, TsExtAppEntry_Click);
-                    if (CMenToolbarShowText.Checked)
-                        button.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
-                    else
-                        button.DisplayStyle = button.Image != null
-                            ? ToolStripItemDisplayStyle.Image
-                            : ToolStripItemDisplayStyle.ImageAndText;
-
-                    button.Tag = tool;
-                    button.ToolTipText = string.IsNullOrEmpty(tool.Arguments)
-                        ? tool.FileName
-                        : $"{tool.FileName} {tool.Arguments}";
-                }
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace(Language.ErrorAddExternalToolsToToolBarFailed, ex);
-            }
-            finally
-            {
-                ResumeLayout(true);
-            }
-        }
-
-        private static void TsExtAppEntry_Click(object sender, EventArgs e)
-        {
-            if (((ToolStripButton)sender).Tag is not ExternalTool extA)
-                return;
-
-            ConnectionInfo? connectionInfo = null;
-
-            if (OptionsTabsPanelsPage.Default.ExternalToolsUseActiveTab)
-            {
-                ConnectionTab? activeTab = TabHelper.Instance.CurrentTab;
-                if (activeTab?.Tag is InterfaceControl ic)
-                    connectionInfo = ic.Info;
-                else if (activeTab?.Tag is ConnectionInfo ci)
-                    connectionInfo = ci;
-            }
-            else
-            {
-                connectionInfo = AppWindows.TreeForm?.SelectedNode;
-            }
-
-            if (connectionInfo != null && (connectionInfo.GetTreeNodeType() == TreeNodeType.Connection ||
-                connectionInfo.GetTreeNodeType() == TreeNodeType.PuttySession))
-                extA.Start(connectionInfo);
-            else
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, "No connection was selected, external tool may return errors.", true);
-                extA.Start();
-            }
-        }
-
-        public void SwitchToolBarText(bool show)
-        {
-            foreach (ToolStripButton tItem in Items)
-            {
-                if (show)
-                    tItem.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+                if (!tool.ShowOnToolbar) continue;
+                ToolStripButton button = (ToolStripButton)Items.Add(tool.DisplayName, tool.Image, TsExtAppEntry_Click);
+                if (CMenToolbarShowText.Checked)
+                    button.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
                 else
-                    tItem.DisplayStyle = tItem.Image != null
+                    button.DisplayStyle = button.Image != null
                         ? ToolStripItemDisplayStyle.Image
                         : ToolStripItemDisplayStyle.ImageAndText;
-            }
 
-            CMenToolbarShowText.Checked = show;
+                button.Tag = tool;
+                button.ToolTipText = string.IsNullOrEmpty(tool.Arguments)
+                    ? tool.FileName
+                    : $"{tool.FileName} {tool.Arguments}";
+            }
+        }
+        catch (Exception ex)
+        {
+            Runtime.MessageCollector.AddExceptionStackTrace(Language.ErrorAddExternalToolsToToolBarFailed, ex);
+        }
+        finally
+        {
+            ResumeLayout(true);
+        }
+    }
+
+    private static void TsExtAppEntry_Click(object sender, EventArgs e)
+    {
+        if (((ToolStripButton)sender).Tag is not ExternalTool extA)
+            return;
+
+        ConnectionInfo? connectionInfo = null;
+
+        if (OptionsTabsPanelsPage.Default.ExternalToolsUseActiveTab)
+        {
+            ConnectionTab? activeTab = TabHelper.Instance.CurrentTab;
+            if (activeTab?.Tag is InterfaceControl ic)
+                connectionInfo = ic.Info;
+            else if (activeTab?.Tag is ConnectionInfo ci)
+                connectionInfo = ci;
+        }
+        else
+        {
+            connectionInfo = AppWindows.TreeForm?.SelectedNode;
         }
 
-        #endregion
-
-        // CodeAyalysis doesn't like null propagation
-        protected override void Dispose(bool disposing)
+        if (connectionInfo != null && (connectionInfo.GetTreeNodeType() == TreeNodeType.Connection ||
+                                       connectionInfo.GetTreeNodeType() == TreeNodeType.PuttySession))
+            extA.Start(connectionInfo);
+        else
         {
-            try
-            {
-                if (!disposing) return;
-                components?.Dispose();
-            }
-            finally
-            {
-                base.Dispose(disposing);
-            }
+            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, "No connection was selected, external tool may return errors.", true);
+            extA.Start();
+        }
+    }
+
+    public void SwitchToolBarText(bool show)
+    {
+        foreach (ToolStripButton tItem in Items)
+        {
+            if (show)
+                tItem.DisplayStyle = ToolStripItemDisplayStyle.ImageAndText;
+            else
+                tItem.DisplayStyle = tItem.Image != null
+                    ? ToolStripItemDisplayStyle.Image
+                    : ToolStripItemDisplayStyle.ImageAndText;
+        }
+
+        CMenToolbarShowText.Checked = show;
+    }
+
+    #endregion
+
+    // CodeAyalysis doesn't like null propagation
+    protected override void Dispose(bool disposing)
+    {
+        try
+        {
+            if (!disposing) return;
+            components?.Dispose();
+        }
+        finally
+        {
+            base.Dispose(disposing);
         }
     }
 }

@@ -6,31 +6,30 @@ using mRemoteNG.Config.Serializers.ConnectionSerializers.Csv;
 using mRemoteNG.Security;
 using mRemoteNG.Tree;
 
-namespace mRemoteNG.Config.Connections
+namespace mRemoteNG.Config.Connections;
+
+[SupportedOSPlatform("windows")]
+public class CsvConnectionsSaver : ISaver<ConnectionTreeModel>
 {
-    [SupportedOSPlatform("windows")]
-    public class CsvConnectionsSaver : ISaver<ConnectionTreeModel>
+    private readonly string _connectionFileName;
+    private readonly SaveFilter _saveFilter;
+
+    public CsvConnectionsSaver(string connectionFileName, SaveFilter saveFilter)
     {
-        private readonly string _connectionFileName;
-        private readonly SaveFilter _saveFilter;
+        if (string.IsNullOrEmpty(connectionFileName))
+            throw new ArgumentException($"Argument '{nameof(connectionFileName)}' cannot be null or empty", nameof(connectionFileName));
+        ArgumentNullException.ThrowIfNull(saveFilter);
 
-        public CsvConnectionsSaver(string connectionFileName, SaveFilter saveFilter)
-        {
-            if (string.IsNullOrEmpty(connectionFileName))
-                throw new ArgumentException($"Argument '{nameof(connectionFileName)}' cannot be null or empty", nameof(connectionFileName));
-            ArgumentNullException.ThrowIfNull(saveFilter);
+        _connectionFileName = connectionFileName;
+        _saveFilter = saveFilter;
+    }
 
-            _connectionFileName = connectionFileName;
-            _saveFilter = saveFilter;
-        }
-
-        public void Save(ConnectionTreeModel connectionTreeModel, string propertyNameTrigger = "")
-        {
-            CsvConnectionsSerializerMremotengFormat csvConnectionsSerializer =
-                new(_saveFilter, Runtime.CredentialProviderCatalog);
-            FileDataProvider dataProvider = new(_connectionFileName);
-            string csvContent = csvConnectionsSerializer.Serialize(connectionTreeModel);
-            dataProvider.Save(csvContent);
-        }
+    public void Save(ConnectionTreeModel connectionTreeModel, string propertyNameTrigger = "")
+    {
+        CsvConnectionsSerializerMremotengFormat csvConnectionsSerializer =
+            new(_saveFilter, Runtime.CredentialProviderCatalog);
+        FileDataProvider dataProvider = new(_connectionFileName);
+        string csvContent = csvConnectionsSerializer.Serialize(connectionTreeModel);
+        dataProvider.Save(csvContent);
     }
 }

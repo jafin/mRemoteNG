@@ -1,31 +1,31 @@
+using System;
+using System.Runtime.Versioning;
 using mRemoteNG.App;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
-using System;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.Config.Serializers.Versioning
+namespace mRemoteNG.Config.Serializers.Versioning;
+
+[SupportedOSPlatform("windows")]
+public class SqlVersion31To32Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlVersion31To32Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
+    private readonly Version _version = new(3, 2);
+    private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+
+    public bool CanUpgrade(Version currentVersion)
     {
-        private readonly Version _version = new(3, 2);
-        private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
-
-        public bool CanUpgrade(Version currentVersion)
-        {
-            return currentVersion == new Version(3, 1) ||
-                // Support upgrading during dev revisions, 3.1.1, 3.1.2, etc...
-                (currentVersion <= new Version(3, 2) &&
+        return currentVersion == new Version(3, 1) ||
+               // Support upgrading during dev revisions, 3.1.1, 3.1.2, etc...
+               (currentVersion <= new Version(3, 2) &&
                 currentVersion < _version);
-        }
+    }
 
-        public Version Upgrade()
-        {
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                $"Upgrading database to version {_version}.");
+    public Version Upgrade()
+    {
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+            $"Upgrading database to version {_version}.");
 
-            const string msSqlAlter = @"
+        const string msSqlAlter = @"
 -- ConstantID is the primary key of tblCons (added as PK_tblCons by the 2.7->2.8 step).
 -- SQL Server refuses ALTER COLUMN on a PK member, so drop the PK (whatever its name),
 -- widen the column, then re-add the PK. (#113)
@@ -170,9 +170,8 @@ IF NOT EXISTS (SELECT 1 FROM sys.key_constraints
     ALTER TABLE tblCons ADD CONSTRAINT PK_tblCons PRIMARY KEY ([ConstantID]);
 ";
 
-            // No MySQL ALTER needed -- varchar already supports Unicode in MySQL
-            SqlMigrationHelper.ExecuteMigration(_databaseConnector, _version, msSqlAlter, null);
-            return _version;
-        }
+        // No MySQL ALTER needed -- varchar already supports Unicode in MySQL
+        SqlMigrationHelper.ExecuteMigration(_databaseConnector, _version, msSqlAlter, null);
+        return _version;
     }
 }

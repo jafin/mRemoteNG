@@ -6,27 +6,26 @@ using System.Runtime.Versioning;
 using System.Security;
 using mRemoteNG.Resources.Language;
 
-namespace mRemoteNG.Credential
+namespace mRemoteNG.Credential;
+
+[SupportedOSPlatform("windows")]
+public class PlaceholderCredentialRecord(IEnumerable<Guid> id) : ICredentialRecord
 {
-    [SupportedOSPlatform("windows")]
-    public class PlaceholderCredentialRecord(IEnumerable<Guid> id) : ICredentialRecord
-    {
-        // Placeholder records are immutable stand-ins for unavailable credentials,
-        // so this ICredentialRecord event is never raised.
+    // Placeholder records are immutable stand-ins for unavailable credentials,
+    // so this ICredentialRecord event is never raised.
 #pragma warning disable CS0067
-        public event PropertyChangedEventHandler? PropertyChanged;
+    public event PropertyChangedEventHandler? PropertyChanged;
 #pragma warning restore CS0067
 
-        public Guid Id { get; } = id.FirstOrDefault();
+    public Guid Id { get; } = id.FirstOrDefault();
 
-        [ReadOnly(true)] public string Title { get; set; } = Language.CredentialUnavailable;
+    [ReadOnly(true)] public string Title { get; set; } = Language.CredentialUnavailable;
 
-        [ReadOnly(true)] public string Username { get; set; } = Language.CredentialUnavailable;
+    [ReadOnly(true)] public string Username { get; set; } = Language.CredentialUnavailable;
 
-        [ReadOnly(true)] public SecureString Password { get; set; } = new SecureString();
+    [ReadOnly(true)] public SecureString Password { get; set; } = new SecureString();
 
-        [ReadOnly(true)] public string Domain { get; set; } = Language.CredentialUnavailable;
+    [ReadOnly(true)] public string Domain { get; set; } = Language.CredentialUnavailable;
 
-        public override string ToString() => Language.CredentialUnavailable;
-    }
+    public override string ToString() => Language.CredentialUnavailable;
 }

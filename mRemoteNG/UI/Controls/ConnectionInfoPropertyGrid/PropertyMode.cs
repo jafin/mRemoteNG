@@ -1,10 +1,9 @@
-﻿namespace mRemoteNG.UI.Controls.ConnectionInfoPropertyGrid
+﻿namespace mRemoteNG.UI.Controls.ConnectionInfoPropertyGrid;
+
+public enum PropertyMode
 {
-    public enum PropertyMode
-    {
-        Connection,
-        Inheritance,
-        DefaultConnection,
-        DefaultInheritance,
-    }
+    Connection,
+    Inheritance,
+    DefaultConnection,
+    DefaultInheritance,
 }

@@ -8,189 +8,188 @@ using mRemoteNG.Container;
 using mRemoteNG.Properties;
 using mRemoteNG.Tree.Root;
 
-namespace mRemoteNG.UI
+namespace mRemoteNG.UI;
+
+[SupportedOSPlatform("windows")]
+public class StatusImageList : IDisposable
 {
-    [SupportedOSPlatform("windows")]
-    public class StatusImageList : IDisposable
+    public ImageList ImageList { get; }
+
+    public StatusImageList()
     {
-        public ImageList ImageList { get; }
+        DisplayProperties display = new();
 
-        public StatusImageList()
+        ImageList = new ImageList
         {
-            DisplayProperties display = new();
+            ColorDepth = ColorDepth.Depth32Bit,
+            ImageSize = new Size((int)Math.Round(16 * display.ResolutionScalingFactor.Width), (int)Math.Round(16 * display.ResolutionScalingFactor.Height)),
+            TransparentColor = Color.Transparent
+        };
 
-            ImageList = new ImageList
-            {
-                ColorDepth = ColorDepth.Depth32Bit,
-                ImageSize = new Size((int)Math.Round(16 * display.ResolutionScalingFactor.Width), (int)Math.Round(16 * display.ResolutionScalingFactor.Height)),
-                TransparentColor = Color.Transparent
-            };
+        FillImageList(ImageList);
+    }
 
-            FillImageList(ImageList);
+    public object ImageGetter(object rowObject)
+    {
+        return GetKey(rowObject as ConnectionInfo);
+    }
+
+    public Image? GetImage(ConnectionInfo connectionInfo)
+    {
+        string key = GetKey(connectionInfo);
+        return ImageList.Images.ContainsKey(key)
+            ? ImageList.Images[key]
+            : null;
+    }
+
+    public string GetKey(ConnectionInfo? connectionInfo)
+    {
+        if (connectionInfo == null) return "";
+        if (connectionInfo is RootPuttySessionsNodeInfo) return "PuttySessions";
+        if (connectionInfo is RootNodeInfo) return "Root";
+        if (connectionInfo is ContainerInfo) return "Folder";
+
+        return GetConnectionIcon(connectionInfo);
+    }
+
+    private static string BuildConnectionIconName(string icon, bool connected, bool isTemplate = false, HostReachabilityStatus reachability = HostReachabilityStatus.Unknown)
+    {
+        string status = connected ? "Play" : isTemplate ? "Template" : "Default";
+        string reachSuffix = reachability switch
+        {
+            HostReachabilityStatus.Reachable => "_On",
+            HostReachabilityStatus.Unreachable => "_Off",
+            _ => ""
+        };
+        return $"Connection_{icon}_{status}{reachSuffix}";
+    }
+
+    private const string DefaultConnectionIcon = "";
+
+    private string GetConnectionIcon(ConnectionInfo connection)
+    {
+        if (string.IsNullOrEmpty(connection.Icon))
+        {
+            return DefaultConnectionIcon;
         }
 
-        public object ImageGetter(object rowObject)
+        bool connected = connection.HasActiveSessions;
+        bool isTemplate = connection.IsTemplate;
+        bool replaceIcon = connected && OptionsAppearancePage.Default.ReplaceIconOnConnect;
+        bool showHostStatus = OptionsConnectionsPage.Default.ShowHostStatus;
+        var reachability = showHostStatus ? connection.HostReachabilityStatus : HostReachabilityStatus.Unknown;
+
+        string name = isTemplate
+            ? BuildConnectionIconName(connection.Icon, false, true)
+            : replaceIcon
+                ? BuildConnectionIconNameReplace(connection.Icon)
+                : BuildConnectionIconName(connection.Icon, connected, false, reachability);
+        if (ImageList.Images.ContainsKey(name)) return name;
+        Icon? image = ConnectionIcon.FromString(connection.Icon);
+        if (image == null)
         {
-            return GetKey(rowObject as ConnectionInfo);
+            return DefaultConnectionIcon;
         }
 
-        public Image? GetImage(ConnectionInfo connectionInfo)
+        // Base variants — guard with ContainsKey to avoid duplicates when
+        // reachability changes and we re-enter for a new suffixed key (#2311).
+        void AddIfMissing(string key, Image img)
         {
-            string key = GetKey(connectionInfo);
-            return ImageList.Images.ContainsKey(key)
-                ? ImageList.Images[key]
-                : null;
+            if (!ImageList.Images.ContainsKey(key))
+                ImageList.Images.Add(key, img);
         }
 
-        public string GetKey(ConnectionInfo? connectionInfo)
-        {
-            if (connectionInfo == null) return "";
-            if (connectionInfo is RootPuttySessionsNodeInfo) return "PuttySessions";
-            if (connectionInfo is RootNodeInfo) return "Root";
-            if (connectionInfo is ContainerInfo) return "Folder";
+        AddIfMissing(BuildConnectionIconName(connection.Icon, false), image.ToBitmap());
+        AddIfMissing(BuildConnectionIconName(connection.Icon, true), Overlay(image, Properties.Resources.ConnectedOverlay));
+        AddIfMissing(BuildConnectionIconName(connection.Icon, false, true), CreateTemplateIcon(image));
+        AddIfMissing(BuildConnectionIconNameReplace(connection.Icon), CreateReplaceIcon());
 
-            return GetConnectionIcon(connectionInfo);
+        // Host status variants — generate both On and Off so transitions are just lookups
+        if (showHostStatus)
+        {
+            AddIfMissing(BuildConnectionIconName(connection.Icon, false, false, HostReachabilityStatus.Reachable),
+                OverlayBottomRight(image, Properties.Resources.HostStatus_On));
+            AddIfMissing(BuildConnectionIconName(connection.Icon, false, false, HostReachabilityStatus.Unreachable),
+                OverlayBottomRight(image, Properties.Resources.HostStatus_Off));
         }
 
-        private static string BuildConnectionIconName(string icon, bool connected, bool isTemplate = false, HostReachabilityStatus reachability = HostReachabilityStatus.Unknown)
+        return name;
+    }
+
+    private static string BuildConnectionIconNameReplace(string icon)
+    {
+        return $"Connection_{icon}_Replace";
+    }
+
+    private static Bitmap CreateReplaceIcon()
+    {
+        return new Bitmap(Properties.Resources.Run_16x, new Size(16, 16));
+    }
+
+    private static Bitmap CreateTemplateIcon(Icon baseIcon)
+    {
+        Bitmap result = new(baseIcon.ToBitmap(), new Size(16, 16));
+        using (Graphics gr = Graphics.FromImage(result))
         {
-            string status = connected ? "Play" : isTemplate ? "Template" : "Default";
-            string reachSuffix = reachability switch
-            {
-                HostReachabilityStatus.Reachable => "_On",
-                HostReachabilityStatus.Unreachable => "_Off",
-                _ => ""
-            };
-            return $"Connection_{icon}_{status}{reachSuffix}";
+            // Draw a small "T" badge in the bottom-right corner
+            using Font font = new("Arial", 7, FontStyle.Bold, GraphicsUnit.Pixel);
+            using SolidBrush bgBrush = new(Color.FromArgb(200, 70, 130, 180));
+            using SolidBrush fgBrush = new(Color.White);
+            gr.FillRectangle(bgBrush, 9, 9, 7, 7);
+            gr.DrawString("T", font, fgBrush, 9, 8);
         }
 
-        private const string DefaultConnectionIcon = "";
+        return result;
+    }
 
-        private string GetConnectionIcon(ConnectionInfo connection)
+    private static Bitmap Overlay(Icon background, Image foreground)
+    {
+        Bitmap result = new(background.ToBitmap(), new Size(16, 16));
+        using (Graphics gr = Graphics.FromImage(result))
         {
-            if (string.IsNullOrEmpty(connection.Icon))
-            {
-                return DefaultConnectionIcon;
-            }
-
-            bool connected = connection.HasActiveSessions;
-            bool isTemplate = connection.IsTemplate;
-            bool replaceIcon = connected && OptionsAppearancePage.Default.ReplaceIconOnConnect;
-            bool showHostStatus = OptionsConnectionsPage.Default.ShowHostStatus;
-            var reachability = showHostStatus ? connection.HostReachabilityStatus : HostReachabilityStatus.Unknown;
-
-            string name = isTemplate
-                ? BuildConnectionIconName(connection.Icon, false, true)
-                : replaceIcon
-                    ? BuildConnectionIconNameReplace(connection.Icon)
-                    : BuildConnectionIconName(connection.Icon, connected, false, reachability);
-            if (ImageList.Images.ContainsKey(name)) return name;
-            Icon? image = ConnectionIcon.FromString(connection.Icon);
-            if (image == null)
-            {
-                return DefaultConnectionIcon;
-            }
-
-            // Base variants — guard with ContainsKey to avoid duplicates when
-            // reachability changes and we re-enter for a new suffixed key (#2311).
-            void AddIfMissing(string key, Image img)
-            {
-                if (!ImageList.Images.ContainsKey(key))
-                    ImageList.Images.Add(key, img);
-            }
-
-            AddIfMissing(BuildConnectionIconName(connection.Icon, false), image.ToBitmap());
-            AddIfMissing(BuildConnectionIconName(connection.Icon, true), Overlay(image, Properties.Resources.ConnectedOverlay));
-            AddIfMissing(BuildConnectionIconName(connection.Icon, false, true), CreateTemplateIcon(image));
-            AddIfMissing(BuildConnectionIconNameReplace(connection.Icon), CreateReplaceIcon());
-
-            // Host status variants — generate both On and Off so transitions are just lookups
-            if (showHostStatus)
-            {
-                AddIfMissing(BuildConnectionIconName(connection.Icon, false, false, HostReachabilityStatus.Reachable),
-                    OverlayBottomRight(image, Properties.Resources.HostStatus_On));
-                AddIfMissing(BuildConnectionIconName(connection.Icon, false, false, HostReachabilityStatus.Unreachable),
-                    OverlayBottomRight(image, Properties.Resources.HostStatus_Off));
-            }
-
-            return name;
+            gr.DrawImage(foreground, new Rectangle(0, 0, foreground.Width, foreground.Height));
         }
 
-        private static string BuildConnectionIconNameReplace(string icon)
+        return result;
+    }
+
+    private static Bitmap OverlayBottomRight(Icon background, Image badge)
+    {
+        Bitmap result = new(background.ToBitmap(), new Size(16, 16));
+        using (Graphics gr = Graphics.FromImage(result))
         {
-            return $"Connection_{icon}_Replace";
+            int badgeSize = 8;
+            gr.DrawImage(badge, new Rectangle(16 - badgeSize, 16 - badgeSize, badgeSize, badgeSize));
         }
 
-        private static Bitmap CreateReplaceIcon()
+        return result;
+    }
+
+    private static void FillImageList(ImageList imageList)
+    {
+        try
         {
-            return new Bitmap(Properties.Resources.Run_16x, new Size(16, 16));
+            imageList.Images.Add("Root", Properties.Resources.ASPWebSite_16x);
+            imageList.Images.Add("Folder", Properties.Resources.FolderClosed_16x);
+            imageList.Images.Add("PuttySessions", Properties.Resources.PuttySessions);
         }
-
-        private static Bitmap CreateTemplateIcon(Icon baseIcon)
+        catch (Exception ex)
         {
-            Bitmap result = new(baseIcon.ToBitmap(), new Size(16, 16));
-            using (Graphics gr = Graphics.FromImage(result))
-            {
-                // Draw a small "T" badge in the bottom-right corner
-                using Font font = new("Arial", 7, FontStyle.Bold, GraphicsUnit.Pixel);
-                using SolidBrush bgBrush = new(Color.FromArgb(200, 70, 130, 180));
-                using SolidBrush fgBrush = new(Color.White);
-                gr.FillRectangle(bgBrush, 9, 9, 7, 7);
-                gr.DrawString("T", font, fgBrush, 9, 8);
-            }
-
-            return result;
+            Runtime.MessageCollector.AddExceptionStackTrace($"Unable to fill the image list of type {nameof(StatusImageList)}", ex);
         }
+    }
 
-        private static Bitmap Overlay(Icon background, Image foreground)
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
+
+    protected virtual void Dispose(bool disposing)
+    {
+        if (disposing)
         {
-            Bitmap result = new(background.ToBitmap(), new Size(16, 16));
-            using (Graphics gr = Graphics.FromImage(result))
-            {
-                gr.DrawImage(foreground, new Rectangle(0, 0, foreground.Width, foreground.Height));
-            }
-
-            return result;
-        }
-
-        private static Bitmap OverlayBottomRight(Icon background, Image badge)
-        {
-            Bitmap result = new(background.ToBitmap(), new Size(16, 16));
-            using (Graphics gr = Graphics.FromImage(result))
-            {
-                int badgeSize = 8;
-                gr.DrawImage(badge, new Rectangle(16 - badgeSize, 16 - badgeSize, badgeSize, badgeSize));
-            }
-
-            return result;
-        }
-
-        private static void FillImageList(ImageList imageList)
-        {
-            try
-            {
-                imageList.Images.Add("Root", Properties.Resources.ASPWebSite_16x);
-                imageList.Images.Add("Folder", Properties.Resources.FolderClosed_16x);
-                imageList.Images.Add("PuttySessions", Properties.Resources.PuttySessions);
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddExceptionStackTrace($"Unable to fill the image list of type {nameof(StatusImageList)}", ex);
-            }
-        }
-
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
-
-        protected virtual void Dispose(bool disposing)
-        {
-            if (disposing)
-            {
-                ImageList?.Dispose();
-            }
+            ImageList?.Dispose();
         }
     }
 }

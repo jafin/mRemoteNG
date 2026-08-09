@@ -1,5 +1,4 @@
 using System;
-using System.Reflection;
 using System.Runtime.Versioning;
 using mRemoteNG.Messages;
 using mRemoteNG.Tools.Cmdline;

@@ -2,24 +2,23 @@
 using System.Windows.Forms;
 using mRemoteNG.Credential;
 
-namespace mRemoteNG.UI.Controls
+namespace mRemoteNG.UI.Controls;
+
+public partial class CredentialRecordComboBox : ComboBox
 {
-    public partial class CredentialRecordComboBox : ComboBox
+    public IEnumerable<ICredentialRecord>? CredentialRecords { get; set; }
+
+    public CredentialRecordComboBox()
     {
-        public IEnumerable<ICredentialRecord>? CredentialRecords { get; set; }
+        InitializeComponent();
+        PopulateItems(CredentialRecords);
+    }
 
-        public CredentialRecordComboBox()
-        {
-            InitializeComponent();
-            PopulateItems(CredentialRecords);
-        }
-
-        private void PopulateItems(IEnumerable<ICredentialRecord>? credentialRecords)
-        {
-            if (credentialRecords == null) return;
-            Items.Clear();
-            foreach (ICredentialRecord credential in credentialRecords)
-                Items.Add(credential);
-        }
+    private void PopulateItems(IEnumerable<ICredentialRecord>? credentialRecords)
+    {
+        if (credentialRecords == null) return;
+        Items.Clear();
+        foreach (ICredentialRecord credential in credentialRecords)
+            Items.Add(credential);
     }
 }

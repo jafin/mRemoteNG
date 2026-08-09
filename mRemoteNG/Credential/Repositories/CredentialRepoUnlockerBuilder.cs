@@ -1,12 +1,11 @@
 ﻿using System.Collections.Generic;
 
-namespace mRemoteNG.Credential.Repositories
+namespace mRemoteNG.Credential.Repositories;
+
+public static class CredentialRepoUnlockerBuilder
 {
-    public static class CredentialRepoUnlockerBuilder
+    public static CompositeRepositoryUnlocker Build(IEnumerable<ICredentialRepository> repos)
     {
-        public static CompositeRepositoryUnlocker Build(IEnumerable<ICredentialRepository> repos)
-        {
-            return new CompositeRepositoryUnlocker(repos);
-        }
+        return new CompositeRepositoryUnlocker(repos);
     }
 }

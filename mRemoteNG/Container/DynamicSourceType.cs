@@ -1,10 +1,9 @@
-namespace mRemoteNG.Container
+namespace mRemoteNG.Container;
+
+public enum DynamicSourceType
 {
-    public enum DynamicSourceType
-    {
-        None,
-        ActiveDirectory,
-        File,
-        Script
-    }
+    None,
+    ActiveDirectory,
+    File,
+    Script
 }

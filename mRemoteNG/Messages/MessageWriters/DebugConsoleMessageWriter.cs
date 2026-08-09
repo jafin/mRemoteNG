@@ -1,13 +1,12 @@
 ﻿using System.Diagnostics;
 
-namespace mRemoteNG.Messages.MessageWriters
+namespace mRemoteNG.Messages.MessageWriters;
+
+public class DebugConsoleMessageWriter : IMessageWriter
 {
-    public class DebugConsoleMessageWriter : IMessageWriter
+    public void Write(IMessage message)
     {
-        public void Write(IMessage message)
-        {
-            string textToPrint = $"{message.Class}: {message.Text}";
-            Debug.Print(textToPrint);
-        }
+        string textToPrint = $"{message.Class}: {message.Text}";
+        Debug.Print(textToPrint);
     }
 }

@@ -3,115 +3,114 @@ using mRemoteNG.Connection.Protocol;
 using mRemoteNG.Connection.Protocol.RDP;
 using NUnit.Framework;
 
-namespace mRemoteNGTests.UI.Window.ConfigWindowTests
+namespace mRemoteNGTests.UI.Window.ConfigWindowTests;
+
+[Apartment(ApartmentState.STA)]
+public class ConfigWindowRdpSpecialTests : ConfigWindowSpecialTestsBase
 {
-    [Apartment(ApartmentState.STA)]
-    public class ConfigWindowRdpSpecialTests : ConfigWindowSpecialTestsBase
+    protected override ProtocolType Protocol => ProtocolType.RDP;
+
+    [Test]
+    public void PropertyShownWhenActive_RdpMinutesToIdleTimeout()
     {
-        protected override ProtocolType Protocol => ProtocolType.RDP;
+        ConnectionInfo.RDPMinutesToIdleTimeout = 1;
+        ExpectedPropertyList.Add(nameof(mRemoteNG.Connection.ConnectionInfo.RDPAlertIdleTimeout));
 
-        [Test]
-        public void PropertyShownWhenActive_RdpMinutesToIdleTimeout()
+        RunVerification();
+    }
+
+    [TestCase(RDGatewayUsageMethod.Always)]
+    [TestCase(RDGatewayUsageMethod.Detect)]
+    public void RdGatewayPropertiesShown_WhenRdGatewayUsageMethodIsNotNever(RDGatewayUsageMethod gatewayUsageMethod)
+    {
+        ConnectionInfo.RDGatewayUsageMethod = gatewayUsageMethod;
+        ConnectionInfo.RDGatewayUseConnectionCredentials = RDGatewayUseConnectionCredentials.Yes;
+        ExpectedPropertyList.AddRange(new[]
         {
-            ConnectionInfo.RDPMinutesToIdleTimeout = 1;
-            ExpectedPropertyList.Add(nameof(mRemoteNG.Connection.ConnectionInfo.RDPAlertIdleTimeout));
+            nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayHostname),
+            nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUseConnectionCredentials),
+        });
+        ExpectedPropertyList.Remove(nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUserViaAPI));
+        ExpectedPropertyList.Remove(nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayExternalCredentialProvider));
 
-            RunVerification();
+        RunVerification();
+    }
+
+    [TestCase(RDGatewayUseConnectionCredentials.No)]
+    [TestCase(RDGatewayUseConnectionCredentials.SmartCard)]
+    public void RdGatewayPropertiesShown_WhenRDGatewayUseConnectionCredentialsIsNotYes(RDGatewayUseConnectionCredentials useConnectionCredentials)
+    {
+        ConnectionInfo.RDGatewayUsageMethod = RDGatewayUsageMethod.Always;
+        ConnectionInfo.RDGatewayUseConnectionCredentials = useConnectionCredentials;
+        switch (useConnectionCredentials)
+        {
+            case RDGatewayUseConnectionCredentials.No:
+                ExpectedPropertyList.AddRange(new[]
+                {
+                    nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayHostname),
+                    nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUsername),
+                    nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayPassword),
+                    nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayDomain),
+                    nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUseConnectionCredentials),
+                    nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayAccessToken)
+                });
+                break;
+            case RDGatewayUseConnectionCredentials.SmartCard:
+                ExpectedPropertyList.AddRange(new[]
+                {
+                    nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayHostname),
+                    nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUseConnectionCredentials)
+                });
+                ExpectedPropertyList.Remove(nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUserViaAPI));
+                ExpectedPropertyList.Remove(nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayExternalCredentialProvider));
+                break;
         }
 
-        [TestCase(RDGatewayUsageMethod.Always)]
-        [TestCase(RDGatewayUsageMethod.Detect)]
-        public void RdGatewayPropertiesShown_WhenRdGatewayUsageMethodIsNotNever(RDGatewayUsageMethod gatewayUsageMethod)
-        {
-            ConnectionInfo.RDGatewayUsageMethod = gatewayUsageMethod;
-            ConnectionInfo.RDGatewayUseConnectionCredentials = RDGatewayUseConnectionCredentials.Yes;
-            ExpectedPropertyList.AddRange(new[]
-            {
-                nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayHostname),
-                nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUseConnectionCredentials),
-            });
-            ExpectedPropertyList.Remove(nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUserViaAPI));
-            ExpectedPropertyList.Remove(nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayExternalCredentialProvider));
-            
-            RunVerification();
-        }
+        RunVerification();
+    }
 
-        [TestCase(RDGatewayUseConnectionCredentials.No)]
-        [TestCase(RDGatewayUseConnectionCredentials.SmartCard)]
-        public void RdGatewayPropertiesShown_WhenRDGatewayUseConnectionCredentialsIsNotYes(RDGatewayUseConnectionCredentials useConnectionCredentials)
-        {
-            ConnectionInfo.RDGatewayUsageMethod = RDGatewayUsageMethod.Always;
-            ConnectionInfo.RDGatewayUseConnectionCredentials = useConnectionCredentials;
-            switch (useConnectionCredentials)
-            {
-                case RDGatewayUseConnectionCredentials.No:
-                    ExpectedPropertyList.AddRange(new[]
-                    {
-                        nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayHostname),
-                        nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUsername),
-                        nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayPassword),
-                        nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayDomain),
-                        nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUseConnectionCredentials),
-                        nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayAccessToken)
-                    });
-                    break;
-                case RDGatewayUseConnectionCredentials.SmartCard:
-                    ExpectedPropertyList.AddRange(new[]
-                    {
-                        nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayHostname),
-                        nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUseConnectionCredentials)
-                    });
-                    ExpectedPropertyList.Remove(nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayUserViaAPI));
-                    ExpectedPropertyList.Remove(nameof(mRemoteNG.Connection.ConnectionInfo.RDGatewayExternalCredentialProvider));
-                    break;
-            }
+    [Test]
+    public void SoundQualityPropertyShown_WhenRdpSoundsSetToBringToThisComputer()
+    {
+        ConnectionInfo.RedirectSound = RDPSounds.BringToThisComputer;
+        ExpectedPropertyList.Add(nameof(mRemoteNG.Connection.ConnectionInfo.SoundQuality));
 
-            RunVerification();
-        }
+        RunVerification();
+    }
 
-        [Test]
-        public void SoundQualityPropertyShown_WhenRdpSoundsSetToBringToThisComputer()
-        {
-            ConnectionInfo.RedirectSound = RDPSounds.BringToThisComputer;
-            ExpectedPropertyList.Add(nameof(mRemoteNG.Connection.ConnectionInfo.SoundQuality));
+    [TestCase(RDPResolutions.FitToWindow)]
+    [TestCase(RDPResolutions.Fullscreen)]
+    public void AutomaticResizePropertyShown_WhenResolutionIsDynamic(RDPResolutions resolution)
+    {
+        ConnectionInfo.Resolution = resolution;
+        ExpectedPropertyList.Add(nameof(mRemoteNG.Connection.ConnectionInfo.AutomaticResize));
 
-            RunVerification();
-        }
+        RunVerification();
+    }
 
-        [TestCase(RDPResolutions.FitToWindow)]
-        [TestCase(RDPResolutions.Fullscreen)]
-        public void AutomaticResizePropertyShown_WhenResolutionIsDynamic(RDPResolutions resolution)
-        {
-            ConnectionInfo.Resolution = resolution;
-            ExpectedPropertyList.Add(nameof(mRemoteNG.Connection.ConnectionInfo.AutomaticResize));
+    [Test]
+    public void ResolutionWidthAndHeightShown_WhenResolutionIsCustom()
+    {
+        ConnectionInfo.Resolution = RDPResolutions.Custom;
+        ExpectedPropertyList.Add(nameof(mRemoteNG.Connection.ConnectionInfo.ResolutionWidth));
+        ExpectedPropertyList.Add(nameof(mRemoteNG.Connection.ConnectionInfo.ResolutionHeight));
 
-            RunVerification();
-        }
+        RunVerification();
+    }
 
-        [Test]
-        public void ResolutionWidthAndHeightShown_WhenResolutionIsCustom()
-        {
-            ConnectionInfo.Resolution = RDPResolutions.Custom;
-            ExpectedPropertyList.Add(nameof(mRemoteNG.Connection.ConnectionInfo.ResolutionWidth));
-            ExpectedPropertyList.Add(nameof(mRemoteNG.Connection.ConnectionInfo.ResolutionHeight));
+    [TestCase(RDPResolutions.Res800x600)]
+    [TestCase(RDPResolutions.Res1920x1080)]
+    [TestCase(RDPResolutions.FitToWindow)]
+    [TestCase(RDPResolutions.Fullscreen)]
+    [TestCase(RDPResolutions.SmartSize)]
+    public void ResolutionWidthAndHeightHidden_WhenResolutionIsNotCustom(RDPResolutions resolution)
+    {
+        ConnectionInfo.Resolution = resolution;
 
-            RunVerification();
-        }
+        ConfigWindow.SelectedTreeNode = ConnectionInfo;
+        var visibleProperties = ConfigWindow.VisibleObjectProperties;
 
-        [TestCase(RDPResolutions.Res800x600)]
-        [TestCase(RDPResolutions.Res1920x1080)]
-        [TestCase(RDPResolutions.FitToWindow)]
-        [TestCase(RDPResolutions.Fullscreen)]
-        [TestCase(RDPResolutions.SmartSize)]
-        public void ResolutionWidthAndHeightHidden_WhenResolutionIsNotCustom(RDPResolutions resolution)
-        {
-            ConnectionInfo.Resolution = resolution;
-
-            ConfigWindow.SelectedTreeNode = ConnectionInfo;
-            var visibleProperties = ConfigWindow.VisibleObjectProperties;
-
-            Assert.That(visibleProperties, Does.Not.Contain(nameof(mRemoteNG.Connection.ConnectionInfo.ResolutionWidth)));
-            Assert.That(visibleProperties, Does.Not.Contain(nameof(mRemoteNG.Connection.ConnectionInfo.ResolutionHeight)));
-        }
+        Assert.That(visibleProperties, Does.Not.Contain(nameof(mRemoteNG.Connection.ConnectionInfo.ResolutionWidth)));
+        Assert.That(visibleProperties, Does.Not.Contain(nameof(mRemoteNG.Connection.ConnectionInfo.ResolutionHeight)));
     }
 }

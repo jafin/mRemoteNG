@@ -1,31 +1,31 @@
-﻿using mRemoteNG.App;
+﻿using System;
+using System.Runtime.Versioning;
+using mRemoteNG.App;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
-using System;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.Config.Serializers.Versioning
+namespace mRemoteNG.Config.Serializers.Versioning;
+
+[SupportedOSPlatform("windows")]
+public class SqlVersion29To30Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlVersion29To30Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
+    private readonly Version _version = new(3, 0);
+    private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+
+    public bool CanUpgrade(Version currentVersion)
     {
-        private readonly Version _version = new(3, 0);
-        private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
-
-        public bool CanUpgrade(Version currentVersion)
-        {
-            return currentVersion == new Version(2, 9) ||
-                // Support upgrading during dev revisions, 2.9.1, 2.9.2, etc...
-                (currentVersion <= new Version(3, 0) &&
+        return currentVersion == new Version(2, 9) ||
+               // Support upgrading during dev revisions, 2.9.1, 2.9.2, etc...
+               (currentVersion <= new Version(3, 0) &&
                 currentVersion < _version);
-        }
+    }
 
-        public Version Upgrade()
-        {
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                $"Upgrading database to version {_version}.");
+    public Version Upgrade()
+    {
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+            $"Upgrading database to version {_version}.");
 
-            const string mySqlAlter = @"
+        const string mySqlAlter = @"
 ALTER TABLE tblCons MODIFY COLUMN `RenderingEngine` varchar(32) DEFAULT NULL;
 ALTER TABLE tblCons MODIFY COLUMN `RedirectDiskDrives` varchar(32) DEFAULT NULL;
 ALTER TABLE tblCons ADD COLUMN `RedirectDiskDrivesCustom` varchar(32) DEFAULT NULL;
@@ -137,7 +137,7 @@ ALTER TABLE tblCons MODIFY COLUMN `InheritVNCViewOnly` tinyint NOT NULL;
 ALTER TABLE tblCons MODIFY COLUMN `InheritVmId` tinyint NOT NULL;
 ";
 
-            const string msSqlAlter = @"
+        const string msSqlAlter = @"
 ALTER TABLE tblCons ALTER COLUMN RenderingEngine varchar(32) NULL;
 ALTER TABLE tblCons ALTER COLUMN RedirectDiskDrives varchar(32) NULL;
 ALTER TABLE tblCons ADD RedirectDiskDrivesCustom varchar(32) DEFAULT NULL;
@@ -145,8 +145,7 @@ ALTER TABLE tblCons ADD InheritRedirectDiskDrivesCustom bit NOT NULL;
 ALTER TABLE tblCons ADD UserViaAPI varchar(512) NOT NULL;
 ";
 
-            SqlMigrationHelper.ExecuteMigration(_databaseConnector, _version, msSqlAlter, mySqlAlter);
-            return _version;
-        }
+        SqlMigrationHelper.ExecuteMigration(_databaseConnector, _version, msSqlAlter, mySqlAlter);
+        return _version;
     }
 }

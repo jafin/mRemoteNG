@@ -1,20 +1,18 @@
-﻿using Mysqlx.Notice;
-using System.Runtime.Versioning;
+﻿using System.Runtime.Versioning;
 
-namespace mRemoteNG.Connection.Protocol.Http
+namespace mRemoteNG.Connection.Protocol.Http;
+
+[SupportedOSPlatform("windows")]
+public class ProtocolHTTP : HTTPBase
 {
-    [SupportedOSPlatform("windows")]
-    public class ProtocolHTTP : HTTPBase
+    public ProtocolHTTP(RenderingEngine RenderingEngine) : base(RenderingEngine)
     {
-        public ProtocolHTTP(RenderingEngine RenderingEngine) : base(RenderingEngine)
-        {
-            httpOrS = "http";
-            defaultPort = (int)Defaults.Port;
-        }
+        httpOrS = "http";
+        defaultPort = (int)Defaults.Port;
+    }
 
-        public enum Defaults
-        {
-            Port = 80
-        }
+    public enum Defaults
+    {
+        Port = 80
     }
 }

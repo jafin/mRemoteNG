@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.Versioning;
 using mRemoteNG.Connection;
@@ -8,150 +7,149 @@ using mRemoteNG.Container;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
 
-namespace mRemoteNG.Config.Serializers.MiscSerializers
+namespace mRemoteNG.Config.Serializers.MiscSerializers;
+
+[SupportedOSPlatform("windows")]
+public class MobaXTermSessionDeserializer : IDeserializer<string, ConnectionTreeModel>
 {
-    [SupportedOSPlatform("windows")]
-    public class MobaXTermSessionDeserializer : IDeserializer<string, ConnectionTreeModel>
+    // MobaXTerm protocol codes
+    private const int ProtocolCodeRdp = 91;
+    private const int ProtocolCodeSsh = 109;
+    private const int ProtocolCodeVnc = 128;
+    private const int ProtocolCodeTelnet = 98;
+    private const int ProtocolCodeFtp = 130;
+    private const int ProtocolCodeSftp = 145;
+
+    public ConnectionTreeModel Deserialize(string mobaFileContent)
     {
-        // MobaXTerm protocol codes
-        private const int ProtocolCodeRdp = 91;
-        private const int ProtocolCodeSsh = 109;
-        private const int ProtocolCodeVnc = 128;
-        private const int ProtocolCodeTelnet = 98;
-        private const int ProtocolCodeFtp = 130;
-        private const int ProtocolCodeSftp = 145;
+        ConnectionTreeModel connectionTreeModel = new();
+        RootNodeInfo root = new(RootNodeType.Connection);
+        connectionTreeModel.AddRootNode(root);
 
-        public ConnectionTreeModel Deserialize(string mobaFileContent)
+        if (string.IsNullOrWhiteSpace(mobaFileContent))
+            return connectionTreeModel;
+
+        string[] lines = mobaFileContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
+
+        string currentSection = "";
+        ContainerInfo? currentContainer = null;
+
+        foreach (string line in lines)
         {
-            ConnectionTreeModel connectionTreeModel = new();
-            RootNodeInfo root = new(RootNodeType.Connection);
-            connectionTreeModel.AddRootNode(root);
+            string trimmed = line.Trim();
 
-            if (string.IsNullOrWhiteSpace(mobaFileContent))
-                return connectionTreeModel;
-
-            string[] lines = mobaFileContent.Split(new[] { '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries);
-
-            string currentSection = "";
-            ContainerInfo? currentContainer = null;
-
-            foreach (string line in lines)
+            // Detect section headers: [Bookmarks], [Bookmarks_1], etc.
+            if (trimmed.StartsWith('[') && trimmed.EndsWith(']'))
             {
-                string trimmed = line.Trim();
-
-                // Detect section headers: [Bookmarks], [Bookmarks_1], etc.
-                if (trimmed.StartsWith('[') && trimmed.EndsWith(']'))
+                currentSection = trimmed[1..^1];
+                if (currentSection.StartsWith("Bookmarks", StringComparison.OrdinalIgnoreCase))
                 {
-                    currentSection = trimmed[1..^1];
-                    if (currentSection.StartsWith("Bookmarks", StringComparison.OrdinalIgnoreCase))
-                    {
-                        currentContainer = null; // Reset — SubRep will set it
-                    }
-                    continue;
+                    currentContainer = null; // Reset — SubRep will set it
                 }
-
-                if (!currentSection.StartsWith("Bookmarks", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                // Parse key=value
-                int eqIndex = trimmed.IndexOf('=');
-                if (eqIndex < 0)
-                    continue;
-
-                string key = trimmed[..eqIndex].Trim();
-                string value = trimmed[(eqIndex + 1)..].Trim();
-
-                if (string.Equals(key, "SubRep", StringComparison.OrdinalIgnoreCase))
-                {
-                    if (!string.IsNullOrEmpty(value))
-                    {
-                        currentContainer = new ContainerInfo { Name = value };
-                        root.AddChild(currentContainer);
-                    }
-                    continue;
-                }
-
-                if (string.Equals(key, "ImgNum", StringComparison.OrdinalIgnoreCase))
-                    continue;
-
-                // Session line: SessionName=#protocolCode#host%port%username%...
-                ConnectionInfo? connection = ParseSession(key, value);
-                if (connection != null)
-                {
-                    if (currentContainer != null)
-                        currentContainer.AddChild(connection);
-                    else
-                        root.AddChild(connection);
-                }
+                continue;
             }
 
-            return connectionTreeModel;
-        }
+            if (!currentSection.StartsWith("Bookmarks", StringComparison.OrdinalIgnoreCase))
+                continue;
 
-        private static ConnectionInfo? ParseSession(string sessionName, string sessionValue)
-        {
-            // Format: #protocolCode#host%port%username%...
-            if (string.IsNullOrEmpty(sessionValue) || !sessionValue.StartsWith('#'))
-                return null;
+            // Parse key=value
+            int eqIndex = trimmed.IndexOf('=');
+            if (eqIndex < 0)
+                continue;
 
-            // Remove leading '#', then split by '#' to get [protocolCode, rest]
-            string withoutLeadingHash = sessionValue[1..];
-            int secondHash = withoutLeadingHash.IndexOf('#');
-            if (secondHash < 0)
-                return null;
+            string key = trimmed[..eqIndex].Trim();
+            string value = trimmed[(eqIndex + 1)..].Trim();
 
-            string protocolCodeStr = withoutLeadingHash[..secondHash];
-            string fieldsStr = withoutLeadingHash[(secondHash + 1)..];
-
-            if (!int.TryParse(protocolCodeStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out int protocolCode))
-                return null;
-
-            string[] fields = fieldsStr.Split('%');
-            string hostname = fields[0];
-            string portStr = fields.Length > 1 ? fields[1] : "";
-            string username = fields.Length > 2 ? fields[2] : "";
-
-            ProtocolType protocol = MapProtocol(protocolCode);
-            int port = GetPort(portStr, protocol);
-
-            ConnectionInfo connection = new()
+            if (string.Equals(key, "SubRep", StringComparison.OrdinalIgnoreCase))
             {
-                Name = sessionName,
-                Hostname = hostname,
-                Port = port,
-                Protocol = protocol,
-                Username = username
-            };
+                if (!string.IsNullOrEmpty(value))
+                {
+                    currentContainer = new ContainerInfo { Name = value };
+                    root.AddChild(currentContainer);
+                }
+                continue;
+            }
 
-            return connection;
-        }
+            if (string.Equals(key, "ImgNum", StringComparison.OrdinalIgnoreCase))
+                continue;
 
-        private static ProtocolType MapProtocol(int code)
-        {
-            return code switch
+            // Session line: SessionName=#protocolCode#host%port%username%...
+            ConnectionInfo? connection = ParseSession(key, value);
+            if (connection != null)
             {
-                ProtocolCodeRdp => ProtocolType.RDP,
-                ProtocolCodeSsh or ProtocolCodeSftp => ProtocolType.SSH2,
-                ProtocolCodeVnc => ProtocolType.VNC,
-                ProtocolCodeTelnet => ProtocolType.Telnet,
-                ProtocolCodeFtp => ProtocolType.HTTP,
-                _ => ProtocolType.RDP
-            };
+                if (currentContainer != null)
+                    currentContainer.AddChild(connection);
+                else
+                    root.AddChild(connection);
+            }
         }
 
-        private static int GetPort(string portStr, ProtocolType protocol)
+        return connectionTreeModel;
+    }
+
+    private static ConnectionInfo? ParseSession(string sessionName, string sessionValue)
+    {
+        // Format: #protocolCode#host%port%username%...
+        if (string.IsNullOrEmpty(sessionValue) || !sessionValue.StartsWith('#'))
+            return null;
+
+        // Remove leading '#', then split by '#' to get [protocolCode, rest]
+        string withoutLeadingHash = sessionValue[1..];
+        int secondHash = withoutLeadingHash.IndexOf('#');
+        if (secondHash < 0)
+            return null;
+
+        string protocolCodeStr = withoutLeadingHash[..secondHash];
+        string fieldsStr = withoutLeadingHash[(secondHash + 1)..];
+
+        if (!int.TryParse(protocolCodeStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out int protocolCode))
+            return null;
+
+        string[] fields = fieldsStr.Split('%');
+        string hostname = fields[0];
+        string portStr = fields.Length > 1 ? fields[1] : "";
+        string username = fields.Length > 2 ? fields[2] : "";
+
+        ProtocolType protocol = MapProtocol(protocolCode);
+        int port = GetPort(portStr, protocol);
+
+        ConnectionInfo connection = new()
         {
-            if (int.TryParse(portStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out int port) && port > 0)
-                return port;
+            Name = sessionName,
+            Hostname = hostname,
+            Port = port,
+            Protocol = protocol,
+            Username = username
+        };
 
-            return protocol switch
-            {
-                ProtocolType.RDP => 3389,
-                ProtocolType.SSH2 => 22,
-                ProtocolType.VNC => 5900,
-                ProtocolType.Telnet => 23,
-                _ => 0
-            };
-        }
+        return connection;
+    }
+
+    private static ProtocolType MapProtocol(int code)
+    {
+        return code switch
+        {
+            ProtocolCodeRdp => ProtocolType.RDP,
+            ProtocolCodeSsh or ProtocolCodeSftp => ProtocolType.SSH2,
+            ProtocolCodeVnc => ProtocolType.VNC,
+            ProtocolCodeTelnet => ProtocolType.Telnet,
+            ProtocolCodeFtp => ProtocolType.HTTP,
+            _ => ProtocolType.RDP
+        };
+    }
+
+    private static int GetPort(string portStr, ProtocolType protocol)
+    {
+        if (int.TryParse(portStr, NumberStyles.Integer, CultureInfo.InvariantCulture, out int port) && port > 0)
+            return port;
+
+        return protocol switch
+        {
+            ProtocolType.RDP => 3389,
+            ProtocolType.SSH2 => 22,
+            ProtocolType.VNC => 5900,
+            ProtocolType.Telnet => 23,
+            _ => 0
+        };
     }
 }

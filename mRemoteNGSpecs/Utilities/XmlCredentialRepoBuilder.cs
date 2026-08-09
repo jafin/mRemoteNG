@@ -7,35 +7,34 @@ using mRemoteNG.Credential.Repositories;
 using mRemoteNG.Security;
 using mRemoteNG.Security.SymmetricEncryption;
 
-namespace mRemoteNGSpecs.Utilities
+namespace mRemoteNGSpecs.Utilities;
+
+public class XmlCredentialRepoBuilder
 {
-    public class XmlCredentialRepoBuilder
+    public SecureString EncryptionKey { get; set; } = "someKey1".ConvertToSecureString();
+    public ICryptographyProvider CryptographyProvider { get; set; } = new AeadCryptographyProvider();
+
+    public ICredentialRepository BuildXmlCredentialRepo()
     {
-        public SecureString EncryptionKey { get; set; } = "someKey1".ConvertToSecureString();
-        public ICryptographyProvider CryptographyProvider { get; set; } = new AeadCryptographyProvider();
+        var xmlFileContent = CredRepoXmlFileBuilder.Build(CryptographyProvider.Encrypt("someheaderdata", EncryptionKey));
+        var dataProvider = new InMemoryStringDataProvider(xmlFileContent);
+        var encryptor = new XmlCredentialPasswordEncryptorDecorator(
+            CryptographyProvider,
+            new XmlCredentialRecordSerializer()
+        );
+        var decryptor = new XmlCredentialPasswordDecryptorDecorator(
+            new XmlCredentialRecordDeserializer()
+        );
 
-        public ICredentialRepository BuildXmlCredentialRepo()
-        {
-            var xmlFileContent = CredRepoXmlFileBuilder.Build(CryptographyProvider.Encrypt("someheaderdata", EncryptionKey));
-            var dataProvider = new InMemoryStringDataProvider(xmlFileContent);
-            var encryptor = new XmlCredentialPasswordEncryptorDecorator(
-                CryptographyProvider,
-                new XmlCredentialRecordSerializer()
-            );
-            var decryptor = new XmlCredentialPasswordDecryptorDecorator(
-                new XmlCredentialRecordDeserializer()
-            );
-
-            return new XmlCredentialRepository(
-                new CredentialRepositoryConfig(),
-                new CredentialRecordSaver(
-                    dataProvider,
-                    encryptor
-                ), new CredentialRecordLoader(
-                    dataProvider,
-                    decryptor
-                )
-            );
-        }
+        return new XmlCredentialRepository(
+            new CredentialRepositoryConfig(),
+            new CredentialRecordSaver(
+                dataProvider,
+                encryptor
+            ), new CredentialRecordLoader(
+                dataProvider,
+                decryptor
+            )
+        );
     }
 }

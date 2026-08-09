@@ -1,70 +1,69 @@
-﻿using NUnit.Framework;
-using System.IO;
+﻿using System.IO;
 using System.Runtime.CompilerServices;
+using NUnit.Framework;
 
-namespace mRemoteNGTests
+namespace mRemoteNGTests;
+
+[TestFixture]
+public class BinaryFileTests
 {
-    [TestFixture]
-    public class BinaryFileTests
+    [Test]
+    public void LargeAddressAwareFlagIsSet()
     {
-        [Test]
-        public void LargeAddressAwareFlagIsSet()
-        {
-            var exePath = GetTargetPath();
-            Assert.That(IsLargeAware(exePath), Is.True);
-        }
+        var exePath = GetTargetPath();
+        Assert.That(IsLargeAware(exePath), Is.True);
+    }
 
-        public static string GetTargetPath([CallerFilePath] string sourceFilePath = "")
-        {
-            const string debugOrRelease =
-            #if DEBUG || DEBUG_PORTABLE
-				"Debug";
-            #else
+    public static string GetTargetPath([CallerFilePath] string sourceFilePath = "")
+    {
+        const string debugOrRelease =
+#if DEBUG || DEBUG_PORTABLE
+            "Debug";
+#else
 				"Release";
-            #endif
+#endif
 
-            const string normalOrPortable =
-            #if PORTABLE || DEBUG_PORTABLE
+        const string normalOrPortable =
+#if PORTABLE || DEBUG_PORTABLE
                 " Portable";
-            #else
+#else
             "";
-            #endif
-            var path = Path.GetDirectoryName(sourceFilePath);
-            var filePath = $"{path}\\..\\mRemoteNG\\bin\\x64\\{debugOrRelease}{normalOrPortable}\\mRemoteNG.exe";
-            return filePath;
-        }
+#endif
+        var path = Path.GetDirectoryName(sourceFilePath);
+        var filePath = $"{path}\\..\\mRemoteNG\\bin\\x64\\{debugOrRelease}{normalOrPortable}\\mRemoteNG.exe";
+        return filePath;
+    }
 
-        private static bool IsLargeAware(string file)
+    private static bool IsLargeAware(string file)
+    {
+        using (var fs = File.OpenRead(file))
         {
-            using (var fs = File.OpenRead(file))
-            {
-                return IsLargeAware(fs);
-            }
+            return IsLargeAware(fs);
         }
+    }
 
-        /// <summary>
-        /// Checks if the stream is a MZ header and if it is large address aware
-        /// </summary>
-        /// <param name="stream">Stream to check, make sure its at the start of the MZ header</param>
-        /// <returns></returns>
-        private static bool IsLargeAware(Stream stream)
-        {
-            const int imageFileLargeAddressAware = 0x20;
+    /// <summary>
+    /// Checks if the stream is a MZ header and if it is large address aware
+    /// </summary>
+    /// <param name="stream">Stream to check, make sure its at the start of the MZ header</param>
+    /// <returns></returns>
+    private static bool IsLargeAware(Stream stream)
+    {
+        const int imageFileLargeAddressAware = 0x20;
 
-            var br = new BinaryReader(stream);
+        var br = new BinaryReader(stream);
 
-            if (br.ReadInt16() != 0x5A4D)       //No MZ Header
-                return false;
+        if (br.ReadInt16() != 0x5A4D)       //No MZ Header
+            return false;
 
-            br.BaseStream.Position = 0x3C;
-            var peHeaderLocation = br.ReadInt32();         //Get the PE header location.
+        br.BaseStream.Position = 0x3C;
+        var peHeaderLocation = br.ReadInt32();         //Get the PE header location.
 
-            br.BaseStream.Position = peHeaderLocation;
-            if (br.ReadInt32() != 0x4550)       //No PE header
-                return false;
+        br.BaseStream.Position = peHeaderLocation;
+        if (br.ReadInt32() != 0x4550)       //No PE header
+            return false;
 
-            br.BaseStream.Position += 0x12;
-            return (br.ReadInt16() & imageFileLargeAddressAware) == imageFileLargeAddressAware;
-        }
+        br.BaseStream.Position += 0x12;
+        return (br.ReadInt16() & imageFileLargeAddressAware) == imageFileLargeAddressAware;
     }
 }

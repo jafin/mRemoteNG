@@ -1,57 +1,56 @@
-﻿using mRemoteNG.App;
-using mRemoteNG.UI.Window;
-using System;
+﻿using System;
 using System.Runtime.Versioning;
+using mRemoteNG.App;
+using mRemoteNG.UI.Window;
 
-namespace mRemoteNG.UI.Tabs
+namespace mRemoteNG.UI.Tabs;
+
+[SupportedOSPlatform("windows")]
+class TabHelper
 {
-    [SupportedOSPlatform("windows")]
-    class TabHelper
+    private static readonly Lazy<TabHelper> lazyHelper = new(() => new TabHelper());
+
+    public static TabHelper Instance => lazyHelper.Value;
+
+    private TabHelper()
     {
-        private static readonly Lazy<TabHelper> lazyHelper = new(() => new TabHelper());
+    }
 
-        public static TabHelper Instance => lazyHelper.Value;
+    private ConnectionTab? currentTab;
 
-        private TabHelper()
+    public ConnectionTab? CurrentTab
+    {
+        get => currentTab;
+        set
         {
+            currentTab = value;
+            findCurrentPanel();
+            Runtime.MessageCollector.AddMessage(Messages.MessageClass.DebugMsg, "Tab got focused: " + currentTab?.TabText);
+        }
+    }
+
+    private void findCurrentPanel()
+    {
+        System.Windows.Forms.Control? currentForm = currentTab?.Parent;
+        while (currentForm != null && !(currentForm is ConnectionWindow))
+        {
+            currentForm = currentForm.Parent;
         }
 
-        private ConnectionTab? currentTab;
+        if (currentForm != null)
+            CurrentPanel = (ConnectionWindow)currentForm;
+    }
 
-        public ConnectionTab? CurrentTab
+    private ConnectionWindow? currentPanel;
+
+    public ConnectionWindow? CurrentPanel
+    {
+        get => currentPanel;
+        set
         {
-            get => currentTab;
-            set
-            {
-                currentTab = value;
-                findCurrentPanel();
-                Runtime.MessageCollector.AddMessage(Messages.MessageClass.DebugMsg, "Tab got focused: " + currentTab?.TabText);
-            }
-        }
-
-        private void findCurrentPanel()
-        {
-            System.Windows.Forms.Control? currentForm = currentTab?.Parent;
-            while (currentForm != null && !(currentForm is ConnectionWindow))
-            {
-                currentForm = currentForm.Parent;
-            }
-
-            if (currentForm != null)
-                CurrentPanel = (ConnectionWindow)currentForm;
-        }
-
-        private ConnectionWindow? currentPanel;
-
-        public ConnectionWindow? CurrentPanel
-        {
-            get => currentPanel;
-            set
-            {
-                currentPanel = value;
-                Runtime.MessageCollector.AddMessage(Messages.MessageClass.DebugMsg,
-                                                    "Panel got focused: " + currentPanel?.TabText);
-            }
+            currentPanel = value;
+            Runtime.MessageCollector.AddMessage(Messages.MessageClass.DebugMsg,
+                "Panel got focused: " + currentPanel?.TabText);
         }
     }
 }

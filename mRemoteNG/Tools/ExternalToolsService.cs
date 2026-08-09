@@ -2,16 +2,15 @@
 using System.Runtime.Versioning;
 using mRemoteNG.Tools.CustomCollections;
 
-namespace mRemoteNG.Tools
-{
-    [SupportedOSPlatform("windows")]
-    public class ExternalToolsService
-    {
-        public FullyObservableCollection<ExternalTool> ExternalTools { get; set; } = [];
+namespace mRemoteNG.Tools;
 
-        public ExternalTool? GetExtAppByName(string name)
-        {
-            return ExternalTools.FirstOrDefault(extA => extA.DisplayName == name);
-        }
+[SupportedOSPlatform("windows")]
+public class ExternalToolsService
+{
+    public FullyObservableCollection<ExternalTool> ExternalTools { get; set; } = [];
+
+    public ExternalTool? GetExtAppByName(string name)
+    {
+        return ExternalTools.FirstOrDefault(extA => extA.DisplayName == name);
     }
 }

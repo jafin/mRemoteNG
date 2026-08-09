@@ -2,24 +2,23 @@ using System.Runtime.Versioning;
 using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
-namespace mRemoteNGTests.Tree
+namespace mRemoteNGTests.Tree;
+
+[SetUpFixture]
+[SupportedOSPlatform("windows")]
+public class TreeSetUpFixture
 {
-    [SetUpFixture]
-    [SupportedOSPlatform("windows")]
-    public class TreeSetUpFixture
+    private TestScope? _scope;
+
+    [OneTimeSetUp]
+    public void BeforeAllTreeTests()
     {
-        private TestScope? _scope;
+        _scope = TestScope.Begin();
+    }
 
-        [OneTimeSetUp]
-        public void BeforeAllTreeTests()
-        {
-            _scope = TestScope.Begin();
-        }
-
-        [OneTimeTearDown]
-        public void AfterAllTreeTests()
-        {
-            _scope?.Dispose();
-        }
+    [OneTimeTearDown]
+    public void AfterAllTreeTests()
+    {
+        _scope?.Dispose();
     }
 }

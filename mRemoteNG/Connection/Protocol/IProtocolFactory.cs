@@ -1,10 +1,9 @@
 using System.Runtime.Versioning;
 
-namespace mRemoteNG.Connection.Protocol
+namespace mRemoteNG.Connection.Protocol;
+
+[SupportedOSPlatform("windows")]
+public interface IProtocolFactory
 {
-    [SupportedOSPlatform("windows")]
-    public interface IProtocolFactory
-    {
-        ProtocolBase CreateProtocol(ConnectionInfo connectionInfo);
-    }
+    ProtocolBase CreateProtocol(ConnectionInfo connectionInfo);
 }

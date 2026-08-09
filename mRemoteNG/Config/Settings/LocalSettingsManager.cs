@@ -1,12 +1,12 @@
 ﻿using System;
-using System.IO;
 using System.Collections.Generic;
-using System.Text.Json;
-using JsonSerializer = System.Text.Json.JsonSerializer;
+using System.IO;
 using System.Linq;
+using System.Runtime.Versioning;
+using System.Text.Json;
 using LiteDB;
 using mRemoteNG.Config.MachineIdentifier;
-using System.Runtime.Versioning;
+using JsonSerializer = System.Text.Json.JsonSerializer;
 
 namespace mRemoteNG.Config.Settings;
 
@@ -19,7 +19,6 @@ public class LocalDBManager
     private readonly string _mRIdentifier = string.Empty; // Initialize to non-null default
     private readonly bool? _useEncryption;
 
-  
     /// <summary>
     /// Creates a new local DB, encrypt it or decrypt it.
     /// </summary>
@@ -31,11 +30,11 @@ public class LocalDBManager
         _dbPath = string.IsNullOrWhiteSpace(dbPath) ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "mRemoteNG.appSettings") : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, dbPath);
         _schemaPath = string.IsNullOrWhiteSpace(schemaFilePath) ? Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "Schemas\\mremoteng_default_settings_v1_0.json") : Path.Combine(AppDomain.CurrentDomain.BaseDirectory, schemaFilePath);
         _useEncryption = useEncryption;
-        
+
         /// <summary>
         /// Generate a unique identifier for the machine
         /// </summary>
-        
+
         try
         {
             // Generate the machine identifier

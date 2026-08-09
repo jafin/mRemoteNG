@@ -1,15 +1,14 @@
 ﻿using System;
 
-namespace mRemoteNG.Config.Connections.Multiuser
+namespace mRemoteNG.Config.Connections.Multiuser;
+
+public interface IConnectionsUpdateChecker : IDisposable
 {
-    public interface IConnectionsUpdateChecker : IDisposable
-    {
-        bool IsUpdateAvailable();
+    bool IsUpdateAvailable();
 
-        void IsUpdateAvailableAsync();
+    void IsUpdateAvailableAsync();
 
-        event EventHandler UpdateCheckStarted;
-        event UpdateCheckFinishedEventHandler UpdateCheckFinished;
-        event ConnectionsUpdateAvailableEventHandler ConnectionsUpdateAvailable;
-    }
+    event EventHandler UpdateCheckStarted;
+    event UpdateCheckFinishedEventHandler UpdateCheckFinished;
+    event ConnectionsUpdateAvailableEventHandler ConnectionsUpdateAvailable;
 }

@@ -126,7 +126,7 @@ public class CsvConnectionsSerializerMremotengFormatTests
         var serializationTarget = treeModel.GetRecursiveChildList().First(info => string.Equals(info.Name, "folder3", StringComparison.Ordinal));
         var csv = serializer.Serialize(serializationTarget);
         var lineWithFolder3 = csv.Split(new[] { Environment.NewLine }, StringSplitOptions.None)
-            .First(s => s.Contains(serializationTarget.Name));
+            .First(s => s.Contains(serializationTarget.Name, StringComparison.Ordinal));
         Assert.That(lineWithFolder3, Does.Contain(serializationTarget.Username));
         Assert.That(lineWithFolder3, Does.Contain(serializationTarget.Domain));
         //Assert.That(lineWithFolder3, Does.Contain(serializationTarget.Password?.ConvertToUnsecureString()));

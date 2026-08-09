@@ -1,11 +1,10 @@
 ﻿// ReSharper disable InconsistentNaming
 
-namespace mRemoteNG.Security
+namespace mRemoteNG.Security;
+
+public enum BlockCipherEngines
 {
-    public enum BlockCipherEngines
-    {
-        AES,
-        Twofish,
-        Serpent
-    }
+    AES,
+    Twofish,
+    Serpent
 }

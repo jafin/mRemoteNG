@@ -1,26 +1,24 @@
 ﻿using System;
-using System.Collections.Generic;
-using System.Linq;
 using System.Net.Http;
-using System.Text;
-using System.Threading.Tasks;
 
-namespace mRemoteNG.App.Update
+namespace mRemoteNG.App.Update;
+
+public static class InternetConnection
 {
-    public static class InternetConnection
+    private static readonly HttpClient Client = new()
     {
-        public static bool IsPosible()
+        Timeout = TimeSpan.FromSeconds(5)
+    };
+
+    public static bool IsPossible()
+    {
+        try
         {
-            try
-            {
-                using var client = new HttpClient();
-                client.Timeout = TimeSpan.FromSeconds(5);
-                return client.GetAsync("https://www.microsoft.com").Result.IsSuccessStatusCode;
-            }
-            catch (Exception)
-            {
-                return false;
-            }
+            return Client.GetAsync("https://www.microsoft.com").Result.IsSuccessStatusCode;
+        }
+        catch (Exception)
+        {
+            return false;
         }
     }
 }

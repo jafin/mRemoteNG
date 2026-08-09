@@ -4,27 +4,26 @@ using System.Security;
 using System.Text.RegularExpressions;
 using mRemoteNG.Resources.Language;
 
-namespace mRemoteNG.Security.PasswordCreation
+namespace mRemoteNG.Security.PasswordCreation;
+
+public class PasswordIncludesUpperCaseConstraint : IPasswordConstraint
 {
-    public class PasswordIncludesUpperCaseConstraint : IPasswordConstraint
+    private readonly int _minimumCount;
+
+    public string ConstraintHint { get; }
+
+    public PasswordIncludesUpperCaseConstraint(int minimumCount = 1)
     {
-        private readonly int _minimumCount;
+        if (minimumCount < 0)
+            throw new ArgumentException($"{nameof(minimumCount)} must be a positive value", nameof(minimumCount));
 
-        public string ConstraintHint { get; }
+        _minimumCount = minimumCount;
+        ConstraintHint = string.Format(CultureInfo.CurrentCulture, Language.PasswordContainsUpperCaseConstraintHint, _minimumCount);
+    }
 
-        public PasswordIncludesUpperCaseConstraint(int minimumCount = 1)
-        {
-            if (minimumCount < 0)
-                throw new ArgumentException($"{nameof(minimumCount)} must be a positive value", nameof(minimumCount));
-
-            _minimumCount = minimumCount;
-            ConstraintHint = string.Format(CultureInfo.CurrentCulture, Language.PasswordContainsUpperCaseConstraintHint, _minimumCount);
-        }
-
-        public bool Validate(SecureString password)
-        {
-            Regex regex = new(@"[A-Z]");
-            return regex.Count(password.ConvertToUnsecureString()) >= _minimumCount;
-        }
+    public bool Validate(SecureString password)
+    {
+        Regex regex = new(@"[A-Z]");
+        return regex.Count(password.ConvertToUnsecureString()) >= _minimumCount;
     }
 }

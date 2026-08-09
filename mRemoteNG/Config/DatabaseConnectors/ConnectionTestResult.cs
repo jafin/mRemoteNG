@@ -1,11 +1,10 @@
-﻿namespace mRemoteNG.Config.DatabaseConnectors
+﻿namespace mRemoteNG.Config.DatabaseConnectors;
+
+public enum ConnectionTestResult
 {
-    public enum ConnectionTestResult
-    {
-        ConnectionSucceded,
-        ServerNotAccessible,
-        UnknownDatabase,
-        CredentialsRejected,
-        UnknownError
-    }
+    ConnectionSucceded,
+    ServerNotAccessible,
+    UnknownDatabase,
+    CredentialsRejected,
+    UnknownError
 }

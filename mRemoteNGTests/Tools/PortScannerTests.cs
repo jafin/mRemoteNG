@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using System.Net;
 using System.Reflection;
 using mRemoteNG.Tools;
@@ -184,7 +183,8 @@ public class PortScannerTests
             IPAddress.Parse("192.168.1.1"),
             0, 3389);
 
-        Assert.That(GetScannedPorts(scanner), Is.EqualTo(new[] { 3389 }));
+        int[] expected = [3389];
+        Assert.That(GetScannedPorts(scanner), Is.EqualTo(expected));
     }
 
     [TestCase(0, 0)]

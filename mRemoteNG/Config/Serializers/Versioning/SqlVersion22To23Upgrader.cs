@@ -1,37 +1,36 @@
-﻿using mRemoteNG.App;
+﻿using System;
+using System.Runtime.Versioning;
+using mRemoteNG.App;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
-using System;
-using System.Runtime.Versioning;
 
-namespace mRemoteNG.Config.Serializers.Versioning
+namespace mRemoteNG.Config.Serializers.Versioning;
+
+[SupportedOSPlatform("windows")]
+public class SqlVersion22To23Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlVersion22To23Upgrader(IDatabaseConnector databaseConnector) : IVersionUpgrader
+    private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+
+    public bool CanUpgrade(Version currentVersion)
     {
-        private readonly IDatabaseConnector _databaseConnector = databaseConnector ?? throw new ArgumentNullException(nameof(databaseConnector));
+        return currentVersion.CompareTo(new Version(2, 2)) == 0;
+    }
 
-        public bool CanUpgrade(Version currentVersion)
-        {
-            return currentVersion.CompareTo(new Version(2, 2)) == 0;
-        }
+    public Version Upgrade()
+    {
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, "Upgrading database from version 2.2 to version 2.3.");
 
-        public Version Upgrade()
-        {
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, "Upgrading database from version 2.2 to version 2.3.");
-
-            const string sqlText = @"
+        const string sqlText = @"
 ALTER TABLE tblCons
 ADD EnableFontSmoothing bit NOT NULL DEFAULT 0,
     EnableDesktopComposition bit NOT NULL DEFAULT 0, 
     InheritEnableFontSmoothing bit NOT NULL DEFAULT 0, 
     InheritEnableDesktopComposition bit NOT NULL DEFAULT 0;";
 
-            System.Data.Common.DbCommand dbCommand = _databaseConnector.DbCommand(sqlText);
+        System.Data.Common.DbCommand dbCommand = _databaseConnector.DbCommand(sqlText);
 
-            dbCommand.ExecuteNonQuery();
+        dbCommand.ExecuteNonQuery();
 
-            return new Version(2, 3);
-        }
+        return new Version(2, 3);
     }
 }

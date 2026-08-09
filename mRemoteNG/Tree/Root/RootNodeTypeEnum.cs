@@ -1,8 +1,7 @@
-﻿namespace mRemoteNG.Tree.Root
+﻿namespace mRemoteNG.Tree.Root;
+
+public enum RootNodeType
 {
-    public enum RootNodeType
-    {
-        Connection,
-        PuttySessions
-    }
+    Connection,
+    PuttySessions
 }

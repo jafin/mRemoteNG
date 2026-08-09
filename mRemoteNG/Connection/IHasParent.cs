@@ -1,13 +1,12 @@
 ﻿using mRemoteNG.Container;
 
-namespace mRemoteNG.Connection
+namespace mRemoteNG.Connection;
+
+public interface IHasParent
 {
-    public interface IHasParent
-    {
-        ContainerInfo? Parent { get; }
+    ContainerInfo? Parent { get; }
 
-        void SetParent(ContainerInfo containerInfo);
+    void SetParent(ContainerInfo containerInfo);
 
-        void RemoveParent();
-    }
+    void RemoveParent();
 }

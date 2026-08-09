@@ -1,8 +1,8 @@
-﻿using System.IO;
+﻿using System;
+using System.IO;
 using mRemoteNG.Config.DataProviders;
 using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
-using System;
 
 namespace mRemoteNGTests.Config.DataProviders;
 

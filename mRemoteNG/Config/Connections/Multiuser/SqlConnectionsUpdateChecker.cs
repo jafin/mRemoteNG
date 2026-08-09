@@ -8,128 +8,127 @@ using mRemoteNG.App;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
 
-namespace mRemoteNG.Config.Connections.Multiuser
+namespace mRemoteNG.Config.Connections.Multiuser;
+
+[SupportedOSPlatform("windows")]
+public class SqlConnectionsUpdateChecker : IConnectionsUpdateChecker
 {
-    [SupportedOSPlatform("windows")]
-    public class SqlConnectionsUpdateChecker : IConnectionsUpdateChecker
+    private readonly IDatabaseConnector _dbConnector;
+    private readonly DbCommand _dbQuery;
+    private static DateTime LastUpdateTime => Runtime.ConnectionsService.LastSqlUpdate;
+    private DateTime _lastDatabaseUpdateTime;
+
+
+    public SqlConnectionsUpdateChecker()
     {
-        private readonly IDatabaseConnector _dbConnector;
-        private readonly DbCommand _dbQuery;
-        private static DateTime LastUpdateTime => Runtime.ConnectionsService.LastSqlUpdate;
-        private DateTime _lastDatabaseUpdateTime;
+        _dbConnector = DatabaseConnectorFactory.DatabaseConnectorFromSettings();
+        _dbQuery = _dbConnector.DbCommand("SELECT * FROM tblUpdate");
+        _lastDatabaseUpdateTime = default(DateTime);
+    }
 
+    public bool IsUpdateAvailable()
+    {
+        RaiseUpdateCheckStartedEvent();
+        ConnectToSqlDb();
+        bool updateIsAvailable = DatabaseIsMoreUpToDateThanUs();
+        if (updateIsAvailable)
+            RaiseConnectionsUpdateAvailableEvent();
+        RaiseUpdateCheckFinishedEvent(updateIsAvailable);
+        return updateIsAvailable;
+    }
 
-        public SqlConnectionsUpdateChecker()
+    public void IsUpdateAvailableAsync()
+    {
+        Thread thread = new(() => IsUpdateAvailable());
+        thread.SetApartmentState(ApartmentState.STA);
+        thread.Start();
+    }
+
+    private void ConnectToSqlDb()
+    {
+        try
         {
-            _dbConnector = DatabaseConnectorFactory.DatabaseConnectorFromSettings();
-            _dbQuery = _dbConnector.DbCommand("SELECT * FROM tblUpdate");
-            _lastDatabaseUpdateTime = default(DateTime);
+            _dbConnector.Connect();
         }
-
-        public bool IsUpdateAvailable()
+        catch (Exception e)
         {
-            RaiseUpdateCheckStartedEvent();
-            ConnectToSqlDb();
-            bool updateIsAvailable = DatabaseIsMoreUpToDateThanUs();
-            if (updateIsAvailable)
-                RaiseConnectionsUpdateAvailableEvent();
-            RaiseUpdateCheckFinishedEvent(updateIsAvailable);
-            return updateIsAvailable;
+            Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, $"Unable to connect to SQL DB to check for updates.{Environment.NewLine}{e.Message}", true);
         }
+    }
 
-        public void IsUpdateAvailableAsync()
-        {
-            Thread thread = new(() => IsUpdateAvailable());
-            thread.SetApartmentState(ApartmentState.STA);
-            thread.Start();
-        }
+    private bool DatabaseIsMoreUpToDateThanUs()
+    {
+        DateTime lastUpdateInDb = GetLastUpdateTimeFromDbResponse();
+        bool amTheLastoneUpdated = CheckIfIAmTheLastOneUpdated(lastUpdateInDb);
+        return (lastUpdateInDb > LastUpdateTime && !amTheLastoneUpdated);
+    }
 
-        private void ConnectToSqlDb()
+    private static bool CheckIfIAmTheLastOneUpdated(DateTime lastUpdateInDb)
+    {
+        DateTime lastSqlUpdateWithoutMilliseconds = new(LastUpdateTime.Ticks - (LastUpdateTime.Ticks % TimeSpan.TicksPerSecond), LastUpdateTime.Kind);
+        return lastUpdateInDb == lastSqlUpdateWithoutMilliseconds;
+    }
+
+    private DateTime GetLastUpdateTimeFromDbResponse()
+    {
+        DateTime lastUpdateInDb = default(DateTime);
+
+        try
         {
-            try
+            DbDataReader sqlReader = _dbQuery.ExecuteReader(CommandBehavior.CloseConnection);
+            sqlReader.Read();
+            if (sqlReader.HasRows)
             {
-                _dbConnector.Connect();
+                lastUpdateInDb = Convert.ToDateTime(sqlReader["LastUpdate"], CultureInfo.InvariantCulture);
             }
-            catch (Exception e)
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, $"Unable to connect to SQL DB to check for updates.{Environment.NewLine}{e.Message}", true);
-            }
+            sqlReader.Close();
         }
-
-        private bool DatabaseIsMoreUpToDateThanUs()
+        catch (Exception ex)
         {
-            DateTime lastUpdateInDb = GetLastUpdateTimeFromDbResponse();
-            bool amTheLastoneUpdated = CheckIfIAmTheLastOneUpdated(lastUpdateInDb);
-            return (lastUpdateInDb > LastUpdateTime && !amTheLastoneUpdated);
+            Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, "Error executing SQL query to get updates from the DB." + Environment.NewLine + ex.Message, true);
         }
 
-        private static bool CheckIfIAmTheLastOneUpdated(DateTime lastUpdateInDb)
-        {
-            DateTime lastSqlUpdateWithoutMilliseconds = new(LastUpdateTime.Ticks - (LastUpdateTime.Ticks % TimeSpan.TicksPerSecond), LastUpdateTime.Kind);
-            return lastUpdateInDb == lastSqlUpdateWithoutMilliseconds;
-        }
+        _lastDatabaseUpdateTime = lastUpdateInDb;
 
-        private DateTime GetLastUpdateTimeFromDbResponse()
-        {
-            DateTime lastUpdateInDb = default(DateTime);
-
-            try
-            {
-                DbDataReader sqlReader = _dbQuery.ExecuteReader(CommandBehavior.CloseConnection);
-                sqlReader.Read();
-                if (sqlReader.HasRows)
-                {
-                    lastUpdateInDb = Convert.ToDateTime(sqlReader["LastUpdate"], CultureInfo.InvariantCulture);
-                }
-                sqlReader.Close();
-            }
-            catch (Exception ex)
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, "Error executing SQL query to get updates from the DB." + Environment.NewLine + ex.Message, true);
-            }
-
-            _lastDatabaseUpdateTime = lastUpdateInDb;
-
-            return lastUpdateInDb;
-        }
+        return lastUpdateInDb;
+    }
 
 
-        public event EventHandler? UpdateCheckStarted;
+    public event EventHandler? UpdateCheckStarted;
 
-        private void RaiseUpdateCheckStartedEvent()
-        {
-            UpdateCheckStarted?.Invoke(this, EventArgs.Empty);
-        }
+    private void RaiseUpdateCheckStartedEvent()
+    {
+        UpdateCheckStarted?.Invoke(this, EventArgs.Empty);
+    }
 
-        public event UpdateCheckFinishedEventHandler? UpdateCheckFinished;
+    public event UpdateCheckFinishedEventHandler? UpdateCheckFinished;
 
-        private void RaiseUpdateCheckFinishedEvent(bool updateAvailable)
-        {
-            ConnectionsUpdateCheckFinishedEventArgs args = new() { UpdateAvailable = updateAvailable};
-            UpdateCheckFinished?.Invoke(this, args);
-        }
+    private void RaiseUpdateCheckFinishedEvent(bool updateAvailable)
+    {
+        ConnectionsUpdateCheckFinishedEventArgs args = new() { UpdateAvailable = updateAvailable};
+        UpdateCheckFinished?.Invoke(this, args);
+    }
 
-        public event ConnectionsUpdateAvailableEventHandler? ConnectionsUpdateAvailable;
+    public event ConnectionsUpdateAvailableEventHandler? ConnectionsUpdateAvailable;
 
-        private void RaiseConnectionsUpdateAvailableEvent()
-        {
-            Runtime.MessageCollector.AddMessage(MessageClass.DebugMsg, "Remote connection update is available");
-            ConnectionsUpdateAvailableEventArgs args = new(_dbConnector, _lastDatabaseUpdateTime);
-            ConnectionsUpdateAvailable?.Invoke(this, args);
-        }
+    private void RaiseConnectionsUpdateAvailableEvent()
+    {
+        Runtime.MessageCollector.AddMessage(MessageClass.DebugMsg, "Remote connection update is available");
+        ConnectionsUpdateAvailableEventArgs args = new(_dbConnector, _lastDatabaseUpdateTime);
+        ConnectionsUpdateAvailable?.Invoke(this, args);
+    }
 
-        public void Dispose()
-        {
-            Dispose(true);
-            GC.SuppressFinalize(this);
-        }
+    public void Dispose()
+    {
+        Dispose(true);
+        GC.SuppressFinalize(this);
+    }
 
-        private void Dispose(bool itIsSafeToDisposeManagedObjects)
-        {
-            if (!itIsSafeToDisposeManagedObjects) return;
-            _dbConnector.Disconnect();
-            _dbConnector.Dispose();
-            _dbQuery.Dispose();
-        }
+    private void Dispose(bool itIsSafeToDisposeManagedObjects)
+    {
+        if (!itIsSafeToDisposeManagedObjects) return;
+        _dbConnector.Disconnect();
+        _dbConnector.Dispose();
+        _dbQuery.Dispose();
     }
 }

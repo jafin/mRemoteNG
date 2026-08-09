@@ -1,25 +1,24 @@
 ﻿using System;
 using mRemoteNG.Connection.Protocol;
 
-namespace mRemoteNG.Connection
-{
-    public static class Converter
-    {
-        public static string ProtocolToString(ProtocolType protocol)
-        {
-            return protocol.ToString();
-        }
+namespace mRemoteNG.Connection;
 
-        public static ProtocolType StringToProtocol(string protocol)
+public static class Converter
+{
+    public static string ProtocolToString(ProtocolType protocol)
+    {
+        return protocol.ToString();
+    }
+
+    public static ProtocolType StringToProtocol(string protocol)
+    {
+        try
         {
-            try
-            {
-                return Enum.Parse<ProtocolType>(protocol, true);
-            }
-            catch (Exception)
-            {
-                return ProtocolType.RDP;
-            }
+            return Enum.Parse<ProtocolType>(protocol, true);
+        }
+        catch (Exception)
+        {
+            return ProtocolType.RDP;
         }
     }
 }

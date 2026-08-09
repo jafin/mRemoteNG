@@ -1,10 +1,9 @@
 ﻿using System;
 
-namespace mRemoteNG.Config.Serializers
+namespace mRemoteNG.Config.Serializers;
+
+public interface ISerializer<in TIn, out TOut>
 {
-    public interface ISerializer<in TIn, out TOut>
-    {
-        TOut Serialize(TIn model);
-        Version Version { get; }
-    }
+    TOut Serialize(TIn model);
+    Version Version { get; }
 }

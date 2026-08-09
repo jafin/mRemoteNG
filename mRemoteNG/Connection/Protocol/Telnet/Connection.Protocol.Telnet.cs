@@ -1,18 +1,17 @@
 ﻿using System.Runtime.Versioning;
 
-namespace mRemoteNG.Connection.Protocol.Telnet
-{
-    [SupportedOSPlatform("windows")]
-    public class ProtocolTelnet : PuttyBase
-    {
-        public ProtocolTelnet()
-        {
-            this.PuttyProtocol = Putty_Protocol.telnet;
-        }
+namespace mRemoteNG.Connection.Protocol.Telnet;
 
-        public enum Defaults
-        {
-            Port = 23
-        }
+[SupportedOSPlatform("windows")]
+public class ProtocolTelnet : PuttyBase
+{
+    public ProtocolTelnet()
+    {
+        this.PuttyProtocol = Putty_Protocol.telnet;
+    }
+
+    public enum Defaults
+    {
+        Port = 23
     }
 }

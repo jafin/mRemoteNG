@@ -3,124 +3,117 @@ using System.Collections;
 using System.Globalization;
 using mRemoteNG.UI.Window;
 
-namespace mRemoteNG.UI
+namespace mRemoteNG.UI;
+
+public class WindowList : CollectionBase
 {
-    public class WindowList : CollectionBase
+    #region Public Properties
+
+    public BaseWindow? this[object index]
     {
-        #region Public Properties
-
-        public BaseWindow? this[object Index]
-        {
-            get
-            {
-                CleanUp();
-                if (Index is BaseWindow)
-                    return IndexByObject(Index);
-                if (Index is int)
-                    return IndexByNumber(Convert.ToInt32(Index, CultureInfo.InvariantCulture));
-
-                return null;
-            }
-        }
-
-        public new int Count
-        {
-            get
-            {
-                CleanUp();
-                return List.Count;
-            }
-        }
-
-        #endregion
-
-        #region Public Methods
-
-        public void Add(BaseWindow uiWindow)
-        {
-            List.Add(uiWindow);
-            //AddHandler uiWindow.FormClosing, AddressOf uiFormClosing
-        }
-
-        public void AddRange(BaseWindow[] uiWindow)
-        {
-            foreach (BaseWindow uW in uiWindow)
-            {
-                List.Add(uW);
-            }
-        }
-
-        public void Remove(BaseWindow uiWindow)
-        {
-            List.Remove(uiWindow);
-        }
-
-        public BaseWindow? FromString(string uiWindow)
+        get
         {
             CleanUp();
-            for (int i = 0; i < List.Count; i++)
-            {
-                BaseWindow? window = this[i];
-                if (string.Equals(window?.Text, uiWindow.Replace("&", "&&", StringComparison.Ordinal), StringComparison.Ordinal))
-                {
-                    return window;
-                }
-            }
+            if (index is BaseWindow)
+                return IndexByObject(index);
+            if (index is int)
+                return IndexByNumber(Convert.ToInt32(index, CultureInfo.InvariantCulture));
 
             return null;
         }
+    }
 
-        #endregion
-
-
-        private void CleanUp()
+    public new int Count
+    {
+        get
         {
-            for (int i = 0; i <= List.Count - 1; i++)
-            {
-                if (i > List.Count - 1)
-                {
-                    CleanUp();
-                    return;
-                }
+            CleanUp();
+            return List.Count;
+        }
+    }
 
-                BaseWindow? baseWindow = List[i] as BaseWindow;
-                if (baseWindow != null && !baseWindow.IsDisposed) continue;
-                List.RemoveAt(i);
+    #endregion
+
+    #region Public Methods
+
+    public void Add(BaseWindow uiWindow)
+    {
+        List.Add(uiWindow);
+        //AddHandler uiWindow.FormClosing, AddressOf uiFormClosing
+    }
+
+    public void AddRange(BaseWindow[] uiWindow)
+    {
+        foreach (BaseWindow uW in uiWindow)
+        {
+            List.Add(uW);
+        }
+    }
+
+    public void Remove(BaseWindow uiWindow)
+    {
+        List.Remove(uiWindow);
+    }
+
+    public BaseWindow? FromString(string uiWindow)
+    {
+        CleanUp();
+        for (int i = 0; i < List.Count; i++)
+        {
+            BaseWindow? window = this[i];
+            if (string.Equals(window?.Text, uiWindow.Replace("&", "&&", StringComparison.Ordinal),
+                    StringComparison.Ordinal))
+            {
+                return window;
+            }
+        }
+
+        return null;
+    }
+
+    #endregion
+
+
+    private void CleanUp()
+    {
+        for (int i = 0; i <= List.Count - 1; i++)
+        {
+            if (i > List.Count - 1)
+            {
                 CleanUp();
                 return;
             }
-        }
 
-        private BaseWindow? IndexByObject(object Index)
+            BaseWindow? baseWindow = List[i] as BaseWindow;
+            if (baseWindow != null && !baseWindow.IsDisposed) continue;
+            List.RemoveAt(i);
+            CleanUp();
+            return;
+        }
+    }
+
+    private BaseWindow? IndexByObject(object index)
+    {
+        try
         {
-            try
-            {
-                int objectIndex = List.IndexOf(Index);
-                return IndexByNumber(objectIndex);
-            }
-            catch (ArgumentOutOfRangeException e)
-            {
-                throw new ArgumentOutOfRangeException(e.ParamName, "Object was not present in the collection.");
-            }
+            int objectIndex = List.IndexOf(index);
+            return IndexByNumber(objectIndex);
         }
-
-        private BaseWindow? IndexByNumber(int Index)
+        catch (ArgumentOutOfRangeException e)
         {
-            try
-            {
-                return List[Index] as BaseWindow;
-            }
-            catch (ArgumentOutOfRangeException e)
-            {
-                throw new ArgumentOutOfRangeException(e.ParamName, e.ActualValue, "Index was out of bounds");
-            }
+            throw new ArgumentOutOfRangeException(e.ParamName, "Object was not present in the collection.");
         }
+    }
 
-        /*
-		private void uiFormClosing(object sender, FormClosingEventArgs e)
-		{
-			List.Remove(sender);
-		}
-        */
+    private BaseWindow? IndexByNumber(int index)
+    {
+        try
+        {
+            return List[index] as BaseWindow;
+        }
+        catch (ArgumentOutOfRangeException e)
+        {
+            throw new ArgumentOutOfRangeException(e.ParamName, e.ActualValue, "Index was out of bounds");
+        }
     }
 }

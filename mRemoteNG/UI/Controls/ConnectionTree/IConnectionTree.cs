@@ -3,22 +3,21 @@ using mRemoteNG.Connection;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
 
-namespace mRemoteNG.UI.Controls.ConnectionTree
+namespace mRemoteNG.UI.Controls.ConnectionTree;
+
+public interface IConnectionTree
 {
-    public interface IConnectionTree
-    {
-        ConnectionTreeModel ConnectionTreeModel { get; set; }
+    ConnectionTreeModel ConnectionTreeModel { get; set; }
 
-        ConnectionInfo SelectedNode { get; }
+    ConnectionInfo SelectedNode { get; }
 
-        IEnumerable ExpandedObjects { get; set; }
+    IEnumerable ExpandedObjects { get; set; }
 
-        RootNodeInfo GetRootConnectionNode();
+    RootNodeInfo GetRootConnectionNode();
 
-        void InvokeExpand(object model);
+    void InvokeExpand(object model);
 
-        void InvokeRebuildAll(bool preserveState);
+    void InvokeRebuildAll(bool preserveState);
 
-        void ToggleExpansion(object model);
-    }
+    void ToggleExpansion(object model);
 }

@@ -1,9 +1,8 @@
 ﻿using System.Security;
 
-namespace mRemoteNG.Security.Authentication
+namespace mRemoteNG.Security.Authentication;
+
+public interface IAuthenticator
 {
-    public interface IAuthenticator
-    {
-        bool Authenticate(SecureString password);
-    }
+    bool Authenticate(SecureString password);
 }

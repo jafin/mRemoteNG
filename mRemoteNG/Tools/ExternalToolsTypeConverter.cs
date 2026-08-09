@@ -4,46 +4,45 @@ using System.ComponentModel;
 using System.Diagnostics.CodeAnalysis;
 using System.Runtime.Versioning;
 
-namespace mRemoteNG.Tools
+namespace mRemoteNG.Tools;
+
+[SupportedOSPlatform("windows")]
+public class ExternalToolsTypeConverter : StringConverter
 {
-    [SupportedOSPlatform("windows")]
-    public class ExternalToolsTypeConverter : StringConverter
+    public static string[] ExternalTools
     {
-        public static string[] ExternalTools
+        get
         {
-            get
+            List<string> externalToolList = new()
             {
-                List<string> externalToolList = new()
-                {
-                    // Add a blank entry to signify that no external tool is selected
-                    string.Empty
-                };
+                // Add a blank entry to signify that no external tool is selected
+                string.Empty
+            };
 
-                foreach (ExternalTool externalTool in App.Runtime.ExternalToolsService.ExternalTools)
-                {
-                    externalToolList.Add(externalTool.DisplayName);
-                }
-
-                return externalToolList.ToArray();
+            foreach (ExternalTool externalTool in App.Runtime.ExternalToolsService.ExternalTools)
+            {
+                externalToolList.Add(externalTool.DisplayName);
             }
-        }
 
-        public override StandardValuesCollection GetStandardValues([NotNull] ITypeDescriptorContext? context)
-        {
-            ArgumentNullException.ThrowIfNull(context);
-            return new StandardValuesCollection(ExternalTools);
+            return externalToolList.ToArray();
         }
+    }
 
-        public override bool GetStandardValuesExclusive([NotNull] ITypeDescriptorContext? context)
-        {
-            ArgumentNullException.ThrowIfNull(context);
-            return true;
-        }
+    public override StandardValuesCollection GetStandardValues([NotNull] ITypeDescriptorContext? context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return new StandardValuesCollection(ExternalTools);
+    }
 
-        public override bool GetStandardValuesSupported([NotNull] ITypeDescriptorContext? context)
-        {
-            ArgumentNullException.ThrowIfNull(context);
-            return true;
-        }
+    public override bool GetStandardValuesExclusive([NotNull] ITypeDescriptorContext? context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return true;
+    }
+
+    public override bool GetStandardValuesSupported([NotNull] ITypeDescriptorContext? context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
+        return true;
     }
 }

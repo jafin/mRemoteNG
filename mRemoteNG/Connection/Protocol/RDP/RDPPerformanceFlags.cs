@@ -1,31 +1,30 @@
 ﻿using System.ComponentModel;
 
-namespace mRemoteNG.Connection.Protocol.RDP
+namespace mRemoteNG.Connection.Protocol.RDP;
+
+public enum RDPPerformanceFlags
 {
-    public enum RDPPerformanceFlags
-    {
-        [Description("strRDPDisableWallpaper")]
-        DisableWallpaper = 0x1,
+    [Description("strRDPDisableWallpaper")]
+    DisableWallpaper = 0x1,
 
-  		[Description("strRDPDisableFullWindowdrag")]
-        DisableFullWindowDrag = 0x2,
-  
-  		[Description("strRDPDisableMenuAnimations")]
-        DisableMenuAnimations = 0x4,
+    [Description("strRDPDisableFullWindowdrag")]
+    DisableFullWindowDrag = 0x2,
 
-        [Description("strRDPDisableThemes")]
-        DisableThemes = 0x8,
+    [Description("strRDPDisableMenuAnimations")]
+    DisableMenuAnimations = 0x4,
 
-  		[Description("strRDPDisableCursorShadow")]
-        DisableCursorShadow = 0x20,
+    [Description("strRDPDisableThemes")]
+    DisableThemes = 0x8,
 
-  		[Description("strRDPDisableCursorblinking")]
-        DisableCursorBlinking = 0x40,
+    [Description("strRDPDisableCursorShadow")]
+    DisableCursorShadow = 0x20,
 
-        [Description("strRDPEnableFontSmoothing")]
-        EnableFontSmoothing = 0x80,
+    [Description("strRDPDisableCursorblinking")]
+    DisableCursorBlinking = 0x40,
 
-        [Description("strRDPEnableDesktopComposition")]
-        EnableDesktopComposition = 0x100,
-    }
+    [Description("strRDPEnableFontSmoothing")]
+    EnableFontSmoothing = 0x80,
+
+    [Description("strRDPEnableDesktopComposition")]
+    EnableDesktopComposition = 0x100,
 }

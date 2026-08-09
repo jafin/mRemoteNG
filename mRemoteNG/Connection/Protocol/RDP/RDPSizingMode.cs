@@ -1,18 +1,17 @@
 using System.ComponentModel;
-using mRemoteNG.Tools;
 using mRemoteNG.Resources.Language;
+using mRemoteNG.Tools;
 
-namespace mRemoteNG.Connection.Protocol.RDP
+namespace mRemoteNG.Connection.Protocol.RDP;
+
+public enum RDPSizingMode
 {
-    public enum RDPSizingMode
-    {
-        [Description("None")]
-        None,
+    [Description("None")]
+    None,
 
-        [LocalizedAttributes.LocalizedDescription(nameof(Language.SmartSize))]
-        SmartSize,
+    [LocalizedAttributes.LocalizedDescription(nameof(Language.SmartSize))]
+    SmartSize,
 
-        [LocalizedAttributes.LocalizedDescription("Smart Size (Aspect Ratio)")]
-        SmartSizeAspect
-    }
+    [LocalizedAttributes.LocalizedDescription("Smart Size (Aspect Ratio)")]
+    SmartSizeAspect
 }
