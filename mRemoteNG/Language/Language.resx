@@ -330,6 +330,9 @@
   <data name="FileManager" xml:space="preserve">
     <value>File Manager (SFTP)</value>
   </data>
+  <data name="ConfirmUploadEditedFile" xml:space="preserve">
+    <value>{0} has changed locally. Upload it back to the remote host?</value>
+  </data>
   <data name="Upload" xml:space="preserve">
     <value>Upload</value>
   </data>

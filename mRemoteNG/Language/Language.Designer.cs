@@ -3585,6 +3585,15 @@ namespace mRemoteNG.Resources.Language {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to {0} has changed locally. Upload it back to the remote host?.
+        /// </summary>
+        internal static string ConfirmUploadEditedFile {
+            get {
+                return ResourceManager.GetString("ConfirmUploadEditedFile", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Upload.
         /// </summary>
         internal static string Upload {

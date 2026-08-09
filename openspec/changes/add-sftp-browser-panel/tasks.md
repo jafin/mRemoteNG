@@ -72,10 +72,14 @@ Not done, and deliberately: recursive directory transfer. A directory in a selec
 
 ## 6. Editing a remote file
 
-- [ ] 6.1 Download to a temporary location and launch the local editor.
-- [ ] 6.2 Watch the local copy and offer to upload when it changes.
-- [ ] 6.3 Remove the temporary copy when editing finishes; record what happens if the process dies first, rather than implying it is handled.
-- [ ] 6.4 Tests: a changed copy prompts; declining leaves the remote file alone; the temporary copy is removed.
+- [x] 6.1 Download to a temporary location and launch the local editor.
+- [x] 6.2 Watch the local copy and offer to upload when it changes. Not a `FileSystemWatcher`: it fires on an editor's intermediate writes and on save-to-temp-then-rename patterns, and would need debouncing. Comparing last-write time and length against a snapshot taken after the download answers the only question that matters — is what is on disk now different from what was put there — with no timing to get wrong. Checked when the tab is reactivated and when it closes, which is when the user has plausibly finished editing; a background poll's only achievement would be interrupting them mid-edit.
+- [x] 6.3 Remove the temporary copy when editing finishes; record what happens if the process dies first, rather than implying it is handled. **The file is unencrypted on local disk for the life of the session.** Deleted on close and on tab dispose; that cleanup does **not** run if the process is killed, exactly as with the temporary private key files `add-ssh-agent-key-injection` exists to remove. A copy still held open by the editor is left behind rather than failing the close.
+- [x] 6.4 Tests: a changed copy prompts; declining leaves the remote file alone; the temporary copy is removed.
+
+**Section 6 results 2026-08-09:** full build green (72.0s); full suite **7129/7129**. 16 new tests.
+
+Each edit gets its own directory so the file keeps its real name — an editor's syntax highlighting and an interpreter's shebang both key off the extension — without two edits of same-named files colliding. The session re-snapshots after a successful upload, which is what stops every subsequent activation of the tab asking about a file already written back.
 
 ## 7. Completion
 

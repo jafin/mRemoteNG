@@ -42,6 +42,8 @@ namespace mRemoteNG.UI.Window
         private readonly SplitContainer _panes = new();
         private readonly SplitContainer _outer = new();
 
+        private readonly RemoteFileEditor _editor;
+
         private bool _connected;
 
         public FileManagerTab(ConnectionInfo connectionInfo, ISftpSession session)
@@ -67,6 +69,10 @@ namespace mRemoteNG.UI.Window
 
             _queueView = new TransferQueueControl(_queue);
 
+            _editor = new RemoteFileEditor(_remote.Controller.Browser,
+                                           new ShellExternalEditor(),
+                                           new EditPrompts(this));
+
             BuildLayout();
 
             _local.Failed += OnPaneFailed;
@@ -75,6 +81,9 @@ namespace mRemoteNG.UI.Window
             _remote.TransferRequested += (_, entries) => QueueTransfer(entries, TransferDirection.Download);
             _remote.ExternalFilesDropped += OnFilesDroppedOnRemote;
             _local.ExternalFilesDropped += OnFilesDroppedOnLocal;
+            _remote.FileActivated += OnRemoteFileActivated;
+            Activated += OnTabActivated;
+            FormClosing += OnTabClosing;
             _session.Dropped += OnSessionDropped;
 
             ApplyTheme();
@@ -202,6 +211,47 @@ namespace mRemoteNG.UI.Window
         }
 
         /// <summary>
+        /// Double-clicking a remote file downloads it and opens the local editor.
+        /// </summary>
+        private void OnRemoteFileActivated(object? sender, FileSystemEntry entry) =>
+            _ = OpenForEditingAsync(entry);
+
+        private async Task OpenForEditingAsync(FileSystemEntry entry)
+        {
+            try
+            {
+                await _editor.OpenAsync(entry);
+            }
+            catch (Exception ex)
+            {
+                Report($"Could not open {entry.Name} for editing: {ex.Message}", MessageClass.WarningMsg);
+            }
+        }
+
+        /// <summary>
+        /// Checks for edited files when the user comes back to the tab.
+        /// </summary>
+        /// <remarks>
+        /// Rather than polling: this is when they have plausibly finished editing, and a background
+        /// poll's only achievement would be interrupting them mid-edit.
+        /// </remarks>
+        private void OnTabActivated(object? sender, EventArgs e) => _ = WriteBackChangedAsync();
+
+        private void OnTabClosing(object? sender, FormClosingEventArgs e) => _ = WriteBackChangedAsync();
+
+        private async Task WriteBackChangedAsync()
+        {
+            try
+            {
+                await _editor.WriteBackChangedAsync();
+            }
+            catch (Exception ex)
+            {
+                Report($"Could not write back an edited file: {ex.Message}", MessageClass.WarningMsg);
+            }
+        }
+
+        /// <summary>
         /// Files dragged in from Explorer are queued for upload to the remote pane's directory.
         /// </summary>
         private void OnFilesDroppedOnRemote(object? sender, IReadOnlyList<string> paths) =>
@@ -324,6 +374,7 @@ namespace mRemoteNG.UI.Window
             {
                 ThemeManager.getInstance().ThemeChanged -= ApplyTheme;
                 _session.Dropped -= OnSessionDropped;
+                _editor.Dispose();
                 _queue.Dispose();
                 _session.Dispose();
             }
