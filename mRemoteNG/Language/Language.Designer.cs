@@ -3666,6 +3666,42 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string similar to Type.
+        /// </summary>
+        internal static string EntryKindColumn {
+            get {
+                return ResourceManager.GetString("EntryKindColumn", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Folder.
+        /// </summary>
+        internal static string EntryKindFolder {
+            get {
+                return ResourceManager.GetString("EntryKindFolder", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to File.
+        /// </summary>
+        internal static string EntryKindFile {
+            get {
+                return ResourceManager.GetString("EntryKindFile", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Link.
+        /// </summary>
+        internal static string EntryKindLink {
+            get {
+                return ResourceManager.GetString("EntryKindLink", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Files already exist.
         /// </summary>
         internal static string TransferConflictTitle {

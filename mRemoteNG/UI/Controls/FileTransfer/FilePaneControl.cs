@@ -32,7 +32,10 @@ namespace mRemoteNG.UI.Controls.FileTransfer
         private readonly ToolStripButton _up = new();
         private readonly ToolStripButton _home = new();
         private readonly ToolStripButton _refresh = new();
+        private readonly ToolStripButton? _reconnect;
         private readonly ToolStripButton _hidden = new();
+        private readonly IPaneConnection? _connection;
+        private readonly ImageList _icons = new();
         private readonly ToolStripButton _transfer = new();
         private readonly ToolStripButton _newFolder = new();
         private readonly ToolStripButton _newFile = new();
@@ -47,10 +50,16 @@ namespace mRemoteNG.UI.Controls.FileTransfer
         {
         }
 
+        /// <param name="connection">
+        /// The connection behind this pane, or <see langword="null"/> when there is nothing to
+        /// reconnect. That null is what makes reconnection remote-only without this class ever asking
+        /// which side it is.
+        /// </param>
         public FilePaneControl(FilePaneController controller,
                                string caption,
                                string transferCaption,
-                               IFilePanePrompts prompts)
+                               IFilePanePrompts prompts,
+                               IPaneConnection? connection = null)
         {
             ArgumentNullException.ThrowIfNull(controller);
             ArgumentNullException.ThrowIfNull(prompts);
@@ -59,6 +68,13 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             Caption = caption;
             TransferCaption = transferCaption;
             _commands = new FilePaneCommands(controller, prompts);
+            _connection = connection;
+
+            if (connection is not null)
+            {
+                _reconnect = new ToolStripButton();
+                connection.ConnectionChanged += OnConnectionChanged;
+            }
 
             BuildToolbar();
             BuildList();
@@ -94,8 +110,16 @@ namespace mRemoteNG.UI.Controls.FileTransfer
         /// <summary>Raised when an operation fails, so the tab can surface it.</summary>
         public event EventHandler<string>? Failed;
 
+        /// <summary>
+        /// The selected entries, never including the <c>..</c> row.
+        /// </summary>
+        /// <remarks>
+        /// Filtered here rather than in each command. Transfer, rename and delete all read this, and
+        /// one of the three would eventually be written without the guard — at which point the file
+        /// manager would offer to delete the parent directory.
+        /// </remarks>
         public IReadOnlyList<FileSystemEntry> SelectedEntries =>
-            _list.SelectedObjects.Cast<FileSystemEntry>().ToArray();
+            [.. _list.SelectedObjects.Cast<FileSystemEntry>().Where(entry => !entry.IsParentNavigation)];
 
         public Task StartAsync() => _controller.NavigateHomeAsync();
 
@@ -132,7 +156,10 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             Configure(_forward, "▶", "Forward", async () => await _controller.GoForwardAsync());
             Configure(_up, "▲", "Up", async () => await _controller.NavigateUpAsync());
             Configure(_home, "⌂", "Home", async () => await _controller.NavigateHomeAsync());
-            Configure(_refresh, "⟳", "Refresh", async () => await _controller.RefreshAsync());
+            Configure(_refresh, "⟳", Language.Refresh, RefreshAsync);
+
+            if (_reconnect is not null)
+                Configure(_reconnect, "⚡", Language.Reconnect, ReconnectAsync);
 
             _hidden.Text = "•";
             _hidden.ToolTipText = "Show hidden entries";
@@ -150,8 +177,12 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             Configure(_rename, Language.Rename, Language.Rename, RenameSelectionAsync);
             Configure(_delete, Language.Delete, Language.Delete, DeleteSelectionAsync);
 
-            _toolbar.Items.AddRange([_back, _forward, _up, _home, _refresh,
-                                     new ToolStripSeparator(), _hidden,
+            _toolbar.Items.AddRange([_back, _forward, _up, _home, _refresh]);
+
+            if (_reconnect is not null)
+                _toolbar.Items.Add(_reconnect);
+
+            _toolbar.Items.AddRange([new ToolStripSeparator(), _hidden,
                                      new ToolStripSeparator(), _transfer,
                                      new ToolStripSeparator(), _newFolder, _newFile, _rename, _delete,
                                      new ToolStripSeparator(), _pathBox]);
@@ -179,6 +210,48 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             };
 
             _list.ContextMenuStrip = _contextMenu;
+        }
+
+        /// <summary>
+        /// Lists the current directory, reconnecting first if the session has dropped.
+        /// </summary>
+        /// <remarks>
+        /// Refresh is the reflex when a pane looks wrong, so it does the obvious thing. A connected
+        /// pane is unaffected — the guard is false and it lists exactly as before. Listing after a
+        /// failed reconnect is skipped deliberately: it would fail with the same "not connected" error
+        /// the reconnect just reported, giving one gesture two errors.
+        /// </remarks>
+        private async Task RefreshAsync()
+        {
+            if (await ShouldListAsync(_connection).ConfigureAwait(true))
+                await _controller.RefreshAsync();
+        }
+
+        /// <summary>
+        /// Whether to go ahead and list, reconnecting first if the session has dropped.
+        /// </summary>
+        /// <remarks>
+        /// Separated out so the rule can be asserted without a control. There are three cases and only
+        /// one of them is interesting: no connection to speak of and a healthy connection both list as
+        /// before, and a dropped one lists only if it came back. Listing after a failed reconnect is
+        /// skipped deliberately — it would fail with the same "not connected" error the reconnect just
+        /// reported, giving one gesture two errors.
+        /// </remarks>
+        internal static async Task<bool> ShouldListAsync(IPaneConnection? connection) =>
+            connection is not { IsConnected: false } || await connection.ReconnectAsync().ConfigureAwait(false);
+
+        private async Task ReconnectAsync()
+        {
+            if (_connection is not null && await _connection.ReconnectAsync().ConfigureAwait(true))
+                await _controller.RefreshAsync();
+        }
+
+        private void OnConnectionChanged(object? sender, EventArgs e) => RunOnUi(UpdateConnectionState);
+
+        private void UpdateConnectionState()
+        {
+            if (_reconnect is not null && _connection is not null)
+                _reconnect.Enabled = !_connection.IsConnected;
         }
 
         private async Task RenameSelectionAsync()
@@ -230,30 +303,50 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             _list.HeaderStyle = ColumnHeaderStyle.Clickable;
             _list.AllowDrop = true;
 
+            BuildIcons();
+
+            // Keeps the ".." row above the entries whatever the user sorted by. Without it the row
+            // drifts into the middle of a descending sort — a navigation control that moves depending
+            // on which header was last clicked.
+            _list.CustomSorter = (column, order) =>
+                _list.ListViewItemSorter = new ParentFirstComparer(new ColumnComparer(column, order));
+
             OLVColumn name = new("Name", nameof(FileSystemEntry.Name))
             {
                 Width = 220,
                 AspectGetter = o => ((FileSystemEntry)o).Name,
                 // Sorted by the controller so both panes agree and the order is testable; the header
                 // still sorts, but the default arrival order is already directories-first.
-                ImageGetter = o => ((FileSystemEntry)o).IsDirectory ? "folder" : "file"
+                ImageGetter = o => EntryPresentation.ImageKeyOf((FileSystemEntry)o)
+            };
+
+            OLVColumn kind = new(Language.EntryKindColumn, nameof(FileSystemEntry.IsDirectory))
+            {
+                Width = 70,
+                AspectGetter = o => DescribeKind((FileSystemEntry)o)
             };
 
             OLVColumn size = new("Size", nameof(FileSystemEntry.Length))
             {
                 Width = 90,
                 TextAlign = HorizontalAlignment.Right,
-                AspectGetter = o => ((FileSystemEntry)o).Length,
-                AspectToStringConverter = value => DescribeSize((long)(value ?? 0L))
+                // Nullable on purpose: the converter sees only the value, so it cannot tell a
+                // directory's zero from an empty file's. The getter has the row and can.
+                AspectGetter = o => EntryPresentation.SizeOf((FileSystemEntry)o),
+                AspectToStringConverter = value => EntryPresentation.DescribeSize((long?)value)
             };
 
             OLVColumn modified = new("Modified", nameof(FileSystemEntry.LastWriteTime))
             {
                 Width = 130,
-                AspectGetter = o => ((FileSystemEntry)o).LastWriteTime
+                // Stays a DateTime so the column sorts chronologically rather than by the text, which
+                // for a dd/MM/yyyy locale would sort by day of the month.
+                AspectGetter = o => EntryPresentation.ModifiedOf((FileSystemEntry)o),
+                AspectToStringConverter = value =>
+                    EntryPresentation.DescribeModified((DateTime?)value, CultureInfo.CurrentCulture)
             };
 
-            List<OLVColumn> columns = [name, size, modified];
+            List<OLVColumn> columns = [name, kind, size, modified];
 
             // Only the remote side has permissions worth showing. An empty column on the local pane
             // would imply the information exists and is blank.
@@ -274,6 +367,36 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             _list.DragEnter += OnDragEnter;
             _list.DragDrop += OnDragDrop;
         }
+
+        /// <summary>
+        /// Builds the list's icons from the bitmaps the application already ships.
+        /// </summary>
+        /// <remarks>
+        /// The Name column's <c>ImageGetter</c> has always returned these keys; what was missing was
+        /// an image list for them to resolve against, so no icon was ever drawn. One list per pane
+        /// rather than a shared static: sharing risks one pane disposing it while another still draws
+        /// from it, which is a crash rather than a few kilobytes.
+        /// </remarks>
+        private void BuildIcons()
+        {
+            _icons.ColorDepth = ColorDepth.Depth32Bit;
+            _icons.ImageSize = new Size(16, 16);
+
+            _icons.Images.Add(EntryPresentation.FolderImageKey, Properties.Resources.FolderClosed_16x);
+            _icons.Images.Add(EntryPresentation.FileImageKey, Properties.Resources.Document_16x);
+            _icons.Images.Add(EntryPresentation.ParentImageKey, Properties.Resources.FolderClosed_16x);
+
+            _list.SmallImageList = _icons;
+        }
+
+        private static string DescribeKind(FileSystemEntry entry) =>
+            EntryPresentation.KindOf(entry) switch
+            {
+                EntryKind.Folder => Language.EntryKindFolder,
+                EntryKind.File => Language.EntryKindFile,
+                EntryKind.Link => Language.EntryKindLink,
+                _ => string.Empty
+            };
 
         private static void OnDragEnter(object? sender, DragEventArgs e)
         {
@@ -303,7 +426,9 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             if (_list.SelectedObject is not FileSystemEntry entry)
                 return;
 
-            if (entry.IsDirectory)
+            if (entry.IsParentNavigation)
+                await _controller.NavigateUpAsync();
+            else if (entry.IsDirectory)
                 await _controller.OpenAsync(entry);
             else
                 FileActivated?.Invoke(this, entry);
@@ -332,12 +457,18 @@ namespace mRemoteNG.UI.Controls.FileTransfer
             _back.Enabled = _controller.CanGoBack;
             _forward.Enabled = _controller.CanGoForward;
 
+            UpdateConnectionState();
+
             IReadOnlyList<FileSystemEntry> entries = _controller.Entries;
-            _list.SetObjects(entries);
+
+            // The parent row is merged in here and nowhere else. It is absent from the controller's
+            // entries, so the count and total below are right without subtracting it back out.
+            _list.SetObjects(_controller.ParentEntry is { } parent ? [parent, .. entries] : entries);
 
             long totalBytes = entries.Where(entry => !entry.IsDirectory).Sum(entry => entry.Length);
             _status.Text = string.Format(CultureInfo.CurrentCulture,
-                                         "{0} item(s), {1}", entries.Count, DescribeSize(totalBytes));
+                                         "{0} item(s), {1}", entries.Count,
+                                         EntryPresentation.DescribeSize(totalBytes));
         }
 
         /// <summary>
@@ -368,22 +499,8 @@ namespace mRemoteNG.UI.Controls.FileTransfer
 
         internal void RequestTransfer() => TransferRequested?.Invoke(this, SelectedEntries);
 
-        internal static string DescribeSize(long bytes)
-        {
-            string[] units = ["B", "KB", "MB", "GB", "TB"];
-            double value = bytes;
-            int unit = 0;
-
-            while (value >= 1024 && unit < units.Length - 1)
-            {
-                value /= 1024;
-                unit++;
-            }
-
-            return unit == 0
-                ? string.Format(CultureInfo.CurrentCulture, "{0} {1}", bytes, units[unit])
-                : string.Format(CultureInfo.CurrentCulture, "{0:0.#} {1}", value, units[unit]);
-        }
+        /// <summary>Renders a byte count. Kept as a shim for the transfer queue's size column.</summary>
+        internal static string DescribeSize(long bytes) => EntryPresentation.DescribeSize(bytes);
 
         protected override void Dispose(bool disposing)
         {
@@ -392,6 +509,11 @@ namespace mRemoteNG.UI.Controls.FileTransfer
                 _controller.EntriesChanged -= OnEntriesChanged;
                 _controller.OperationFailed -= OnOperationFailed;
                 _controller.BusyChanged -= OnBusyChanged;
+
+                if (_connection is not null)
+                    _connection.ConnectionChanged -= OnConnectionChanged;
+
+                _icons.Dispose();
                 _controller.Dispose();
             }
 

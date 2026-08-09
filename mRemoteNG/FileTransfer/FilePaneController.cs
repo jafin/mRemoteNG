@@ -53,6 +53,18 @@ namespace mRemoteNG.FileTransfer
         public IReadOnlyList<FileSystemEntry> Entries =>
             _allEntries.Where(e => _showHidden || !e.IsHidden).ToArray();
 
+        /// <summary>
+        /// The synthetic <c>..</c> row, or <see langword="null"/> at the root and before the first
+        /// listing.
+        /// </summary>
+        /// <remarks>
+        /// Kept out of <see cref="Entries"/> on purpose. That property feeds the item count, the size
+        /// total and everything downstream of them; a synthetic row inside it would have to be
+        /// subtracted back out at every one of those sites, and the first one anybody forgot would
+        /// report a directory as holding one more file than it does.
+        /// </remarks>
+        public FileSystemEntry? ParentEntry { get; private set; }
+
         public bool CanGoBack => _history.CanGoBack;
 
         public bool CanGoForward => _history.CanGoForward;
@@ -183,6 +195,7 @@ namespace mRemoteNG.FileTransfer
 
                 _allEntries = Sort(entries);
                 CurrentPath = path;
+                ParentEntry = BuildParentEntry(path);
 
                 if (commitHistory)
                     _history.Navigate(path);
@@ -278,6 +291,25 @@ namespace mRemoteNG.FileTransfer
 
             IsBusy = busy;
             BusyChanged?.Invoke(this, EventArgs.Empty);
+        }
+
+        /// <summary>
+        /// The <c>..</c> row for a directory, or <see langword="null"/> when it has no parent.
+        /// </summary>
+        /// <remarks>
+        /// "No parent" is whatever the browser says: both implementations already return the path
+        /// itself for a root, so neither POSIX's <c>/</c> nor a Windows drive root needs special
+        /// handling here.
+        /// </remarks>
+        private FileSystemEntry? BuildParentEntry(string path)
+        {
+            string parent = _browser.GetParentPath(path);
+
+            return string.Equals(parent, path, StringComparison.Ordinal)
+                ? null
+                : new FileSystemEntry("..", parent, IsDirectory: true, Length: 0,
+                                      LastWriteTime: default, Permissions: string.Empty,
+                                      IsHidden: false, IsSymbolicLink: false, IsParentNavigation: true);
         }
 
         /// <summary>

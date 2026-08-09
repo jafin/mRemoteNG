@@ -85,6 +85,14 @@ namespace mRemoteNG.Connection.Sftp
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
 
+            // Reconnecting is a second call, so whatever the last attempt left behind goes first. An
+            // SftpClient holds a socket and its own threads; replacing the reference without this
+            // would abandon one per attempt.
+            ReleaseClient();
+            _authentication?.Dispose();
+
+            // _credential is deliberately not released: the authentication methods read it lazily on
+            // every connect, so it has to outlive all of them and is disposed only with the session.
             _authentication = SshNetAuthAdapter.Translate(_credential);
 
             List<SshCredentialDiagnostic> diagnostics = [.. _credential.Diagnostics, .. _authentication.Unsupported];
@@ -317,6 +325,25 @@ namespace mRemoteNG.Connection.Sftp
         private void OnClientError(object? sender, Renci.SshNet.Common.ExceptionEventArgs e) =>
             Dropped?.Invoke(this, e.Exception?.Message ?? string.Empty);
 
+        /// <summary>
+        /// Detaches and disposes the current client, if there is one.
+        /// </summary>
+        /// <remarks>
+        /// Unsubscribing before disposing is the whole point of this being a method. Disposing a
+        /// connected client can raise <c>ErrorOccurred</c>, and a <see cref="Dropped"/> from the corpse
+        /// of the previous connection would mark a freshly reconnected session as dropped — a
+        /// reconnect that appears to work and then immediately reports itself dead.
+        /// </remarks>
+        private void ReleaseClient()
+        {
+            if (_client is null)
+                return;
+
+            _client.ErrorOccurred -= OnClientError;
+            _client.Dispose();
+            _client = null;
+        }
+
         public void Dispose()
         {
             if (_disposed)
@@ -324,13 +351,7 @@ namespace mRemoteNG.Connection.Sftp
 
             _disposed = true;
 
-            if (_client is not null)
-            {
-                _client.ErrorOccurred -= OnClientError;
-                _client.Dispose();
-                _client = null;
-            }
-
+            ReleaseClient();
             _authentication?.Dispose();
             _credential.Dispose();
         }

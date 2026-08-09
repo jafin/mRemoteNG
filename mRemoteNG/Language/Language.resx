@@ -366,6 +366,18 @@
   <data name="EnterFileName" xml:space="preserve">
     <value>Enter a name for the new file:</value>
   </data>
+  <data name="EntryKindColumn" xml:space="preserve">
+    <value>Type</value>
+  </data>
+  <data name="EntryKindFolder" xml:space="preserve">
+    <value>Folder</value>
+  </data>
+  <data name="EntryKindFile" xml:space="preserve">
+    <value>File</value>
+  </data>
+  <data name="EntryKindLink" xml:space="preserve">
+    <value>Link</value>
+  </data>
   <data name="TransferConflictTitle" xml:space="preserve">
     <value>Files already exist</value>
   </data>

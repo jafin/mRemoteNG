@@ -32,7 +32,7 @@ namespace mRemoteNG.UI.Window
     /// sharing a transport is not available. See <c>add-sftp-browser-panel</c> design.md D1.
     /// </remarks>
     [SupportedOSPlatform("windows")]
-    public sealed class FileManagerTab : DockContent
+    public sealed class FileManagerTab : DockContent, IPaneConnection
     {
         private readonly ConnectionInfo _connectionInfo;
         private readonly ISftpSession _session;
@@ -50,6 +50,16 @@ namespace mRemoteNG.UI.Window
         /// cancelled source cannot be reused and the next transfer must still be stoppable.
         /// </summary>
         private CancellationTokenSource _expansion = new();
+
+        private readonly ContextMenuStrip _tabMenu = new();
+        private readonly ToolStripMenuItem _tabReconnect;
+
+        /// <summary>
+        /// Guards against two reconnects at once. The pane button, the tab menu and a refresh are three
+        /// routes to the same operation, and an impatient user will take more than one; two attempts in
+        /// flight means two authentications and two clients, one of which is then abandoned.
+        /// </summary>
+        private readonly SingleFlight _reconnect = new();
 
         private bool _connected;
 
@@ -73,9 +83,16 @@ namespace mRemoteNG.UI.Window
                 new FilePaneController(localBrowser, localBrowser.PathsAreCaseSensitive),
                 Language.LocalSite, Language.Upload, new FilePanePrompts(this));
 
+            // The local pane is given no connection: there is nothing to reconnect a local filesystem
+            // to, and the absent dependency is what keeps the reconnect controls off that side.
             _remote = new FilePaneControl(
                 new FilePaneController(remoteBrowser, remoteBrowser.PathsAreCaseSensitive),
-                Language.RemoteSite, Language.Download, new FilePanePrompts(this));
+                Language.RemoteSite, Language.Download, new FilePanePrompts(this), this);
+
+            _tabReconnect = new ToolStripMenuItem(Language.Reconnect, null, (_, _) => _ = ReconnectFromMenuAsync());
+            _tabMenu.Items.Add(_tabReconnect);
+            _tabMenu.Opening += (_, _) => _tabReconnect.Enabled = !IsConnected;
+            TabPageContextMenuStrip = _tabMenu;
 
             _queueView = new TransferQueueControl(_queue);
 
@@ -156,14 +173,7 @@ namespace mRemoteNG.UI.Window
                 await _session.ConnectAsync();
                 _connected = true;
 
-                foreach (SshCredentialDiagnostic diagnostic in DiagnosticsOf(_session))
-                {
-                    Runtime.MessageCollector?.AddMessage(
-                        diagnostic.Severity == SshCredentialDiagnosticSeverity.Information
-                            ? MessageClass.InformationMsg
-                            : MessageClass.WarningMsg,
-                        diagnostic.Message);
-                }
+                ReportDiagnostics();
 
                 await _remote.StartAsync();
             }
@@ -173,10 +183,94 @@ namespace mRemoteNG.UI.Window
                 Report($"Could not connect to {_connectionInfo.Hostname}: {ex.Message}", MessageClass.ErrorMsg);
                 UpdateTitle();
             }
+            finally
+            {
+                ConnectionChanged?.Invoke(this, EventArgs.Empty);
+            }
         }
 
         private static IReadOnlyList<SshCredentialDiagnostic> DiagnosticsOf(ISftpSession session) =>
             session is SftpSession concrete ? concrete.Diagnostics : [];
+
+        /// <inheritdoc />
+        public bool IsConnected => _connected && _session.IsConnected;
+
+        /// <inheritdoc />
+        public event EventHandler? ConnectionChanged;
+
+        /// <summary>
+        /// Re-establishes the dropped session, at most one attempt at a time.
+        /// </summary>
+        /// <remarks>
+        /// A second caller is turned away rather than queued. Queueing would mean the second attempt
+        /// runs after the first has already succeeded, reconnecting a healthy session for no reason.
+        /// </remarks>
+        public async Task<bool> ReconnectAsync(CancellationToken cancellationToken = default)
+        {
+            if (IsConnected)
+                return true;
+
+            if (!_reconnect.TryEnter())
+                return false;
+
+            try
+            {
+                await _session.ConnectAsync(cancellationToken).ConfigureAwait(false);
+                _connected = true;
+
+                ReportDiagnostics();
+                Report($"Reconnected to {_connectionInfo.Hostname}.", MessageClass.InformationMsg);
+                return true;
+            }
+            catch (Exception ex)
+            {
+                _connected = false;
+                Report($"Could not reconnect to {_connectionInfo.Hostname}: {ex.Message}", MessageClass.WarningMsg);
+                return false;
+            }
+            finally
+            {
+                _reconnect.Exit();
+
+                if (IsHandleCreated && !IsDisposed)
+                    BeginInvoke(UpdateTitle);
+
+                ConnectionChanged?.Invoke(this, EventArgs.Empty);
+            }
+        }
+
+        /// <summary>
+        /// Reconnects from the tab's own menu, and lists once it works.
+        /// </summary>
+        /// <remarks>
+        /// The same guarded operation the pane's button calls, so pressing both changes nothing. Two
+        /// entry points because the two are noticed at different moments: the tab title is what says
+        /// the session dropped, so somebody who has been working elsewhere reads the problem there.
+        /// </remarks>
+        private async Task ReconnectFromMenuAsync()
+        {
+            try
+            {
+                if (await ReconnectAsync().ConfigureAwait(true))
+                    await _remote.Controller.RefreshAsync().ConfigureAwait(true);
+            }
+            catch (Exception ex)
+            {
+                Report($"Could not reconnect to {_connectionInfo.Hostname}: {ex.Message}", MessageClass.WarningMsg);
+            }
+        }
+
+        private void ReportDiagnostics()
+        {
+            foreach (SshCredentialDiagnostic diagnostic in DiagnosticsOf(_session))
+            {
+                Runtime.MessageCollector?.AddMessage(
+                    diagnostic.Severity == SshCredentialDiagnosticSeverity.Information
+                        ? MessageClass.InformationMsg
+                        : MessageClass.WarningMsg,
+                    diagnostic.Message);
+            }
+        }
 
         private void OnSessionDropped(object? sender, string reason)
         {
@@ -189,6 +283,11 @@ namespace mRemoteNG.UI.Window
 
             if (IsHandleCreated && !IsDisposed)
                 BeginInvoke(UpdateTitle);
+
+            // Lights up the reconnect controls. Deliberately no prompt: a flaky link drops repeatedly,
+            // and a modal per drop would interrupt whatever the user moved on to in order to ask a
+            // question the button already answers whenever they choose to look.
+            ConnectionChanged?.Invoke(this, EventArgs.Empty);
         }
 
         private void UpdateTitle() =>
@@ -471,6 +570,7 @@ namespace mRemoteNG.UI.Window
                 _expansion.Cancel();
                 _expansion.Dispose();
 
+                _tabMenu.Dispose();
                 _editor.Dispose();
                 _queue.Dispose();
                 _session.Dispose();

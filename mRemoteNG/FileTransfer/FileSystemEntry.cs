@@ -22,6 +22,12 @@ namespace mRemoteNG.FileTransfer
     /// reparse point locally. A recursive transfer never descends into one, because a link pointing at
     /// its own ancestor would make the tree infinite.
     /// </param>
+    /// <param name="IsParentNavigation">
+    /// Whether this is the synthetic <c>..</c> row rather than something the filesystem reported.
+    /// A flag rather than matching on the name, because a unix directory may legitimately contain a
+    /// file called <c>..</c> and the guards that keep this row out of transfers and deletes must not
+    /// rest on a string comparison.
+    /// </param>
     public sealed record FileSystemEntry(
         string Name,
         string FullPath,
@@ -30,5 +36,6 @@ namespace mRemoteNG.FileTransfer
         DateTime LastWriteTime,
         string Permissions,
         bool IsHidden,
-        bool IsSymbolicLink = false);
+        bool IsSymbolicLink = false,
+        bool IsParentNavigation = false);
 }
