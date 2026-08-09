@@ -35,7 +35,7 @@ Unless the user explicitly requests a documentation or orchestrator task, issue-
 - Never read or modify `.project-roadmap/`.
 - Never modify `run-tests.ps1`, `build.ps1`, `mRemoteNG.sln`, `Directory.Build.props`, or `Directory.Packages.props`.
 - `.github/workflows/*` may be changed when the user explicitly asks for CI work. It stays off-limits for an ordinary issue fix — never edit a workflow as a side effect of another task.
-- Never run `git add`, `git commit`, `git push`, or other repository-mutating Git commands; the orchestrator owns commits.
+- Commit when the work is done and verified — see [Committing](#committing). Never `git push`, force-push, rewrite published history, or open a PR unless the user asks.
 - Preserve existing behavior outside the reported issue and never add interactive tests.
 
 ### Additional notice for automated `claude -p` agents
@@ -194,6 +194,22 @@ Lowercase, kebab-case, max 50 chars after prefix. No tool prefixes.
 ```bash
 git fetch upstream && git merge upstream/v1.78.2-dev
 ```
+
+## Committing
+
+Agents commit their own work. Finishing a task means committing it, not leaving a dirty tree for someone else to interpret.
+
+**Commit when:** the change is complete and its [verification](#verification-effort) passed. A commit asserts the tree builds and its tests are green — never commit over a failing build or a failing test.
+
+**Do not commit:** work you have not verified, unrelated files that happened to be dirty, or generated output (`bin/`, `obj/`, `TestResults/`). Stage explicitly by path — `git add -A` sweeps up whatever else the working tree was carrying. If a file you need to touch already had uncommitted changes when you started, they are not yours to commit: keep them out, and say so.
+
+**Never without being asked:** `git push`, force-push, `git rebase`/`git reset --hard` over published history, tags, or PRs. Rewriting what others may have pulled is not reversible; a local commit is.
+
+**Branch:** never commit straight to `main`. If HEAD is `main`, branch first using the [naming table](#feature-branch-naming).
+
+**Message:** subject in the imperative under ~72 chars, prefixed as the branch would be (`fix:`, `feat:`, `security:`, `chore:`, with an optional scope). Then a blank line and a body explaining **why** — what was wrong, and why this is the fix. The diff already shows what changed. Note the verification you actually ran. Do not add AI attribution, `Co-Authored-By`, or tool advertising.
+
+Scope a commit to one coherent change. Several unrelated fixes in one session are several commits.
 
 ## Session Discipline — Build Verification
 
