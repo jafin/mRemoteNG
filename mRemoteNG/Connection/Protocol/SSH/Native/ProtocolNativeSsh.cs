@@ -254,6 +254,17 @@ public class ProtocolNativeSsh : ProtocolBase
 
             ReplayCredentialDiagnostics(session.Diagnostics);
 
+            // Says what is about to be attempted, before it fails. An SSH refusal is reported by
+            // the server as one line with no detail, and every useful question afterwards - which
+            // port, which account, was a key even offered - is about what the client sent.
+            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+                string.Format(CultureInfo.CurrentCulture, Language.SshNativeConnecting,
+                    _connectionInfo.Hostname?.Trim(),
+                    _connectionInfo.Port,
+                    session.OfferedUsername,
+                    string.Join(", ", session.OfferedMethods),
+                    string.IsNullOrEmpty(session.OfferedKeyPath) ? "-" : session.OfferedKeyPath));
+
             session.OutputReceived += OnOutputReceived;
             session.Disconnected += OnSessionDisconnected;
 

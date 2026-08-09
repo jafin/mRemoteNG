@@ -2946,6 +2946,9 @@ mRemoteNG will now quit and begin with the installation.</value>
   <data name="SshNativeHostKeyTitle" xml:space="preserve">
     <value>SSH host key</value>
   </data>
+  <data name="SshNativeConnecting" xml:space="preserve">
+    <value>Connecting to {0}:{1} as “{2}”. Authentication methods offered: {3}. Key file: {4}</value>
+  </data>
   <data name="SshNativeAuthKeyRefused" xml:space="preserve">
     <value>The key {0} was sent as user &quot;{1}&quot; and the server refused it. Check that the username is right, that the key's public half is listed in ~/.ssh/authorized_keys for that user on the server, and that the file's permissions allow the server to read it.</value>
   </data>

@@ -8457,6 +8457,15 @@ namespace mRemoteNG.Resources.Language {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Connecting to {0}:{1} as {2}.
+        /// </summary>
+        internal static string SshNativeConnecting {
+            get {
+                return ResourceManager.GetString("SshNativeConnecting", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to The key {0} was sent and the server refused it.
         /// </summary>
         internal static string SshNativeAuthKeyRefused {
