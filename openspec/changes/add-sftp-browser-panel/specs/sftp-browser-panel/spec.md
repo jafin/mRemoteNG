@@ -1,32 +1,114 @@
 ## ADDED Requirements
 
-### Requirement: An SFTP panel can be opened beside an SSH session
+### Requirement: A file manager opens as its own tab for a connection
 
-The system SHALL provide an SFTP file browser that can be shown alongside an SSH connection's
-session view, and SHALL allow it to be closed and reopened without affecting the session.
+The system SHALL provide a file manager that opens as a tab for an SSH connection, showing the local
+filesystem and the remote filesystem side by side with a transfer queue beneath them. Opening and
+closing it SHALL NOT affect any session tab for the same connection.
 
-#### Scenario: Opening the panel
+A dual-pane layout with a queue below is the established shape for this tool, and it needs the full
+width of a tab: two file listings and a queue with source, destination, size, speed and progress
+columns do not fit usefully in a panel beside a live terminal.
 
-- **WHEN** the user opens the SFTP panel for a connected SSH session
-- **THEN** the panel is shown beside the session view
-- **AND** the session view remains usable
+#### Scenario: Opening the file manager
 
-#### Scenario: Closing the panel
+- **WHEN** the user opens the file manager for a connection
+- **THEN** a tab opens showing a local pane, a remote pane and a transfer queue
+- **AND** the remote pane connects and lists a directory
 
-- **WHEN** the user closes the SFTP panel
-- **THEN** the session view reclaims the space
-- **AND** the SSH session is unaffected
+#### Scenario: A session tab is unaffected
 
-#### Scenario: Reopening the panel
+- **WHEN** a session tab is open for the same connection
+- **AND** the file manager is opened or closed
+- **THEN** the session tab and its connection are unaffected
 
-- **WHEN** the panel is closed and then reopened for the same connection
+#### Scenario: Reopening
+
+- **WHEN** the file manager is closed and reopened for the same connection
 - **THEN** it reconnects and lists a directory again
 
-#### Scenario: The session ends while the panel is open
+#### Scenario: The remote connection drops
 
-- **WHEN** the SSH session disconnects
-- **THEN** the panel reports that it is no longer connected
+- **WHEN** the file manager's connection drops
+- **THEN** it reports that it is no longer connected
 - **AND** does not present stale directory contents as current
+
+### Requirement: The local filesystem is browsable in its own pane
+
+The file manager SHALL show the local filesystem in a pane with the same listing and navigation
+behaviour as the remote pane, and SHALL allow the drive or starting folder to be chosen.
+
+#### Scenario: Listing a local directory
+
+- **WHEN** a local directory is opened
+- **THEN** its entries are listed with name, size and modified time
+- **AND** directories are distinguishable from files
+
+#### Scenario: Navigating the local pane
+
+- **WHEN** the user opens a local directory, or navigates up, back or forward
+- **THEN** the local pane lists the requested directory
+
+#### Scenario: A local directory that cannot be read
+
+- **WHEN** listing a local directory fails because access is denied
+- **THEN** the failure is reported
+- **AND** the pane continues to show the last directory it listed
+
+#### Scenario: Local and remote panes are independent
+
+- **WHEN** the user navigates one pane
+- **THEN** the other pane's location is unchanged
+
+### Requirement: Transfers are managed through a queue
+
+Transfers SHALL be added to a queue rather than run one at a time in a modal fashion. The queue SHALL
+show each item's direction, source, destination, size, progress and status, SHALL allow an individual
+item and the whole queue to be cancelled, and SHALL keep the file manager usable while it runs.
+
+A queue is what makes the tool usable for real work: selecting twenty files and continuing to browse
+is the normal case, and a single blocking transfer per action is what makes the existing transfer
+window unusable for anything but a one-off.
+
+#### Scenario: Queueing a transfer
+
+- **WHEN** the user transfers a file between panes
+- **THEN** an item is added to the queue with its direction, source, destination and size
+- **AND** the file manager remains usable
+
+#### Scenario: Queueing several transfers
+
+- **WHEN** the user transfers several files at once
+- **THEN** an item is added for each
+- **AND** they are processed without the user waiting for one before queueing the next
+
+#### Scenario: Progress is reported per item
+
+- **WHEN** an item is transferring
+- **THEN** its progress reflects the bytes moved so far
+
+#### Scenario: A completed item
+
+- **WHEN** an item finishes successfully
+- **THEN** it is reported as successful
+- **AND** the destination pane shows the transferred file after a refresh
+
+#### Scenario: A failed item does not stop the queue
+
+- **WHEN** an item fails
+- **THEN** it is reported as failed with the reason
+- **AND** the remaining items are still processed
+
+#### Scenario: Cancelling one item
+
+- **WHEN** the user cancels a queued or running item
+- **THEN** that item stops
+- **AND** the remaining items are still processed
+
+#### Scenario: Cancelling the queue
+
+- **WHEN** the user cancels the whole queue
+- **THEN** the running item stops and no further items start
 
 ### Requirement: The panel authenticates using the connection's own credentials
 
@@ -143,10 +225,10 @@ Progress must come from the bytes actually moved. `SftpClient.UploadFileAsync` a
 - **THEN** the failure is reported with the reason
 - **AND** the panel remains connected and usable
 
-#### Scenario: Dropping files onto the panel
+#### Scenario: Dropping files onto the remote pane
 
-- **WHEN** files are dragged from the local file manager onto the panel
-- **THEN** they are uploaded to the current remote directory
+- **WHEN** files are dragged from Windows Explorer onto the remote pane
+- **THEN** they are queued for upload to the current remote directory
 
 ### Requirement: Remote files and directories can be managed
 

@@ -16,38 +16,54 @@
 
 **Section 2 results 2026-08-09:** full build green (71.0s); full suite **7024/7024**, 137s, 0 crashes. 43 new tests, none requiring a server — `ISftpFile` is an interface, so the listing-to-model mapping is asserted against a substitute. `SftpPath` exists because `System.IO.Path` applies the local platform's rules: on Windows it would join with a backslash and treat a drive letter as a root, while SFTP paths are POSIX whatever the client runs on.
 
-## 3. The panel
+## 3. Panes
 
-- [ ] 3.1 `ObjectListView`-based list: name, size, modified time, permissions, folders distinguishable from files, sortable.
-- [ ] 3.2 Navigation: open, up, home, back, forward, path box. Back/forward keep their own history.
-- [ ] 3.3 Hidden-entry toggle.
-- [ ] 3.4 Context menu: download, upload, rename, delete, new folder, new file, refresh.
-- [ ] 3.5 Deletion confirmation.
-- [ ] 3.6 Drag and drop from the local file manager uploads to the current directory.
-- [ ] 3.7 Transfer progress with cancellation.
-- [ ] 3.8 Connection state indicator.
-- [ ] 3.9 Theme and language resources, matching the other windows.
-- [ ] 3.10 Tests: navigation history behaves; the hidden toggle filters; a failed listing leaves the previous listing in place.
+Reshaped 2026-08-09: the target is a dual-pane file manager with a transfer queue, per the
+WinSCP/FileZilla reference the maintainer supplied. The remote half from section 2 is unchanged; a
+local pane and a queue are new.
 
-## 4. Hosting
+- [ ] 3.1 A `FileSystemEntry` model and an `IFileSystemBrowser` both panes implement, so one list control serves local and remote. Permissions are remote-only and optional.
+- [ ] 3.2 `LocalFileSystemBrowser` over `System.IO`, async, reporting access-denied as a failure rather than an empty directory.
+- [ ] 3.3 `RemoteFileSystemBrowser` adapting `ISftpSession`.
+- [ ] 3.4 Navigation history (open, up, home, back, forward, typed path) as a reusable, UI-free type — it is identical for both panes and is the part most worth testing.
+- [ ] 3.5 Hidden-entry filtering, shared by both panes.
+- [ ] 3.6 Tests: local listing maps entries; access denied surfaces; history behaves; hidden filter applies; the two panes navigate independently.
 
-- [ ] 4.1 Implement the split chosen in 1.1, in `InterfaceControl` if that spike cleared.
-- [ ] 4.2 Open and close the panel without disturbing the session; reopening reconnects.
-- [ ] 4.3 Confirm every protocol that is not SSH is unaffected.
-- [ ] 4.4 Persist the split position per connection or globally, whichever matches existing layout handling.
+## 4. Transfer queue
 
-## 5. Editing a remote file
+- [ ] 4.1 `TransferItem`: direction, source, destination, size, transferred, status, failure reason.
+- [ ] 4.2 `TransferQueue` running items off the UI thread, one at a time to start with; a failed item must not stop the queue.
+- [ ] 4.3 Cancel one item and cancel the whole queue.
+- [ ] 4.4 Progress per item, from `ProgressReportingStream`.
+- [ ] 4.5 Queued / failed / successful views over the same item list.
+- [ ] 4.6 Tests against a fake transfer operation — no server: items run in order; a failure is recorded and the queue continues; cancelling one leaves the rest; cancelling all stops the runner; progress reaches the item.
 
-- [ ] 5.1 Download to a temporary location and launch the local editor.
-- [ ] 5.2 Watch the local copy and offer to upload when it changes.
-- [ ] 5.3 Remove the temporary copy when editing finishes; record what happens if the process dies first, rather than implying it is handled.
-- [ ] 5.4 Tests: a changed copy prompts; declining leaves the remote file alone; the temporary copy is removed.
+## 5. The file manager tab
 
-## 6. Completion
+- [ ] 5.1 A tab hosting local pane | remote pane above a queue, opened per connection.
+- [ ] 5.2 `ObjectListView` list control used for both panes: name, size, modified, and permissions on the remote side; sortable; folders distinguishable.
+- [ ] 5.3 Per-pane toolbar: navigation, refresh, new folder, new file, rename, delete, hidden toggle.
+- [ ] 5.4 Transfer between panes queues items rather than blocking.
+- [ ] 5.5 Deletion confirmation.
+- [ ] 5.6 Drag and drop from Explorer onto the remote pane queues uploads.
+- [ ] 5.7 Queue view with per-item progress and cancel.
+- [ ] 5.8 Connection state indicator; a dropped connection stops the listing being presented as current.
+- [ ] 5.9 Open from the connection tree and the session tab's context menu, without disturbing an open session tab.
+- [ ] 5.10 Theme and language resources, matching the other windows.
 
-- [ ] 6.1 Full build.
-- [ ] 6.2 Full test suite; zero failures, no `[Ignore]`.
-- [ ] 6.3 Zero new analyzer warnings.
-- [ ] 6.4 `openspec validate add-sftp-browser-panel --strict`.
-- [ ] 6.5 Manual: browse a deep tree; upload and download a large file and watch progress; cancel mid-transfer; rename, delete, create; edit a file and write it back; drag files in; disconnect the session with the panel open.
-- [ ] 6.6 Confirm `SSHTransferWindow` still works unchanged.
+## 6. Editing a remote file
+
+- [ ] 6.1 Download to a temporary location and launch the local editor.
+- [ ] 6.2 Watch the local copy and offer to upload when it changes.
+- [ ] 6.3 Remove the temporary copy when editing finishes; record what happens if the process dies first, rather than implying it is handled.
+- [ ] 6.4 Tests: a changed copy prompts; declining leaves the remote file alone; the temporary copy is removed.
+
+## 7. Completion
+
+- [ ] 7.1 Full build.
+- [ ] 7.2 Full test suite; zero failures, no `[Ignore]`.
+- [ ] 7.3 Zero new analyzer warnings.
+- [ ] 7.4 `openspec validate add-sftp-browser-panel --strict`.
+- [ ] 7.5 Manual: browse both panes; queue several transfers in both directions and watch progress; cancel one and cancel all; rename, delete, create; edit a file and write it back; drag files in; drop the connection with the tab open.
+- [ ] 7.6 Confirm `SSHTransferWindow` still works unchanged, and decide whether it has a future (design.md open question).
+- [ ] 7.7 Note the split host from 1.1 is currently unused by this layout, and either find it a use or remove it.
