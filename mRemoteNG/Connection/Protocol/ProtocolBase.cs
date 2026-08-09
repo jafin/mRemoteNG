@@ -72,8 +72,9 @@ namespace mRemoteNG.Connection.Protocol
             {
                 _interfaceControl = value;
 
-                if (_interfaceControl.Parent is ConnectionTab ct)
-                    ConnectionTab = ct;
+                ConnectionTab? owner = mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl);
+                if (owner != null)
+                    ConnectionTab = owner;
             }
         }
 
@@ -186,8 +187,11 @@ namespace mRemoteNG.Connection.Protocol
         {
             try
             {
-                if (_interfaceControl.Parent != null)
-                    _interfaceControl.Parent.Tag = _interfaceControl;
+                // The tag goes on the owning tab, which is what looks it up again when deciding
+                // whether a connection already has a tab open.
+                ConnectionTab? owner = mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl);
+                if (owner != null)
+                    owner.Tag = _interfaceControl;
                 _interfaceControl.Show();
 
                 if (Control == null)
@@ -279,7 +283,7 @@ namespace mRemoteNG.Connection.Protocol
                 {
                     if (_interfaceControl.Parent == null) return;
 
-                    if (_interfaceControl.Parent.Tag != null)
+                    if (mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl)?.Tag != null)
                     {
                         SetTagToNothing();
                     }

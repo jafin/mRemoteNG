@@ -6,6 +6,8 @@ using System.Windows.Forms;
 using mRemoteNG.App;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
+using mRemoteNG.Security.Ssh;
+using mRemoteNG.Security.Ssh.Adapters;
 
 namespace mRemoteNG.Connection.Protocol.SSH
 {
@@ -81,24 +83,6 @@ namespace mRemoteNG.Connection.Protocol.SSH
 
         #region Private Methods
 
-        private static string? FindDefaultSshKey()
-        {
-            string sshDir = Path.Combine(
-                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), ".ssh");
-            if (!Directory.Exists(sshDir))
-                return null;
-
-            // Prefer modern key types (most secure first)
-            string[] defaultKeyNames = ["id_ed25519", "id_ecdsa", "id_rsa", "id_dsa"];
-            foreach (string keyName in defaultKeyNames)
-            {
-                string candidate = Path.Combine(sshDir, keyName);
-                if (File.Exists(candidate))
-                    return candidate;
-            }
-            return null;
-        }
-
         private static string? FindSshExe()
         {
             // Try the standard Windows OpenSSH location first
@@ -124,11 +108,40 @@ namespace mRemoteNG.Connection.Protocol.SSH
             return null;
         }
 
+        /// <summary>
+        /// Resolves this connection's SSH credentials. Overridable so tests do not depend on the
+        /// developer's <c>~/.ssh</c> or on live credential providers.
+        /// </summary>
+        protected virtual ResolvedSshCredential ResolveCredentials()
+        {
+            return SshCredentialResolver.CreateDefault()
+                                        .Resolve(_connectionInfo, SshCredentialResolutionOptions.ForOpenSsh);
+        }
+
         private string BuildSshArguments()
         {
             string hostname = _connectionInfo.Hostname.Trim();
-            string username = _connectionInfo.Username;
             int port = _connectionInfo.Port;
+
+            using ResolvedSshCredential credential = ResolveCredentials();
+
+            foreach (SshCredentialDiagnostic diagnostic in credential.Diagnostics)
+            {
+                Runtime.MessageCollector?.AddMessage(
+                    diagnostic.Severity == SshCredentialDiagnosticSeverity.Information
+                        ? MessageClass.InformationMsg
+                        : MessageClass.ErrorMsg,
+                    diagnostic.Message);
+            }
+
+            OpenSshCredentialArguments credentialArgs = OpenSshArgsAdapter.Translate(credential, hostname);
+
+            // ssh.exe cannot take a password non-interactively. Previously the resolved secret was
+            // dropped silently and the user got an unexplained console prompt; now it is named.
+            foreach (SshCredentialDiagnostic unsupported in credentialArgs.Unsupported)
+            {
+                Runtime.MessageCollector?.AddMessage(MessageClass.WarningMsg, unsupported.Message);
+            }
 
             string args = "";
 
@@ -145,34 +158,18 @@ namespace mRemoteNG.Connection.Protocol.SSH
                 args += $"{sshOptions} ";
             }
 
-            // Add private key if specified; otherwise try auto-discovery of default keys
-            string keyPath = _connectionInfo.PrivateKeyPath?.Trim() ?? string.Empty;
-            if (!string.IsNullOrEmpty(keyPath))
+            if (!string.IsNullOrEmpty(credentialArgs.IdentityArgument))
             {
-                // Convert PuTTY .ppk to OpenSSH format hint — user should use OpenSSH-format keys
-                args += $"-i \"{keyPath}\" ";
-            }
-            else
-            {
-                // Auto-discover standard SSH key files from ~/.ssh/ when no explicit key is configured
-                string? discoveredKey = FindDefaultSshKey();
-                if (discoveredKey != null)
+                if (!string.Equals(credential.PrivateKeyPath, _connectionInfo.PrivateKeyPath?.Trim(), StringComparison.Ordinal))
                 {
                     Runtime.MessageCollector?.AddMessage(MessageClass.InformationMsg,
-                        $"No private key configured; auto-discovered SSH key: {discoveredKey}", true);
-                    args += $"-i \"{discoveredKey}\" ";
+                        $"No private key configured; auto-discovered SSH key: {credential.PrivateKeyPath}", true);
                 }
+
+                args += credentialArgs.IdentityArgument + " ";
             }
 
-            // Build user@host or just host
-            if (!string.IsNullOrEmpty(username))
-            {
-                args += $"{username}@{hostname}";
-            }
-            else
-            {
-                args += hostname;
-            }
+            args += credentialArgs.Destination;
 
             return args.Trim();
         }

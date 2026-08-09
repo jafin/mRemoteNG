@@ -9,6 +9,7 @@ namespace mRemoteNG.UI.Window
 		internal MrngPictureBox pbError;
 		internal System.Windows.Forms.ListView lvErrorCollector;
 		internal System.Windows.Forms.ColumnHeader clmMessage;
+		internal System.Windows.Forms.ColumnHeader clmDate;
 		internal Controls.MrngTextBox txtMsgText;
 		internal System.Windows.Forms.ImageList imgListMC;
 		internal System.Windows.Forms.ContextMenuStrip cMenMC;
@@ -25,6 +26,7 @@ namespace mRemoteNG.UI.Window
             this.pbError = new MrngPictureBox(this.components);
             this.lvErrorCollector = new System.Windows.Forms.ListView();
             this.clmMessage = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
+            this.clmDate = ((System.Windows.Forms.ColumnHeader)(new System.Windows.Forms.ColumnHeader()));
             this.cMenMC = new System.Windows.Forms.ContextMenuStrip(this.components);
             this.cMenMCCopy = new System.Windows.Forms.ToolStripMenuItem();
             this.cMenMCDelete = new System.Windows.Forms.ToolStripMenuItem();
@@ -71,6 +73,7 @@ namespace mRemoteNG.UI.Window
             | System.Windows.Forms.AnchorStyles.Right)));
             this.lvErrorCollector.BorderStyle = System.Windows.Forms.BorderStyle.None;
             this.lvErrorCollector.Columns.AddRange(new System.Windows.Forms.ColumnHeader[] {
+            this.clmDate,
             this.clmMessage});
             this.lvErrorCollector.ContextMenuStrip = this.cMenMC;
             this.lvErrorCollector.FullRowSelect = true;
@@ -87,6 +90,11 @@ namespace mRemoteNG.UI.Window
             this.lvErrorCollector.View = System.Windows.Forms.View.Details;
             this.lvErrorCollector.SelectedIndexChanged += new System.EventHandler(this.lvErrorCollector_SelectedIndexChanged);
             this.lvErrorCollector.KeyDown += new System.Windows.Forms.KeyEventHandler(this.MC_KeyDown);
+            // 
+            // clmDate
+            // 
+            this.clmDate.Text = Language.Date;
+            this.clmDate.Width = 90;
             // 
             // clmMessage
             // 

@@ -36,6 +36,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             lblCredentialsPassword.Text = Language.Password;
             lblCredentialsDomain.Text = Language.Domain;
             lblRegistrySettingsUsedInfo.Text = Language.OptionsCompanyPolicyMessage;
+            chkUseSshAgent.Text = Language.UseSshAgent;
         }
 
         public override void LoadSettings()
@@ -59,6 +60,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             txtCredentialsPassword.Text = cryptographyProvider.Decrypt(Properties.OptionsCredentialsPage.Default.DefaultPassword, Runtime.EncryptionKey);
             txtCredentialsDomain.Text = Properties.OptionsCredentialsPage.Default.DefaultDomain;
             txtCredentialsUserViaAPI.Text = Properties.OptionsCredentialsPage.Default.UserViaAPIDefault;
+            chkUseSshAgent.Checked = Properties.OptionsCredentialsPage.Default.UseSshAgent;
         }
 
         public override void SaveSettings()
@@ -81,6 +83,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             Properties.OptionsCredentialsPage.Default.DefaultPassword = cryptographyProvider.Encrypt(txtCredentialsPassword.Text, Runtime.EncryptionKey);
             Properties.OptionsCredentialsPage.Default.DefaultDomain = txtCredentialsDomain.Text;
             Properties.OptionsCredentialsPage.Default.UserViaAPIDefault = txtCredentialsUserViaAPI.Text;
+            Properties.OptionsCredentialsPage.Default.UseSshAgent = chkUseSshAgent.Checked;
         }
 
         public override void LoadRegistrySettings()

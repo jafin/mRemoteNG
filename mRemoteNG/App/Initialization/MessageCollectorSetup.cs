@@ -11,9 +11,16 @@ namespace mRemoteNG.App.Initialization
     [SupportedOSPlatform("windows")]
     public static class MessageCollectorSetup
     {
+        /// <summary>
+        /// Wires the collector to the writers, including any messages it has already collected.
+        /// </summary>
+        /// <remarks>
+        /// Call this <i>after</i> <see cref="BuildMessageWritersFromSettings"/>: the backlog is
+        /// delivered during this call, so a writer list that is still empty would swallow it.
+        /// </remarks>
         public static void SetupMessageCollector(MessageCollector messageCollector, IList<IMessageWriter> messageWriterList)
         {
-            messageCollector.CollectionChanged += (o, args) =>
+            messageCollector.SubscribeAndReplay((o, args) =>
             {
                 if (args.NewItems == null) return;
 
@@ -26,7 +33,7 @@ namespace mRemoteNG.App.Initialization
                         printer.Write(message);
                     }
                 }
-            };
+            });
         }
 
         public static void BuildMessageWritersFromSettings(IList<IMessageWriter> messageWriterList)

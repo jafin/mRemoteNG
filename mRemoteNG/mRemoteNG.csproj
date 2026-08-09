@@ -244,11 +244,11 @@
     <PackageReference Include="System.Data.Odbc" />
     <PackageReference Include="Newtonsoft.Json" />
     <PackageReference Include="Newtonsoft.Json.Schema" />
-    <PackageReference Include="Renci.SshNet.Async" />
     <PackageReference Include="Serilog" />
     <PackageReference Include="Serilog.Enrichers.Thread" />
     <PackageReference Include="Serilog.Sinks.File" />
     <PackageReference Include="SSH.NET" />
+    <PackageReference Include="SshNet.Agent" />
     <PackageReference Include="System.Management" />
     <PackageReference Include="System.Runtime.Serialization.Formatters" />
     <PackageReference Include="VncSharpCore" />

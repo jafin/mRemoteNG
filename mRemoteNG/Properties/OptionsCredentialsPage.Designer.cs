@@ -100,6 +100,18 @@ namespace mRemoteNG.Properties
                 this["EmptyCredentials"] = value;
             }
         }
+
+        [global::System.Configuration.UserScopedSettingAttribute()]
+        [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]
+        [global::System.Configuration.DefaultSettingValueAttribute("True")]
+        public bool UseSshAgent {
+            get {
+                return ((bool)(this["UseSshAgent"]));
+            }
+            set {
+                this["UseSshAgent"] = value;
+            }
+        }
         
         [global::System.Configuration.UserScopedSettingAttribute()]
         [global::System.Diagnostics.DebuggerNonUserCodeAttribute()]

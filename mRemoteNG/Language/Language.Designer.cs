@@ -3567,6 +3567,240 @@ namespace mRemoteNG.Resources.Language {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Date.
+        /// </summary>
+        internal static string Date {
+            get {
+                return ResourceManager.GetString("Date", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to File Manager (SFTP).
+        /// </summary>
+        internal static string FileManager {
+            get {
+                return ResourceManager.GetString("FileManager", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to {0} has changed locally. Upload it back to the remote host?.
+        /// </summary>
+        internal static string ConfirmUploadEditedFile {
+            get {
+                return ResourceManager.GetString("ConfirmUploadEditedFile", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Upload.
+        /// </summary>
+        internal static string Upload {
+            get {
+                return ResourceManager.GetString("Upload", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Refresh.
+        /// </summary>
+        internal static string Refresh {
+            get {
+                return ResourceManager.GetString("Refresh", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Local site.
+        /// </summary>
+        internal static string LocalSite {
+            get {
+                return ResourceManager.GetString("LocalSite", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Remote site.
+        /// </summary>
+        internal static string RemoteSite {
+            get {
+                return ResourceManager.GetString("RemoteSite", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Transfer queue.
+        /// </summary>
+        internal static string TransferQueue {
+            get {
+                return ResourceManager.GetString("TransferQueue", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Show hidden entries.
+        /// </summary>
+        internal static string ShowHiddenEntries {
+            get {
+                return ResourceManager.GetString("ShowHiddenEntries", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to New file.
+        /// </summary>
+        internal static string NewFile {
+            get {
+                return ResourceManager.GetString("NewFile", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Delete the {0} selected item(s)? This cannot be undone..
+        /// </summary>
+        internal static string ConfirmDeleteEntries {
+            get {
+                return ResourceManager.GetString("ConfirmDeleteEntries", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Delete {0}, including everything inside it?.
+        /// </summary>
+        internal static string ConfirmDeleteRecursive {
+            get {
+                return ResourceManager.GetString("ConfirmDeleteRecursive", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Type.
+        /// </summary>
+        internal static string EntryKindColumn {
+            get {
+                return ResourceManager.GetString("EntryKindColumn", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Folder.
+        /// </summary>
+        internal static string EntryKindFolder {
+            get {
+                return ResourceManager.GetString("EntryKindFolder", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to File.
+        /// </summary>
+        internal static string EntryKindFile {
+            get {
+                return ResourceManager.GetString("EntryKindFile", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Link.
+        /// </summary>
+        internal static string EntryKindLink {
+            get {
+                return ResourceManager.GetString("EntryKindLink", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Files already exist.
+        /// </summary>
+        internal static string TransferConflictTitle {
+            get {
+                return ResourceManager.GetString("TransferConflictTitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to {0} already exists at the destination..
+        /// </summary>
+        internal static string TransferConflictInstruction {
+            get {
+                return ResourceManager.GetString("TransferConflictInstruction", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Transferring: {0}, modified {1}.
+        /// </summary>
+        internal static string TransferConflictContent {
+            get {
+                return ResourceManager.GetString("TransferConflictContent", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Overwrite all.
+        /// </summary>
+        internal static string TransferOverwriteAll {
+            get {
+                return ResourceManager.GetString("TransferOverwriteAll", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Skip all.
+        /// </summary>
+        internal static string TransferSkipAll {
+            get {
+                return ResourceManager.GetString("TransferSkipAll", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Overwrite if newer.
+        /// </summary>
+        internal static string TransferOverwriteIfNewer {
+            get {
+                return ResourceManager.GetString("TransferOverwriteIfNewer", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Skipped {0} file(s) that already existed at the destination..
+        /// </summary>
+        internal static string TransferSkippedExisting {
+            get {
+                return ResourceManager.GetString("TransferSkippedExisting", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Enter a new name:.
+        /// </summary>
+        internal static string EnterNewName {
+            get {
+                return ResourceManager.GetString("EnterNewName", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Enter a name for the new folder:.
+        /// </summary>
+        internal static string EnterFolderName {
+            get {
+                return ResourceManager.GetString("EnterFolderName", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Enter a name for the new file:.
+        /// </summary>
+        internal static string EnterFileName {
+            get {
+                return ResourceManager.GetString("EnterFileName", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Minimize to notification area.
         /// </summary>
         internal static string MinimizeToSysTray {
@@ -3734,6 +3968,15 @@ namespace mRemoteNG.Resources.Language {
         internal static string MyCurrentWindowsCreds {
             get {
                 return ResourceManager.GetString("MyCurrentWindowsCreds", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Use SSH agent (OpenSSH agent or PuTTY Pageant) for SSH keys.
+        /// </summary>
+        internal static string UseSshAgent {
+            get {
+                return ResourceManager.GetString("UseSshAgent", resourceCulture);
             }
         }
         

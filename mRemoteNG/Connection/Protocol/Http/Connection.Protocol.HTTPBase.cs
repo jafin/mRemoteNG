@@ -71,7 +71,7 @@ namespace mRemoteNG.Connection.Protocol.Http
 
             try
             {
-                if (InterfaceControl.Parent is ConnectionTab objConnectionTab) _tabTitle = objConnectionTab.TabText;
+                if (ConnectionTab.OwnerOf(InterfaceControl) is { } objConnectionTab) _tabTitle = objConnectionTab.TabText;
             }
             catch (Exception)
             {
@@ -483,7 +483,7 @@ namespace mRemoteNG.Connection.Protocol.Http
         {
             try
             {
-                if (InterfaceControl.Parent is not ConnectionTab tabP) return;
+                if (ConnectionTab.OwnerOf(InterfaceControl) is not { } tabP) return;
                 if (_wBrowser is not WebBrowser browser) return;
                 string shortTitle;
                 if (browser.DocumentTitle.Length >= 15)

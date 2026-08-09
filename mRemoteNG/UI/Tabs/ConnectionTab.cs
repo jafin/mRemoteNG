@@ -49,6 +49,24 @@ namespace mRemoteNG.UI.Tabs
             GotFocus += ConnectionTab_GotFocus;
         }
 
+        /// <summary>
+        /// Walks up from <paramref name="control"/> to the tab that owns it.
+        /// </summary>
+        /// <remarks>
+        /// Kept in preference to <c>control.Parent is ConnectionTab</c>, which only answers
+        /// correctly while a session happens to be a direct child of its tab.
+        /// </remarks>
+        public static ConnectionTab? OwnerOf(Control? control)
+        {
+            for (Control? candidate = control; candidate is not null; candidate = candidate.Parent)
+            {
+                if (candidate is ConnectionTab tab)
+                    return tab;
+            }
+
+            return null;
+        }
+
         private void ConnectionTab_GotFocus(object sender, EventArgs e)
         {
             TabHelper.Instance.CurrentTab = this;

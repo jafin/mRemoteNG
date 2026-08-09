@@ -1,8 +1,11 @@
 ﻿using mRemoteNG.App;
 using System;
+using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Threading;
+using mRemoteNG.Security.Ssh;
+using mRemoteNG.Security.Ssh.Agent;
 using mRemoteNG.Tools;
 using WeifenLuo.WinFormsUI.Docking;
 using System.Windows.Forms;
@@ -397,22 +400,12 @@ namespace mRemoteNG.UI.Window
 
             try
             {
-                st = new SecureTransfer(txtHost.Text, txtUser.Text, txtPassword.Text, int.Parse(txtPort.Text, CultureInfo.InvariantCulture), Protocol,
-                                        txtLocalFile.Text, txtRemoteFile.Text);
+                st = new SecureTransfer(txtHost.Text, int.Parse(txtPort.Text, CultureInfo.InvariantCulture),
+                                        BuildCredential(), Protocol, txtLocalFile.Text, txtRemoteFile.Text);
+                st.UploadProgress += SecureTransfer_UploadProgress;
 
                 // Connect creates the protocol objects and makes the initial connection.
                 st.Connect();
-
-                switch (Protocol)
-                {
-                    case SecureTransfer.SSHTransferProtocol.SCP:
-                        if (st.ScpClt is not null)
-                            st.ScpClt.Uploading += ScpClt_Uploading;
-                        break;
-                    case SecureTransfer.SSHTransferProtocol.SFTP:
-                        st.asyncCallback = AsyncCallback;
-                        break;
-                }
 
                 Thread t = new(StartTransferBG);
                 t.SetApartmentState(ApartmentState.STA);
@@ -427,20 +420,39 @@ namespace mRemoteNG.UI.Window
             }
         }
 
-        private void AsyncCallback(IAsyncResult ar)
+        /// <summary>
+        /// Builds the credential for a transfer from the fields on this window, consulting an SSH
+        /// agent when one is enabled.
+        /// </summary>
+        /// <remarks>
+        /// This window is standalone — it has no <see cref="Connection.ConnectionInfo"/> to resolve
+        /// against and no external credential provider, so it goes straight to the neutral
+        /// credential rather than through <c>SshCredentialResolver</c>. Consulting the agent here is
+        /// what makes an agent-authenticated transfer possible at all: previously the only
+        /// credential this window could offer was the typed password.
+        /// </remarks>
+        private ResolvedSshCredential BuildCredential()
         {
-            Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, $"SFTP AsyncCallback completed.", true);
+            IReadOnlyList<SshAgentIdentity> agentIdentities = SshAgentSettings.Default.IsEnabled
+                ? new SshNetAgentProvider().GetIdentities(SshAgentQuery.Default)
+                : [];
+
+            return new ResolvedSshCredential(txtUser.Text,
+                                             secret: txtPassword.Text,
+                                             agentIdentities: agentIdentities);
         }
 
-        private void ScpClt_Uploading(object sender, Renci.SshNet.Common.ScpUploadEventArgs e)
+        private void SecureTransfer_UploadProgress(object? sender, SecureTransferProgressEventArgs e)
         {
+            if (e.Total <= 0)
+                return;
+
             // If the file size is over 2 gigs, convert to kb. This means we'll support a 2TB file.
-            int max = e.Size > int.MaxValue ? Convert.ToInt32(e.Size / 1024) : Convert.ToInt32(e.Size);
+            bool inKilobytes = e.Total > int.MaxValue;
 
-            // yes, compare to size since that's the total/original file size
-            int cur = e.Size > int.MaxValue ? Convert.ToInt32(e.Uploaded / 1024) : Convert.ToInt32(e.Uploaded);
-
-            SshTransfer_Progress(cur, max);
+            SshTransfer_Progress(
+                Convert.ToInt32(inKilobytes ? e.Transferred / 1024 : e.Transferred),
+                Convert.ToInt32(inKilobytes ? e.Total / 1024 : e.Total));
         }
 
         private void StartTransferBG()
@@ -451,25 +463,10 @@ namespace mRemoteNG.UI.Window
                 DisableButtons();
                 Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
                                                     $"Transfer of {Path.GetFileName(st.SrcFile)} started.", true);
-                st.Upload();
-
-                // SftpClient is Asynchronous, so we need to wait here after the upload and handle the status directly since no status events are raised.
-                if (st.Protocol == SecureTransfer.SSHTransferProtocol.SFTP)
-                {
-                    FileInfo fi = new(st.SrcFile);
-                    while (st.asyncResult is not null && !st.asyncResult.IsCompleted)
-                    {
-                        int max = fi.Length > int.MaxValue
-                            ? Convert.ToInt32(fi.Length / 1024)
-                            : Convert.ToInt32(fi.Length);
-
-                        int cur = fi.Length > int.MaxValue
-                            ? Convert.ToInt32(st.asyncResult.UploadedBytes / 1024)
-                            : Convert.ToInt32(st.asyncResult.UploadedBytes);
-                        SshTransfer_Progress(cur, max);
-                        Thread.Sleep(50);
-                    }
-                }
+                // This thread exists to keep the upload off the UI thread, so blocking it here is
+                // the point. Progress now arrives on UploadProgress as bytes go out, which replaces
+                // the 50 ms poll of SftpUploadAsyncResult.UploadedBytes that this used to run.
+                st.UploadAsync().GetAwaiter().GetResult();
 
                 Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
                                                     $"Transfer of {Path.GetFileName(st.SrcFile)} completed.", true);

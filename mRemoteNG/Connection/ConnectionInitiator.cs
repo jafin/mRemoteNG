@@ -437,7 +437,8 @@ namespace mRemoteNG.Connection
                     if (dockContent is not ConnectionTab connectionTab) continue;
 
                     if (connectionTab.Tag is InterfaceControl interfaceControl &&
-                        !interfaceControl.IsDisposed && interfaceControl.Parent == connectionTab)
+                        !interfaceControl.IsDisposed &&
+                        ConnectionTab.OwnerOf(interfaceControl) == connectionTab)
                     {
                         if (AreEquivalentConnections(interfaceControl.Info, connectionInfo) ||
                             AreEquivalentConnections(interfaceControl.OriginalInfo, connectionInfo))

@@ -35,7 +35,7 @@ Unless the user explicitly requests a documentation or orchestrator task, issue-
 - Never read or modify `.project-roadmap/`.
 - Never modify `run-tests.ps1`, `build.ps1`, `mRemoteNG.sln`, `Directory.Build.props`, or `Directory.Packages.props`.
 - `.github/workflows/*` may be changed when the user explicitly asks for CI work. It stays off-limits for an ordinary issue fix — never edit a workflow as a side effect of another task.
-- Never run `git add`, `git commit`, `git push`, or other repository-mutating Git commands; the orchestrator owns commits.
+- Commit when the work is done and verified — see [Committing](#committing). Never `git push`, force-push, rewrite published history, or open a PR unless the user asks.
 - Preserve existing behavior outside the reported issue and never add interactive tests.
 
 ### Additional notice for automated `claude -p` agents
@@ -69,13 +69,6 @@ Rules:
 - Prefer a targeted `--filter` over the whole suite; run the full suite when the blast radius is unclear.
 - A build failing only on **file-copy locks** (running mRemoteNG.exe holds `bin\`) is not a code failure — compile succeeded. Ask the user to close the app, or build to a temp `OutputPath` to verify.
 - Never skip verification for the categories that need it, and never report success for a build or test run that was not actually performed.
-
-## Repository Structure
-- **Origin (fork):** `robertpopa22/mRemoteNG`
-- **Upstream (official):** `mRemoteNG/mRemoteNG`
-- **Main branch:** `main` — active development; latest stable tag **v1.82.0**
-- **Stable:** cut by pushing a `vX.Y.Z` tag from `main` (latest = v1.82.0). `release/1.81` is a historical frozen branch (upstream PR #3189)
-- **Solution:** `mRemoteNG.sln` (.NET 10, SDK-style projects with COM references)
 
 ## Build Instructions
 
@@ -151,28 +144,6 @@ Every test failure MUST be resolved before finishing a task. NO EXCEPTIONS.
 | 4 | Roslynator | Included in Level 1 (NuGet) | `Directory.Packages.props` |
 | 5 | Qodo Code Review | On-demand (AI review) | GitHub App + `scripts/qodo-review.sh` |
 
-### Rules:
-- **Gradual adoption** — warnings only, NOT `TreatWarningsAsErrors` (legacy codebase)
-- Noisy rules suppressed in `.editorconfig` (MA0004 ConfigureAwait, MA0011 IFormatProvider, MA0076 ToString culture)
-- `EnforceCodeStyleInBuild=true`, `AnalysisLevel=latest-recommended` in `Directory.Build.props`
-- **Două `.editorconfig`**: root (pentru ExternalConnectors, ObjectListView etc.) + `mRemoteNG/.editorconfig` (cu `root=true`, nu moștenește de la root)
-- SonarCloud: `SONAR_TOKEN` secret setat, Automatic Analysis DEZACTIVAT pe sonarcloud.io (altfel conflict cu CI scan)
-- CodeQL: `build-mode: manual` (COM refs break autobuild), CodeQL Action **v4** (v3 deprecated Dec 2026), Default Setup DEZACTIVAT în repo Settings → Code Security
-- **NU există `sonar-project.properties`** — SonarScanner for .NET nu-l suportă, toate setările se dau ca parametri la `dotnet-sonarscanner begin`
-
-### Qodo Code Review:
-- GitHub App `qodo-code-review` instalat pe fork — AI-powered review complementar cu static analysis
-- **On-demand only** — rulat prin `./scripts/qodo-review.sh [commits] [branch]`
-- **NU funcționează ca GitHub Action** — Qodo ignoră PR-uri create de bots
-- **Targetează doar default branch** — PR-ul trebuie să aibă `main` ca base
-- Prinde bugs logice (bounds check, SQL mismatch, plaintext secrets) pe care SonarCloud/CodeQL le ratează
-
-### Lecții setup CI (2026-02-28):
-- CodeQL default setup NU coexistă cu workflow custom — trebuie dezactivat în Settings → Code Security
-- SonarCloud Automatic Analysis NU coexistă cu CI analysis — trebuie dezactivat în SonarCloud → Administration → Analysis Method
-- Meziantou MA0049 (type name matches namespace) e **error** by default — trebuie suprimat explicit pentru legacy code
-- `gh run list` pe un fork caută pe upstream — folosește `--repo robertpopa22/mRemoteNG`
-
 ## Branch Strategy
 
 | Branch | Purpose |
@@ -194,6 +165,22 @@ Lowercase, kebab-case, max 50 chars after prefix. No tool prefixes.
 ```bash
 git fetch upstream && git merge upstream/v1.78.2-dev
 ```
+
+## Committing
+
+Agents commit their own work. Finishing a task means committing it, not leaving a dirty tree for someone else to interpret.
+
+**Commit when:** the change is complete and its [verification](#verification-effort) passed. A commit asserts the tree builds and its tests are green — never commit over a failing build or a failing test.
+
+**Do not commit:** work you have not verified, unrelated files that happened to be dirty, or generated output (`bin/`, `obj/`, `TestResults/`). Stage explicitly by path — `git add -A` sweeps up whatever else the working tree was carrying. If a file you need to touch already had uncommitted changes when you started, they are not yours to commit: keep them out, and say so.
+
+**Never without being asked:** `git push`, force-push, `git rebase`/`git reset --hard` over published history, tags, or PRs. Rewriting what others may have pulled is not reversible; a local commit is.
+
+**Branch:** never commit straight to `main`. If HEAD is `main`, branch first using the [naming table](#feature-branch-naming).
+
+**Message:** subject in the imperative under ~72 chars, prefixed as the branch would be (`fix:`, `feat:`, `security:`, `chore:`, with an optional scope). Then a blank line and a body explaining **why** — what was wrong, and why this is the fix. The diff already shows what changed. Note the verification you actually ran. Do not add AI attribution, `Co-Authored-By`, or tool advertising.
+
+Scope a commit to one coherent change. Several unrelated fixes in one session are several commits.
 
 ## Session Discipline — Build Verification
 

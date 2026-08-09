@@ -263,10 +263,12 @@ namespace mRemoteNG.UI.Forms
             long settingsMs = phaseSw.ElapsedMilliseconds;
             Debug.Print($"[Startup] SettingsLoad: {settingsMs}ms");
 
-            MessageCollectorSetup.SetupMessageCollector(messageCollector, _messageWriters);
+            // Writers first, then the collector: SetupMessageCollector delivers everything already
+            // collected — including anything LoadSettings reported above — and an empty writer list
+            // would swallow it.
             MessageCollectorSetup.BuildMessageWritersFromSettings(_messageWriters);
+            MessageCollectorSetup.SetupMessageCollector(messageCollector, _messageWriters);
 
-            // Post early phase timing now that messageCollector is ready
             messageCollector.AddMessage(Messages.MessageClass.InformationMsg, $"[Startup] SettingsLoad: {settingsMs}ms");
 
             phaseSw.Restart();
