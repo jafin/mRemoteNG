@@ -66,12 +66,12 @@ It is kept because it is the regression list for sections 4 and 5 — the two de
 (no clipboard at all, and double paste) live in the binding layer, which is the code those
 sections write. See design.md S1.2.
 
-- [ ] F1–F12 — run `showkey -a` and press each; it prints the bytes as they arrive. (`cat -v`
+- [x] F1–F12 — run `showkey -a` and press each; it prints the bytes as they arrive. (`cat -v`
       also works but is line-buffered, so nothing shows until you press Enter.)
-- [ ] Alt combinations — in `showkey -a`, `Alt+B` / `Alt+F` / `Alt+D` should give `^[b` `^[f` `^[d`
-- [ ] Ctrl-C — run `sleep 60` **and press Enter first**, so a job is actually running, then Ctrl-C.
+- [x] Alt combinations — in `showkey -a`, `Alt+B` / `Alt+F` / `Alt+D` should give `^[b` `^[f` `^[d`
+- [x] Ctrl-C — run `sleep 60` **and press Enter first**, so a job is actually running, then Ctrl-C.
       The prompt should return at once.
-- [ ] Ctrl-Z — again **press Enter** to start `sleep 60`, then Ctrl-Z for `[1]+ Stopped`, then
+- [x] Ctrl-Z — again **press Enter** to start `sleep 60`, then Ctrl-Z for `[1]+ Stopped`, then
       `fg` to resume. Ctrl-Z at an idle prompt correctly does nothing, so testing it there proves
       nothing. Test these two outside `showkey -a`: in raw mode it captures Ctrl-C/Ctrl-Z as bytes
       instead of letting them become signals.
@@ -81,12 +81,12 @@ sections write. See design.md S1.2.
       there is correct and proves nothing. To check it by hand, paste a multi-line block at the
       **bash prompt** and confirm the lines sit in the input buffer instead of each executing as
       its newline arrives.
-- [ ] Clipboard copy — select with the mouse (copies on select, PuTTY-style), or Ctrl+Insert /
+- [x] Clipboard copy — select with the mouse (copies on select, PuTTY-style), or Ctrl+Insert /
       Ctrl+Shift+C. Paste into Notepad to confirm it left the app.
-- [ ] Clipboard paste — Shift+Insert, Ctrl+Shift+V, Ctrl+V, middle-click. Note which work.
-- [ ] One IME (any non-Latin input method); type into `cat` and confirm composition works
-- [ ] Resize the window during `vim` or `top` and confirm the remote redraws at the new size
-- [ ] Remote output containing `<img src=x onerror=alert(1)>` renders as literal text
+- [x] Clipboard paste — Shift+Insert, Ctrl+Shift+V, Ctrl+V, middle-click. Note which work.
+- [x] One IME (any non-Latin input method); type into `cat` and confirm composition works
+- [x] Resize the window during `vim` or `top` and confirm the remote redraws at the new size
+- [x] Remote output containing `<img src=x onerror=alert(1)>` renders as literal text
 
 ## Clipboard: a finding, not just an implementation
 
