@@ -44,6 +44,21 @@ public sealed class SpikeForm : Form
         _log.Add($"[{_clock.Elapsed.TotalSeconds,7:F3}s] {message}");
     }
 
+    /// <summary>
+    /// Interactive runs never reach the benchmark's write-out, and the log is most wanted exactly
+    /// when the window is unreadable, so it goes to disk as soon as there is something to say.
+    /// </summary>
+    private void FlushLog()
+    {
+        try
+        {
+            File.WriteAllLines(Path.ChangeExtension(_options.ResultsPath, ".log"), _log);
+        }
+        catch (IOException)
+        {
+        }
+    }
+
     protected override async void OnLoad(EventArgs e)
     {
         base.OnLoad(e);
@@ -155,7 +170,24 @@ public sealed class SpikeForm : Form
                 int cols = node["cols"]?.GetValue<int>() ?? 80;
                 int rows = node["rows"]?.GetValue<int>() ?? 24;
                 Log($"page ready in {_pageReadyMs:F1} ms total, {cols}x{rows}");
+                _web.CoreWebView2.PostWebMessageAsJson(
+                    new JsonObject { ["t"] = "theme", ["name"] = _options.Theme }.ToJsonString());
                 _ = StartSessionAsync((uint)cols, (uint)rows);
+                break;
+
+            case "diag":
+                Log($"theme '{node["theme"]}': asked fg {node["wantFg"]} bg {node["wantBg"]}");
+                Log($"  .xterm-screen color {node["gotColor"]} bg {node["gotBackground"]}");
+                Log($"  .xterm color {node["xtermColor"]} bg {node["xtermBackground"]}");
+                Log($"  canvases {node["canvases"]}, styleTags {node["styleTags"]}, " +
+                    $"body {node["bodyBackground"]}, forcedColors {node["forcedColors"]}");
+                Log($"  row sample: {node["rowSample"]}");
+                FlushLog();
+                break;
+
+            case "csp":
+                Log($"CSP BLOCKED {node["directive"]} -> {node["blocked"]} {node["sample"]}");
+                FlushLog();
                 break;
 
             case "a":
@@ -311,8 +343,33 @@ public sealed class SpikeForm : Form
             "fullscreen-redraw-200", "SEN" + "T_REDRAW",
             "for i in $(seq 1 200); do printf '\\033[H\\033[2J'; cat /config/bench/screen.txt; done; printf 'SEN%s\\n' 'T_REDRAW'"));
 
+        // Leave something coloured on screen and photograph it. Computed styles describe the DOM,
+        // and the DOM is not necessarily what the renderer painted — only a capture settles that.
+        await RunScenarioAsync("colour-sample", "SEN" + "T_COLOUR",
+            "printf '\\033[31mRED \\033[32mGREEN \\033[33mYELLOW \\033[34mBLUE \\033[0mDEFAULT\\n'; " +
+            "printf '\\033[30mANSI-BLACK\\033[0m plain text readable?\\n'; " +
+            "printf 'SEN%s\\n' 'T_COLOUR'", 30);
+
+        await Task.Delay(400);
+        await CapturePreviewAsync();
+
         WriteResults(results);
         Finish(success: results.TrueForAll(r => !r.TimedOut));
+    }
+
+    private async Task CapturePreviewAsync()
+    {
+        string path = Path.ChangeExtension(_options.ResultsPath, ".png");
+        try
+        {
+            using FileStream file = File.Create(path);
+            await _web.CoreWebView2.CapturePreviewAsync(CoreWebView2CapturePreviewImageFormat.Png, file);
+            Log($"captured {path}");
+        }
+        catch (Exception ex)
+        {
+            Log($"capture failed: {ex.GetType().Name}: {ex.Message}");
+        }
     }
 
     private void WriteResults(List<Scenario> results)

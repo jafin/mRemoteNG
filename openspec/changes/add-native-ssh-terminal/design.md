@@ -150,7 +150,8 @@ noise. **The decision is therefore made entirely on CSP and packaging, as D3 ant
 | | `SetVirtualHostNameToFolderMapping` | `NavigateToString` |
 |---|---|---|
 | Origin | real (`https://terminal.spike.invalid`) | opaque |
-| Strictest achievable CSP | `default-src 'none'; script-src 'self'; style-src 'self'` | must allow `'unsafe-inline'` for script **and** style |
+| `script-src` | **`'self'`** — no inline script can run | must be `'unsafe-inline'` |
+| `style-src` | `'self' 'unsafe-inline'` (see below) | `'unsafe-inline'` |
 | Size ceiling | none | 2 MB document limit; assets are 488 KB today (24%) |
 | Packaging | ships an `assets/` folder beside the executable | single binary, document rebuilt per session |
 
@@ -159,9 +160,26 @@ noise. **The decision is therefore made entirely on CSP and packaging, as D3 ant
 An opaque origin makes `'self'` match nothing, so the inline route cannot express "scripts may only
 come from the application" — it can only say "inline script is allowed", which is precisely the
 grant you least want on a surface whose whole threat model is remote output inside a browser engine.
-Verified working: the spike's mode A page loads and runs under `script-src 'self'` with no inline
-script at all. The cost is an `assets/` folder in the installer (task 2.3), which is the cheaper
-half of the trade.
+Verified working: the spike's mode A page loads and runs under `script-src 'self'`. The cost is an
+`assets/` folder in the installer (task 2.3), which is the cheaper half of the trade.
+
+**`style-src` cannot be `'self'`, and the failure is silent.** xterm's DOM renderer builds its
+colour rules into `<style>` elements it injects at runtime, so a strict `style-src 'self'` blocks
+every one of them. Nothing errors and nothing is logged where a user would see it: the terminal
+renders, accepts input and reports correct throughput, but every cell loses its colour and the text
+comes out near-black on the host background. Measured directly — seven `style-src-elem` violations
+at startup, `canvases 0`, and cell spans carrying only `letter-spacing`.
+
+This is worth stating plainly because an earlier revision of this section claimed mode A could run
+with "no inline anything", which was wrong. Inline *style* is a much narrower concession than
+inline script — it cannot execute code — and `script-src 'self'` plus `default-src 'none'` still
+holds, so the decision above does not change. But the policy shipped in task 2.2 must include
+`style-src 'unsafe-inline'` or the terminal will be unreadable, and the symptom will not point at
+the CSP.
+
+Untested alternative, if the concession is ever judged too expensive: a canvas or WebGL renderer
+addon paints cells rather than styling them and may need no injected stylesheet at all. That trades
+a CSP grant for another vendored dependency.
 
 ### S1.4 — WebView2 runtime absence (task 1.4, confirmed)
 

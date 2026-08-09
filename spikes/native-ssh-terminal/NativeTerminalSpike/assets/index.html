@@ -3,12 +3,20 @@
 <head>
 <meta charset="utf-8">
 <!--
-  Mode A (SetVirtualHostNameToFolderMapping) CSP: a real origin exists, so scripts and styles
-  can be restricted to 'self' with no inline execution permitted at all.
+  Mode A (SetVirtualHostNameToFolderMapping) CSP. A real origin exists, so script is restricted to
+  'self' and no inline script can run at all — the grant that actually matters here.
+
+  style-src must allow 'unsafe-inline'. xterm's DOM renderer builds its colour rules into <style>
+  elements it injects at runtime, so 'self' blocks them; the failure is silent and total, and shows
+  up only as unreadable text (measured: style-src-elem blocked, canvases 0, no colour on any cell).
+  Inline style cannot execute code, so this is a far narrower concession than inline script — but
+  it is a concession, and it is why the spike reports it rather than claiming a stricter policy
+  than the renderer can actually live with. A canvas/WebGL renderer addon may avoid it; untested.
+
   default-src 'none' means nothing loads unless named below. No network origin appears anywhere.
 -->
 <meta http-equiv="Content-Security-Policy"
-      content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
 <link rel="stylesheet" href="./xterm.css">
 <link rel="stylesheet" href="./host.css">
 </head>

@@ -24,6 +24,9 @@ public sealed class SpikeOptions
 
     public string ResultsPath { get; set; } = "spike-results.json";
 
+    /// <summary>"dark" or "light". Only affects readability, not what is being measured.</summary>
+    public string Theme { get; set; } = "dark";
+
     public static SpikeOptions Parse(string[] args)
     {
         SpikeOptions o = new();
@@ -40,6 +43,9 @@ public sealed class SpikeOptions
                 case "--password": o.Password = Next(); break;
                 case "--key": o.PrivateKeyPath = Next(); break;
                 case "--results": o.ResultsPath = Next() ?? o.ResultsPath; break;
+                case "--theme":
+                    o.Theme = string.Equals(Next(), "light", StringComparison.OrdinalIgnoreCase) ? "light" : "dark";
+                    break;
                 case "--benchmark": o.Benchmark = true; break;
                 case "--interactive": o.Benchmark = false; break;
                 case "--delivery":

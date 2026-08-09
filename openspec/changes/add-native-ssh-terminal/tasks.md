@@ -10,7 +10,7 @@
 ## 2. Vendored front end
 
 - [ ] 2.1 Vendor `xterm.js` with its version and provenance recorded; confirm the MIT licence is compatible and add it wherever third-party licences are listed.
-- [ ] 2.2 Add the host document and the delivery mechanism chosen in 1.3, with a CSP that permits no network origins.
+- [ ] 2.2 Add the host document and the delivery mechanism chosen in 1.3, with a CSP that permits no network origins. — **must include `style-src 'unsafe-inline'`**; xterm's DOM renderer injects `<style>` elements and a strict `style-src 'self'` breaks all theming silently. See design.md S1.3.
 - [ ] 2.3 Ensure assets reach the build output and the installer.
 
 ## 3. Transport
