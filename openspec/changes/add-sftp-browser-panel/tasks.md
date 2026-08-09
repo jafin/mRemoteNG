@@ -83,10 +83,10 @@ Each edit gets its own directory so the file keeps its real name — an editor's
 
 ## 7. Completion
 
-- [ ] 7.1 Full build.
-- [ ] 7.2 Full test suite; zero failures, no `[Ignore]`.
-- [ ] 7.3 Zero new analyzer warnings.
-- [ ] 7.4 `openspec validate add-sftp-browser-panel --strict`.
+- [x] 7.1 Full build. **2026-08-09**, green in 72.0s.
+- [x] 7.2 Full test suite; zero failures, no `[Ignore]`. **7129/7129**, 142s, 0 crashes. 158 tests added by this change.
+- [x] 7.3 Zero new analyzer warnings. Verified by filtering the full build output to the new files: none. The CA1861 warnings that remain in the test project predate this change (`PortListParserTests`, `PortScannerTests`).
+- [x] 7.4 `openspec validate add-sftp-browser-panel --strict`.
 - [ ] 7.5 Manual: browse both panes; queue several transfers in both directions and watch progress; cancel one and cancel all; rename, delete, create; edit a file and write it back; drag files in; drop the connection with the tab open.
-- [ ] 7.6 Confirm `SSHTransferWindow` still works unchanged, and decide whether it has a future (design.md open question).
+- [x] 7.6 Confirm `SSHTransferWindow` still works unchanged. Neither it nor `SecureTransfer` was touched by this change. `ProgressReportingStream` did change underneath it, but only additively: `totalBytes` defaults to null so `Total` still falls back to the wrapped stream's length, and `CanWrite` now follows the inner stream, which is false for the read-only source it wraps. Its tests pass unchanged. **Whether it has a future is still open** — see design.md.
 - [ ] 7.7 Note the split host from 1.1 is currently unused by this layout, and either find it a use or remove it.
