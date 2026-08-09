@@ -342,3 +342,7 @@ test-results-dump/
 /.claude/**
 /.github/prompts/**
 /.github/skills/*
+
+# Reqnroll generates feature code-behind into obj/ at build time. The IDE
+# integration can still drop legacy copies next to the .feature files.
+mRemoteNGSpecs/Features/*.feature.cs

@@ -37,7 +37,7 @@ coverage:
     - "ExternalConnectors/**" # Example: If you don't want to measure coverage for external connectors
     - "ObjectListView/**" # Example: If this is an external library/dependency
     - "mRemoteNGInstaller/**" # Installer project
-    - "mRemoteNGSpecs/**" # SpecFlow project
+    - "mRemoteNGSpecs/**" # Reqnroll project
 
   # Upload only one report if multiple are generated (e.g., from different test suites)
   # This can prevent multiple status checks if not desired
