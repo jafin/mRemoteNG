@@ -1,4 +1,4 @@
-<#
+﻿<#
 .SYNOPSIS
     Stands up the SSH host the native-terminal spike measures against.
 
@@ -71,6 +71,14 @@ if ($LASTEXITCODE -ne 0) { throw "key generation failed inside $Name" }
 docker cp "${Name}:/tmp/spike_key" $key | Out-Null
 if (-not (Test-Path $key)) { throw "could not copy the private key out of $Name" }
 docker exec $Name rm -f /tmp/spike_key | Out-Null
+
+# docker cp writes the key with inherited ACLs, which grants Authenticated Users. SSH.NET does not
+# care, so mRemoteNG works either way, but ssh-add and ssh refuse the file outright - which makes
+# the agent half of task 8.5 untestable until this is tightened.
+icacls $key /inheritance:r /grant:r "$($env:USERNAME):R" | Out-Null
+
+# ssh-add wants the public half alongside it; docker cp only brought the private key out.
+ssh-keygen -y -f $key | Out-File "$key.pub" -Encoding ascii
 
 Write-Host ""
 Write-Host "Ready." -ForegroundColor Green
