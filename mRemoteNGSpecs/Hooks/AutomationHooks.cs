@@ -1,11 +1,11 @@
 using FlaUI.Core.AutomationElements;
 using mRemoteNGSpecs.Drivers;
-using TechTalk.SpecFlow;
+using Reqnroll;
 
 namespace mRemoteNGSpecs.Hooks
 {
     /// <summary>
-    /// SpecFlow hooks that manage the AppDriver lifecycle for UI automation scenarios.
+    /// Reqnroll hooks that manage the AppDriver lifecycle for UI automation scenarios.
     /// Tagged with @ui so only UI scenarios pay the startup cost.
     /// </summary>
     [Binding]
