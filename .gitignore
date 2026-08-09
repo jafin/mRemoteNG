@@ -339,3 +339,6 @@ logs/security/
 # Test results dump + Claude local settings
 test-results-dump/
 .claude/settings.local.json
+/.claude/**
+/.github/prompts/**
+/.github/skills/*
