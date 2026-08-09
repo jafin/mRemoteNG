@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text;
@@ -114,6 +114,20 @@ public static class SshNetAuthAdapter
         List<IPrivateKeySource> keySources = [];
         List<IDisposable> owned = [];
 
+        // SSH.NET's AuthenticationMethod constructor throws on an empty username, and every caller
+        // treats translation as total - so without this a connection missing a username fails as an
+        // unhandled exception out of a credential adapter rather than as the setting it is.
+        if (string.IsNullOrWhiteSpace(username))
+        {
+            unsupported.Add(new SshCredentialDiagnostic(
+                credential.Provenance,
+                SshCredentialDiagnosticSeverity.Error,
+                "This connection has no username, so nothing can be authenticated. " +
+                "Set a username on the connection or its folder."));
+
+            return new SshNetAuthentication(username, [], unsupported, [], []);
+        }
+
         CollectAgentIdentities(credential, keySources, unsupported);
         CollectKeyFile(credential, keySources, owned, unsupported);
         CollectKeyMaterial(credential, keySources, owned, unsupported);
@@ -204,12 +218,23 @@ public static class SshNetAuthAdapter
         if (credential.PrivateKeyPath is not { } path)
             return;
 
+        // A key the user chose failing is an error they must act on. A key discovery went looking
+        // for failing is usually not actionable and not theirs - a passphrase on ~/.ssh/id_rsa is
+        // that key's ordinary state - and reporting it as an error makes a connection that
+        // succeeds by other means look failed.
+        bool discovered = credential.KeyPathOrigin == SshKeyPathOrigin.Discovered;
+        SshCredentialDiagnosticSeverity severity = discovered
+            ? SshCredentialDiagnosticSeverity.Information
+            : SshCredentialDiagnosticSeverity.Error;
+
         if (!File.Exists(path))
         {
             unsupported.Add(new SshCredentialDiagnostic(
                 credential.Provenance,
-                SshCredentialDiagnosticSeverity.Error,
-                $"The configured private key file was not found: {path}"));
+                severity,
+                discovered
+                    ? $"A private key found by default discovery has since gone: {path}"
+                    : $"The configured private key file was not found: {path}"));
             return;
         }
 
@@ -223,8 +248,11 @@ public static class SshNetAuthAdapter
         {
             unsupported.Add(new SshCredentialDiagnostic(
                 credential.Provenance,
-                SshCredentialDiagnosticSeverity.Error,
-                $"The private key file {path} could not be loaded: {ex.Message}"));
+                severity,
+                discovered
+                    ? $"The private key {path}, found by default discovery, was not used: {ex.Message} " +
+                      "Set it on the connection if you want it offered."
+                    : $"The private key file {path} could not be loaded: {ex.Message}"));
         }
     }
 

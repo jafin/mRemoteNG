@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using mRemoteNG.Connection;
 
@@ -24,6 +24,22 @@ namespace mRemoteNG.Security.Ssh;
 /// Reducing that requires changing the provider signatures and is out of scope here.
 /// </para>
 /// </remarks>
+/// <summary>Where a resolved private key path came from.</summary>
+public enum SshKeyPathOrigin
+{
+    /// <summary>No key path was resolved.</summary>
+    None = 0,
+
+    /// <summary>Named on the connection. The user chose this key.</summary>
+    Configured = 1,
+
+    /// <summary>
+    /// Found by default key discovery because nothing else could authenticate. The user never
+    /// mentioned it, so a problem with it is not necessarily theirs to fix.
+    /// </summary>
+    Discovered = 2,
+}
+
 public sealed class ResolvedSshCredential : IDisposable
 {
     private static readonly IReadOnlyList<SshAgentIdentity> NoIdentities = [];
@@ -42,13 +58,20 @@ public sealed class ResolvedSshCredential : IDisposable
         string? privateKeyPath = null,
         IReadOnlyList<SshAgentIdentity>? agentIdentities = null,
         ExternalCredentialProvider provenance = ExternalCredentialProvider.None,
-        IReadOnlyList<SshCredentialDiagnostic>? diagnostics = null)
+        IReadOnlyList<SshCredentialDiagnostic>? diagnostics = null,
+        SshKeyPathOrigin keyPathOrigin = SshKeyPathOrigin.Configured)
     {
         ArgumentNullException.ThrowIfNull(effectiveUsername);
 
         EffectiveUsername = effectiveUsername;
         UnqualifiedUsername = unqualifiedUsername ?? effectiveUsername;
         PrivateKeyPath = string.IsNullOrEmpty(privateKeyPath) ? null : privateKeyPath;
+
+        // Defaults to Configured so every existing construction keeps today's meaning; only the
+        // resolver's discovery branch says otherwise. Recorded here rather than inferred later
+        // from the path's shape, which is wrong in both directions - a user may deliberately
+        // configure ~/.ssh/id_ed25519, and the locator may look somewhere else entirely.
+        KeyPathOrigin = PrivateKeyPath is null ? SshKeyPathOrigin.None : keyPathOrigin;
         AgentIdentities = agentIdentities ?? NoIdentities;
         Provenance = provenance;
         Diagnostics = diagnostics ?? NoDiagnostics;
@@ -61,6 +84,9 @@ public sealed class ResolvedSshCredential : IDisposable
     /// Messages raised during resolution, each tagged with the channel the caller must replay
     /// it on. The resolver cannot raise these itself — see <see cref="SshCredentialDiagnostic"/>.
     /// </summary>
+    /// <summary>Whether <see cref="PrivateKeyPath"/> was chosen by the user or found by discovery.</summary>
+    public SshKeyPathOrigin KeyPathOrigin { get; }
+
     public IReadOnlyList<SshCredentialDiagnostic> Diagnostics { get; }
 
     /// <summary>
