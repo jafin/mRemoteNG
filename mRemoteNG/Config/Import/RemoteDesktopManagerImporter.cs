@@ -3,7 +3,6 @@
 using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
-using Castle.Core.Internal;
 using mRemoteNG.App;
 using mRemoteNG.Config.DataProviders;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Csv.RemoteDesktopManager;
