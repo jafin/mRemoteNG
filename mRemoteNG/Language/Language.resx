@@ -327,6 +327,9 @@
   <data name="Date" xml:space="preserve">
     <value>Date</value>
   </data>
+  <data name="FileManager" xml:space="preserve">
+    <value>File Manager (SFTP)</value>
+  </data>
   <data name="CommandExitProgram" xml:space="preserve">
     <value>E&amp;xit {0}</value>
   </data>

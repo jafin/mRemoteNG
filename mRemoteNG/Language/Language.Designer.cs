@@ -3576,6 +3576,15 @@ namespace mRemoteNG.Resources.Language {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to File Manager (SFTP).
+        /// </summary>
+        internal static string FileManager {
+            get {
+                return ResourceManager.GetString("FileManager", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Minimize to notification area.
         /// </summary>
         internal static string MinimizeToSysTray {

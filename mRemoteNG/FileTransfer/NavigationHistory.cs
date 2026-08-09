@@ -41,6 +41,17 @@ namespace mRemoteNG.FileTransfer
 
         public bool CanGoForward => _position >= 0 && _position < _entries.Count - 1;
 
+        /// <summary>Where <see cref="Back"/> would go, without going there.</summary>
+        /// <remarks>
+        /// Navigation can fail — the directory may have been removed since it was visited. Peeking
+        /// lets the caller try the listing first and only commit the move once it succeeds, so a
+        /// failed Back leaves the history where it was rather than needing to be undone.
+        /// </remarks>
+        public string? PeekBack => CanGoBack ? _entries[_position - 1] : null;
+
+        /// <summary>Where <see cref="Forward"/> would go, without going there.</summary>
+        public string? PeekForward => CanGoForward ? _entries[_position + 1] : null;
+
         /// <summary>The recorded paths, oldest first. For tests and diagnostics.</summary>
         public IReadOnlyList<string> Entries => _entries;
 

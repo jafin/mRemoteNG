@@ -732,6 +732,12 @@ namespace mRemoteNG.UI.Window
             }
         }
 
+        /// <summary>
+        /// The dock panel this window's document tabs live in, so other tab types can be shown
+        /// beside the connection tabs.
+        /// </summary>
+        public DockPanel GetDockPanel() => connDock;
+
         public ConnectionTab? AddConnectionTab(ConnectionInfo connectionInfo, bool switchToConnection = true)
         {
             try
