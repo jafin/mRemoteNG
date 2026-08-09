@@ -377,16 +377,32 @@ namespace mRemoteNG.UI.Controls.FileTransfer
         /// rather than a shared static: sharing risks one pane disposing it while another still draws
         /// from it, which is a crash rather than a few kilobytes.
         /// </remarks>
-        private void BuildIcons()
+        private void BuildIcons() => ConfigureIcons(_list, _icons);
+
+        /// <summary>
+        /// Fills <paramref name="icons"/> and attaches it to <paramref name="list"/>.
+        /// </summary>
+        /// <remarks>
+        /// Static and internal so a test can drive it against a bare list. The attaching is the part
+        /// worth guarding: it looked correct and drew nothing for an entire release.
+        /// </remarks>
+        internal static void ConfigureIcons(ObjectListView list, ImageList icons)
         {
-            _icons.ColorDepth = ColorDepth.Depth32Bit;
-            _icons.ImageSize = new Size(16, 16);
+            ArgumentNullException.ThrowIfNull(list);
+            ArgumentNullException.ThrowIfNull(icons);
 
-            _icons.Images.Add(EntryPresentation.FolderImageKey, Properties.Resources.FolderClosed_16x);
-            _icons.Images.Add(EntryPresentation.FileImageKey, Properties.Resources.Document_16x);
-            _icons.Images.Add(EntryPresentation.ParentImageKey, Properties.Resources.FolderClosed_16x);
+            icons.ColorDepth = ColorDepth.Depth32Bit;
+            icons.ImageSize = new Size(16, 16);
 
-            _list.SmallImageList = _icons;
+            icons.Images.Add(EntryPresentation.FolderImageKey, Properties.Resources.FolderClosed_16x);
+            icons.Images.Add(EntryPresentation.FileImageKey, Properties.Resources.Document_16x);
+            icons.Images.Add(EntryPresentation.ParentImageKey, Properties.Resources.FolderClosed_16x);
+
+            // SetSmallImageList, not the SmallImageList property. This ObjectListView shadows the image
+            // list behind Get/SetSmallImageList, and resolves a column's string image key against the
+            // shadowed one — so assigning the inherited ListView property leaves the shadow null and
+            // every key silently resolves to "no image". Setting it looks like it worked; nothing draws.
+            list.SetSmallImageList(icons);
         }
 
         private static string DescribeKind(FileSystemEntry entry) =>
