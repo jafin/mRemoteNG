@@ -8457,6 +8457,33 @@ namespace mRemoteNG.Resources.Language {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to A password was sent as user "{0}" to {1}, and that server refused it.
+        /// </summary>
+        internal static string SshNativeAuthRefusedPassword {
+            get {
+                return ResourceManager.GetString("SshNativeAuthRefusedPassword", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to A key and a password were both sent as user "{0}" to {1}, and that server refused both.
+        /// </summary>
+        internal static string SshNativeAuthRefusedKeyAndPassword {
+            get {
+                return ResourceManager.GetString("SshNativeAuthRefusedKeyAndPassword", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to No key and no password were available to send as user "{0}" to {1}, so the server had nothing to accept.
+        /// </summary>
+        internal static string SshNativeAuthNothingToSend {
+            get {
+                return ResourceManager.GetString("SshNativeAuthNothingToSend", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Connecting to {0}:{1} as {2}.
         /// </summary>
         internal static string SshNativeConnecting {

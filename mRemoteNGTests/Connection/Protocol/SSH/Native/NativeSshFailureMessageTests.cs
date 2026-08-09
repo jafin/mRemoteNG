@@ -102,6 +102,72 @@ public class NativeSshFailureMessageTests
     }
 
     [Test]
+    public void ARefusedPasswordSaysSoInsteadOfNamingNothing()
+    {
+        // Found by testing password auth with a wrong password: the server's line alone gives no
+        // hint that a password was even involved, let alone that it was the thing refused.
+        using FakeSession session = new()
+        {
+            OfferedMethods = ["password", "keyboard-interactive"],
+            OfferedUsername = "alice",
+            Endpoint = "10.0.0.5:2222"
+        };
+
+        string message = ProtocolNativeSsh.DescribeFailure(Denied, session);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.Contain("password"));
+            Assert.That(message, Does.Contain("alice"));
+            Assert.That(message, Does.Contain("10.0.0.5:2222"));
+            Assert.That(message, Does.Not.Contain("authorized_keys"),
+                "no key was sent, so authorized_keys is the wrong place to look");
+        });
+    }
+
+    [Test]
+    public void WhenBothWereSentNeitherIsBlamedOverTheOther()
+    {
+        using FakeSession session = new()
+        {
+            OfferedMethods = ["publickey", "password", "keyboard-interactive"],
+            OfferedKeyPath = @"C:\keys\id_ed25519",
+            OfferedUsername = "alice",
+            Endpoint = "10.0.0.5:2222"
+        };
+
+        string message = ProtocolNativeSsh.DescribeFailure(Denied, session);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.Contain("key"));
+            Assert.That(message, Does.Contain("password"));
+            Assert.That(message, Does.Contain("10.0.0.5:2222"));
+        });
+    }
+
+    [Test]
+    public void WithNoCredentialAtAllTheRefusalIsExplainedAsSuch()
+    {
+        // Only keyboard-interactive offered: the connection carried nothing to authenticate with,
+        // so the refusal is correct and there is nothing on the server to investigate.
+        using FakeSession session = new()
+        {
+            OfferedMethods = ["keyboard-interactive"],
+            OfferedUsername = "alice",
+            Endpoint = "10.0.0.5:2222"
+        };
+
+        string message = ProtocolNativeSsh.DescribeFailure(Denied, session);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.Contain("No key and no password"));
+            Assert.That(message, Does.Not.Contain("authorized_keys"));
+        });
+    }
+
+    [Test]
     public void AnUnusableKeyIsNamedInsteadOfBlamingTheServer()
     {
         // Here the credential really was the problem, so pointing at authorized_keys would send
@@ -154,7 +220,9 @@ public class NativeSshFailureMessageTests
             Diagnostics = [Diagnostic("Using the credential from the vault.", SshCredentialDiagnosticSeverity.Information)]
         };
 
-        Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, session), Is.EqualTo(Denied));
+        // Asserts the narration is absent, not that nothing was added: with no credential problem
+        // the message still says what was sent, which is a separate and wanted clause.
+        Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, session), Does.Not.Contain("vault"));
     }
 
     [Test]

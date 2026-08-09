@@ -2946,6 +2946,15 @@ mRemoteNG will now quit and begin with the installation.</value>
   <data name="SshNativeHostKeyTitle" xml:space="preserve">
     <value>SSH host key</value>
   </data>
+  <data name="SshNativeAuthRefusedPassword" xml:space="preserve">
+    <value>A password was sent as user &quot;{0}&quot; to {1}, and that server refused it. Check the username and the password, and that the server accepts password authentication for that account.</value>
+  </data>
+  <data name="SshNativeAuthRefusedKeyAndPassword" xml:space="preserve">
+    <value>A key and a password were both sent as user &quot;{0}&quot; to {1}, and that server refused both. Check the address, port and username first, since a wrong one of those refuses a correct key and a correct password alike.</value>
+  </data>
+  <data name="SshNativeAuthNothingToSend" xml:space="preserve">
+    <value>No key and no password were available to send as user &quot;{0}&quot; to {1}, so the server had nothing to accept. Set a password or a private key on this connection.</value>
+  </data>
   <data name="SshNativeConnecting" xml:space="preserve">
     <value>Connecting to {0}:{1} as “{2}”. Authentication methods offered: {3}. Key file: {4}</value>
   </data>

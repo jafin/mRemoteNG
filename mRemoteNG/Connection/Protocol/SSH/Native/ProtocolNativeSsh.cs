@@ -302,8 +302,8 @@ public class ProtocolNativeSsh : ProtocolBase
     {
         List<string> parts = [message];
 
-        foreach (string reason in CredentialProblems(session?.Diagnostics))
-            parts.Add(reason);
+        List<string> problems = CredentialProblems(session?.Diagnostics);
+        parts.AddRange(problems);
 
         // A second factor the client could not answer explains the refusal completely, and no
         // amount of checking authorized_keys would help — so it is said instead, not as well.
@@ -316,27 +316,45 @@ public class ProtocolNativeSsh : ProtocolBase
             return string.Join(" ", parts);
         }
 
-        // Nothing was wrong with the credential and the key still did not get in: say that the key
-        // was sent, so the search moves to the server instead of to the connection settings.
-        bool offeredKey = session?.OfferedMethods.Contains("publickey", StringComparer.Ordinal) == true;
-        if (offeredKey && CredentialProblems(session?.Diagnostics).Count == 0)
-        {
-            string keyPath = session?.OfferedKeyPath ?? string.Empty;
-            string user = session?.OfferedUsername ?? string.Empty;
-            string endpoint = session?.Endpoint ?? string.Empty;
-
-            // The username is named because it is the likeliest thing to be wrong and the hardest
-            // to notice: it can be inherited from a folder or supplied by a credential provider,
-            // so it is not necessarily what was typed into this connection. A correct key sent as
-            // the wrong user fails exactly like a wrong key sent as the right one.
-            // The endpoint is named because the port is the one field nothing else reports, and a
-            // correct key sent to the wrong port fails identically to a wrong key.
-            parts.Add(string.IsNullOrEmpty(keyPath)
-                ? string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefusedNoPath, user, endpoint)
-                : string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefused, keyPath, user, endpoint));
-        }
+        // Only when the credential itself was fine. If resolution already found something wrong,
+        // it has named the real cause and describing what was sent would argue against it.
+        //
+        // Otherwise: say what was sent, because every wrong field fails identically here. The
+        // server answers "Permission denied" whether the key, the password, the account, the
+        // address or the port is at fault, and naming only some of them sends the reader to
+        // re-check the ones already correct.
+        if (session is not null && problems.Count == 0)
+            parts.Add(DescribeWhatWasOffered(session));
 
         return string.Join(" ", parts);
+    }
+
+    private static string DescribeWhatWasOffered(INativeSshTerminalSession? session)
+    {
+        IReadOnlyList<string> offered = session?.OfferedMethods ?? [];
+        bool key = offered.Contains("publickey", StringComparer.Ordinal);
+        bool password = offered.Contains("password", StringComparer.Ordinal);
+
+        string user = session?.OfferedUsername ?? string.Empty;
+        string endpoint = session?.Endpoint ?? string.Empty;
+        string keyPath = session?.OfferedKeyPath ?? string.Empty;
+
+        if (key && password)
+            return string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthRefusedKeyAndPassword, user, endpoint);
+
+        if (key)
+        {
+            return string.IsNullOrEmpty(keyPath)
+                ? string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefusedNoPath, user, endpoint)
+                : string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefused, keyPath, user, endpoint);
+        }
+
+        if (password)
+            return string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthRefusedPassword, user, endpoint);
+
+        // Only keyboard-interactive left, which means the connection carried no credential at all.
+        // Worth saying outright: the server's refusal is correct and there is nothing to debug.
+        return string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthNothingToSend, user, endpoint);
     }
 
     private static List<string> CredentialProblems(IReadOnlyList<SshCredentialDiagnostic>? diagnostics)
