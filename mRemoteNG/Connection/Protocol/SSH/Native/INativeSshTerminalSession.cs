@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,6 +30,15 @@ public interface INativeSshTerminalSession : IDisposable
     /// <c>ProtocolBase.Event_ErrorOccured</c> is protected.
     /// </summary>
     IReadOnlyList<SshCredentialDiagnostic> Diagnostics { get; }
+
+    /// <summary>Authentication methods offered to the server, in the order they were tried.</summary>
+    IReadOnlyList<string> OfferedMethods { get; }
+
+    /// <summary>The key file offered, if any. A path, not a secret.</summary>
+    string? OfferedKeyPath { get; }
+
+    /// <summary>Keyboard-interactive prompts nothing could answer — typically a second factor.</summary>
+    IReadOnlyList<string> UnansweredPrompts { get; }
 
     bool IsConnected { get; }
 

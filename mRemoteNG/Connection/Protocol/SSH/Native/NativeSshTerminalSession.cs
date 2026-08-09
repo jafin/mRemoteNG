@@ -105,6 +105,19 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
 
     public IReadOnlyList<SshCredentialDiagnostic> Diagnostics { get; }
 
+    /// <summary>The authentication methods offered to the server, in the order they were tried.</summary>
+    public IReadOnlyList<string> OfferedMethods =>
+        [.. System.Linq.Enumerable.Select(_authentication.Methods, m => m.Name)];
+
+    /// <summary>The key file offered, if authentication used one. Not a secret; a path.</summary>
+    public string? OfferedKeyPath => _credential.PrivateKeyPath;
+
+    /// <summary>
+    /// Keyboard-interactive prompts the server asked that nothing could answer — typically a second
+    /// factor. Only meaningful after a connection attempt.
+    /// </summary>
+    public IReadOnlyList<string> UnansweredPrompts => _authentication.UnansweredPrompts;
+
     public bool IsConnected => _client?.IsConnected == true && _shell is not null;
 
     public async Task ConnectAsync(uint columns, uint rows, CancellationToken cancellationToken = default)

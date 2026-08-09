@@ -1,5 +1,8 @@
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.Versioning;
+using System.Threading;
+using System.Threading.Tasks;
 using mRemoteNG.Connection;
 using mRemoteNG.Connection.Protocol.SSH.Native;
 using mRemoteNG.Security.Ssh;
@@ -8,94 +11,154 @@ using NUnit.Framework;
 namespace mRemoteNGTests.Connection.Protocol.SSH.Native;
 
 /// <summary>
-/// What the user is told when a connection fails.
+/// What the user is told when a connection is refused.
 /// </summary>
 /// <remarks>
-/// Found by actually connecting: a mistyped or passphrase-encrypted key produces
-/// "Permission denied (keyboard-interactive)", which is true, useless, and identical for both
-/// causes. Credential resolution already knew why, but only said so on a channel nobody reads
-/// when a tab fails to open.
+/// Written after a real connection attempt. A server answers "Permission denied
+/// (keyboard-interactive)" whether the key file was missing, was unreadable, or was sent and
+/// refused — three causes with three different fixes, two of them not in this application at all.
 /// </remarks>
 [TestFixture]
 [SupportedOSPlatform("windows")]
 public class NativeSshFailureMessageTests
 {
+    private sealed class FakeSession : INativeSshTerminalSession
+    {
+        public IReadOnlyList<SshCredentialDiagnostic> Diagnostics { get; init; } = [];
+        public IReadOnlyList<string> OfferedMethods { get; init; } = [];
+        public string? OfferedKeyPath { get; init; }
+        public IReadOnlyList<string> UnansweredPrompts { get; init; } = [];
+
+        public bool IsConnected => false;
+
+        // Never raised: this fake exists to answer questions about a failed connection, not to
+        // carry one. Declared with explicit accessors so an unused backing field is not implied.
+        public event Action<string>? OutputReceived { add { } remove { } }
+        public event Action<string>? Disconnected { add { } remove { } }
+        public Task ConnectAsync(uint columns, uint rows, CancellationToken cancellationToken = default) => Task.CompletedTask;
+        public void Send(string data) { }
+        public void Resize(uint columns, uint rows) { }
+
+        public void Dispose()
+        {
+        }
+    }
+
     private static SshCredentialDiagnostic Diagnostic(string message, SshCredentialDiagnosticSeverity severity) =>
         new(ExternalCredentialProvider.None, severity, message);
 
     private const string Denied = "Permission denied (keyboard-interactive).";
 
     [Test]
-    public void WithoutDiagnosticsTheMessageIsUnchanged()
+    public void WithNoSessionTheMessageIsUnchanged()
     {
         Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, null), Is.EqualTo(Denied));
-        Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, []), Is.EqualTo(Denied));
     }
 
     [Test]
-    public void AMissingKeyFileIsNamedInTheFailure()
+    public void AKeyThatWasSentAndRefusedPointsAtTheServer()
     {
-        List<SshCredentialDiagnostic> diagnostics =
-        [
-            Diagnostic("The configured private key file was not found: C:\\keys\\id_ed25519",
-                SshCredentialDiagnosticSeverity.Error)
-        ];
+        // The common case, and the one the raw message hides completely: nothing is wrong with the
+        // credential, so there is nothing to fix in mRemoteNG. Saying the key was sent moves the
+        // search to authorized_keys instead of back through the connection settings.
+        using FakeSession session = new()
+        {
+            OfferedMethods = ["publickey", "keyboard-interactive"],
+            OfferedKeyPath = @"C:\keys\id_ed25519"
+        };
 
-        Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, diagnostics),
-            Is.EqualTo($"{Denied} The configured private key file was not found: C:\\keys\\id_ed25519"));
+        string message = ProtocolNativeSsh.DescribeFailure(Denied, session);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.StartWith(Denied));
+            Assert.That(message, Does.Contain(@"C:\keys\id_ed25519"));
+            Assert.That(message, Does.Contain("authorized_keys"));
+        });
     }
 
     [Test]
-    public void AnEncryptedKeyIsNamedInTheFailure()
+    public void AKeyFromAnAgentIsReportedWithoutAPath()
     {
-        // The real case: no key configured, so discovery fell back to ~/.ssh/id_rsa, which is
-        // passphrase-encrypted and therefore silently contributed nothing.
-        List<SshCredentialDiagnostic> diagnostics =
-        [
-            Diagnostic("The private key file C:\\Users\\x\\.ssh\\id_rsa could not be loaded: Private key is encrypted but passphrase is empty.",
-                SshCredentialDiagnosticSeverity.Error)
-        ];
+        using FakeSession session = new() { OfferedMethods = ["publickey", "keyboard-interactive"] };
 
-        Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, diagnostics),
-            Does.Contain("passphrase is empty"));
+        string message = ProtocolNativeSsh.DescribeFailure(Denied, session);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.Contain("authorized_keys"));
+            Assert.That(message, Does.Not.Contain("{0}"));
+        });
+    }
+
+    [Test]
+    public void AnUnusableKeyIsNamedInsteadOfBlamingTheServer()
+    {
+        // Here the credential really was the problem, so pointing at authorized_keys would send
+        // the user to the wrong machine.
+        using FakeSession session = new()
+        {
+            OfferedMethods = ["keyboard-interactive"],
+            Diagnostics =
+            [
+                Diagnostic("The configured private key file was not found: C:\\keys\\absent",
+                    SshCredentialDiagnosticSeverity.Error)
+            ]
+        };
+
+        string message = ProtocolNativeSsh.DescribeFailure(Denied, session);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.Contain("was not found"));
+            Assert.That(message, Does.Not.Contain("authorized_keys"));
+        });
+    }
+
+    [Test]
+    public void AnUnansweredPromptExplainsTheRefusalOnItsOwn()
+    {
+        // A second factor nobody answered accounts for the refusal completely; checking
+        // authorized_keys would waste the user's time.
+        using FakeSession session = new()
+        {
+            OfferedMethods = ["publickey", "keyboard-interactive"],
+            OfferedKeyPath = @"C:\keys\id_ed25519",
+            UnansweredPrompts = ["Verification code: "]
+        };
+
+        string message = ProtocolNativeSsh.DescribeFailure(Denied, session);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.Contain("Verification code"));
+            Assert.That(message, Does.Not.Contain("authorized_keys"));
+        });
     }
 
     [Test]
     public void InformationalDiagnosticsAreLeftOut()
     {
-        // These narrate what worked. Repeating them would bury the one line that explains the
-        // failure, which is the whole point of the exercise.
-        List<SshCredentialDiagnostic> diagnostics =
-        [
-            Diagnostic("Using the credential from the vault.", SshCredentialDiagnosticSeverity.Information),
-            Diagnostic("Agent consulted.", SshCredentialDiagnosticSeverity.Information)
-        ];
+        using FakeSession session = new()
+        {
+            Diagnostics = [Diagnostic("Using the credential from the vault.", SshCredentialDiagnosticSeverity.Information)]
+        };
 
-        Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, diagnostics), Is.EqualTo(Denied));
-    }
-
-    [Test]
-    public void ProtocolErrorsAreIncludedToo()
-    {
-        List<SshCredentialDiagnostic> diagnostics =
-        [
-            Diagnostic("The credential provider returned nothing.", SshCredentialDiagnosticSeverity.ProtocolError)
-        ];
-
-        Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, diagnostics),
-            Does.Contain("returned nothing"));
+        Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, session), Is.EqualTo(Denied));
     }
 
     [Test]
     public void RepeatedDiagnosticsAreNotRepeatedInTheMessage()
     {
-        List<SshCredentialDiagnostic> diagnostics =
-        [
-            Diagnostic("Key not found.", SshCredentialDiagnosticSeverity.Error),
-            Diagnostic("Key not found.", SshCredentialDiagnosticSeverity.Error)
-        ];
+        using FakeSession session = new()
+        {
+            Diagnostics =
+            [
+                Diagnostic("Key not found.", SshCredentialDiagnosticSeverity.Error),
+                Diagnostic("Key not found.", SshCredentialDiagnosticSeverity.Error)
+            ]
+        };
 
-        Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, diagnostics),
-            Is.EqualTo($"{Denied} Key not found."));
+        Assert.That(ProtocolNativeSsh.DescribeFailure(Denied, session), Is.EqualTo($"{Denied} Key not found."));
     }
 }

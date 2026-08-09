@@ -8457,6 +8457,33 @@ namespace mRemoteNG.Resources.Language {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to The key {0} was sent and the server refused it.
+        /// </summary>
+        internal static string SshNativeAuthKeyRefused {
+            get {
+                return ResourceManager.GetString("SshNativeAuthKeyRefused", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to A key was sent and the server refused it.
+        /// </summary>
+        internal static string SshNativeAuthKeyRefusedNoPath {
+            get {
+                return ResourceManager.GetString("SshNativeAuthKeyRefusedNoPath", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The server asked for something mRemoteNG cannot answer: {0}.
+        /// </summary>
+        internal static string SshNativeAuthUnansweredPrompt {
+            get {
+                return ResourceManager.GetString("SshNativeAuthUnansweredPrompt", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to Terminal.
         /// </summary>
         internal static string SshNativeTerminalOptions {

@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
@@ -265,32 +266,68 @@ public class ProtocolNativeSsh : ProtocolBase
         catch (Exception ex)
         {
             Runtime.MessageCollector.AddExceptionStackTrace(Language.SshNativeConnectFailed, ex);
-            Event_Disconnected(this, DescribeFailure(ex.Message, _session?.Diagnostics), null);
+            Event_Disconnected(this, DescribeFailure(ex.Message, _session), null);
             Close();
         }
     }
 
     /// <summary>
-    /// Combines the transport's failure with anything credential resolution already knew was wrong.
+    /// Turns a transport failure into something a user can act on.
     /// </summary>
     /// <remarks>
-    /// "Permission denied (keyboard-interactive)" is what a server says when no key was offered, and
-    /// it says nothing about why. The reason is usually already known — a configured key file that
-    /// was not found, or one that is passphrase-encrypted and could not be loaded — but it is
-    /// recorded on the message channel, which is not where someone looks when a tab fails to open.
-    /// Putting it in the disconnect message is the difference between an error a user can act on
-    /// and one they can only re-try.
+    /// <para>
+    /// "Permission denied (keyboard-interactive)" is what a server says when it has run out of
+    /// methods, and it is identical whether the key file was missing, was unreadable, or was sent
+    /// and refused. Those three need completely different fixes, so the message has to distinguish
+    /// them.
+    /// </para>
+    /// <para>
+    /// Credential resolution knows about the first two. Only the session knows the third, and it is
+    /// the common one: the key loaded, was offered, and the server said no — which means the fix is
+    /// on the server, not here.
+    /// </para>
     /// </remarks>
-    internal static string DescribeFailure(string message, IReadOnlyList<SshCredentialDiagnostic>? diagnostics)
+    internal static string DescribeFailure(string message, INativeSshTerminalSession? session)
     {
-        if (diagnostics is null || diagnostics.Count == 0)
-            return message;
+        List<string> parts = [message];
 
+        foreach (string reason in CredentialProblems(session?.Diagnostics))
+            parts.Add(reason);
+
+        // A second factor the client could not answer explains the refusal completely, and no
+        // amount of checking authorized_keys would help — so it is said instead, not as well.
+        IReadOnlyList<string> prompts = session?.UnansweredPrompts ?? [];
+        if (prompts.Count > 0)
+        {
+            parts.Add(string.Format(CultureInfo.CurrentCulture,
+                Language.SshNativeAuthUnansweredPrompt, string.Join("; ", prompts)));
+
+            return string.Join(" ", parts);
+        }
+
+        // Nothing was wrong with the credential and the key still did not get in: say that the key
+        // was sent, so the search moves to the server instead of to the connection settings.
+        bool offeredKey = session?.OfferedMethods.Contains("publickey", StringComparer.Ordinal) == true;
+        if (offeredKey && CredentialProblems(session?.Diagnostics).Count == 0)
+        {
+            string keyPath = session?.OfferedKeyPath ?? string.Empty;
+            parts.Add(string.IsNullOrEmpty(keyPath)
+                ? Language.SshNativeAuthKeyRefusedNoPath
+                : string.Format(CultureInfo.CurrentCulture, Language.SshNativeAuthKeyRefused, keyPath));
+        }
+
+        return string.Join(" ", parts);
+    }
+
+    private static List<string> CredentialProblems(IReadOnlyList<SshCredentialDiagnostic>? diagnostics)
+    {
         List<string> reasons = [];
+        if (diagnostics is null)
+            return reasons;
+
         foreach (SshCredentialDiagnostic diagnostic in diagnostics)
         {
-            // Informational diagnostics narrate what worked; only the ones describing something
-            // unusable help here, and repeating the rest would bury them.
+            // Informational diagnostics narrate what worked; repeating them would bury the rest.
             if (diagnostic.Severity is SshCredentialDiagnosticSeverity.Error
                 or SshCredentialDiagnosticSeverity.ProtocolError
                 && !reasons.Contains(diagnostic.Message, StringComparer.Ordinal))
@@ -299,7 +336,7 @@ public class ProtocolNativeSsh : ProtocolBase
             }
         }
 
-        return reasons.Count == 0 ? message : $"{message} {string.Join(" ", reasons)}";
+        return reasons;
     }
 
     /// <summary>
