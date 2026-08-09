@@ -336,9 +336,14 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
             column.Width = CapNameColumnWidth(_desiredNameColumnWidth);
         }
 
+        // Sliver of the pane the Name column leaves to Description, so the fill column never
+        // collapses to nothing and its header stays grabbable.
+        private const int DescriptionMinWidth = 40;
+
         /// <summary>
         /// Clamps a desired Name-column width to the tree width so it never forces a horizontal
-        /// scrollbar. A name that fits keeps its full width.
+        /// scrollbar, leaving <see cref="DescriptionMinWidth"/> for the fill column. A name that
+        /// fits keeps its full width.
         /// </summary>
         private int CapNameColumnWidth(int desiredWidth)
         {
@@ -346,7 +351,10 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
             if (clientWidth <= 0)
                 return desiredWidth;
 
-            return Math.Min(desiredWidth, clientWidth);
+            // In a pane too narrow to give both columns their due, Name keeps at least half —
+            // it is the column that identifies the row.
+            int cap = Math.Max(clientWidth - DescriptionMinWidth, clientWidth / 2);
+            return Math.Min(desiredWidth, cap);
         }
 
         private void OnTreeSizeChanged(object? sender, EventArgs e)
@@ -366,6 +374,7 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
         private IList<ConnectionInfo> ComputeViewRoots(ConnectionTreeModel model)
         {
             List<ContainerInfo> roots = model.RootNodes;
+            _viewRootSources = new List<ContainerInfo>(roots);
             List<RootNodeInfo> connectionRoots = roots
                 .OfType<RootNodeInfo>()
                 .Where(r => r.Type == RootNodeType.Connection)
@@ -387,6 +396,20 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
 
             return viewRoots;
         }
+
+        // The model's root nodes as of the last ComputeViewRoots call. A collection change that
+        // alters this set has to rebuild the top level rather than add/remove in place: the set
+        // decides both which objects are view roots and whether a lone connection root is promoted.
+        private List<ContainerInfo> _viewRootSources = new();
+
+        /// <summary>
+        /// Whether the model's root nodes differ from the set the view was last built from — i.e.
+        /// whether the change being handled added or removed a root node. This cannot be inferred
+        /// from the changed item itself: <see cref="ContainerInfo.RemoveChild"/> clears the child's
+        /// Parent before raising, so a removed child and a removed root look identical.
+        /// </summary>
+        private bool RootNodesChanged() =>
+            _connectionTreeModel != null && !_connectionTreeModel.RootNodes.SequenceEqual(_viewRootSources);
 
         /// <summary>
         /// Rebuilds the top-level objects (e.g. after the hidden root's children are reordered)
@@ -984,6 +1007,14 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
                     switch (args.Action)
                     {
                         case NotifyCollectionChangedAction.Add:
+                            // A root node arrived: it can flip promotion on or off (one connection
+                            // root ↔ two), which rewrites the whole top level. Recompute, don't append.
+                            if (RootNodesChanged())
+                            {
+                                RefreshViewRootsPreservingState();
+                                break;
+                            }
+
                             if (args.NewItems != null)
                             {
                                 foreach (ConnectionInfo item in args.NewItems.OfType<ConnectionInfo>())
@@ -1015,7 +1046,12 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
                             }
                             break;
                         case NotifyCollectionChangedAction.Remove:
-                            RemoveObjects(args.OldItems);
+                            // Losing a root node can promote the survivor (two connection roots down
+                            // to one), so the remaining root's children move to the top level.
+                            if (RootNodesChanged())
+                                RefreshViewRootsPreservingState();
+                            else
+                                RemoveObjects(args.OldItems);
                             break;
                         case NotifyCollectionChangedAction.Reset:
                             if (_connectionTreeModel != null)
@@ -1148,8 +1184,8 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
         {
             try
             {
-                // Name column: when the (now fill-width) name is ellipsized, surface the full text.
-                // This is independent of the description-tooltip preference below.
+                // Name column: when the (content-sized, capped) name is ellipsized, surface the full
+                // text. This is independent of the description-tooltip preference below.
                 if (e.ColumnIndex == 0 && e.Item != null && e.Model is ConnectionInfo)
                 {
                     string fullName = ((OLVColumn)Columns[0]).GetStringValue(e.Model);
@@ -1202,8 +1238,11 @@ namespace mRemoteNG.UI.Controls.ConnectionTree
             int indent = item.Position.X;
             const int padding = 6;
             int available = Columns[0].Width - indent - SmallImageSize.Width - padding;
+
+            // No room for text at all — a deep node in a narrow pane. Nothing of a non-empty name
+            // is legible, which is exactly when the tooltip matters most.
             if (available <= 0)
-                return false;
+                return true;
 
             return TextRenderer.MeasureText(text, Font).Width > available;
         }
