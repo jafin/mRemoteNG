@@ -2943,6 +2943,32 @@ mRemoteNG will now quit and begin with the installation.</value>
   <data name="SshNativeClipboardFailed" xml:space="preserve">
     <value>The clipboard could not be accessed.</value>
   </data>
+  <data name="SshNativeHostKeyTitle" xml:space="preserve">
+    <value>SSH host key</value>
+  </data>
+  <data name="SshNativeHostKeyUnknown" xml:space="preserve">
+    <value>The server at {0} is not known.
+
+Key algorithm: {1}
+Fingerprint: {2}
+
+Check this fingerprint against one you obtained from the server another way. Accepting a key you cannot verify means you cannot tell this server apart from an impostor.
+
+Trust this host and continue connecting?</value>
+  </data>
+  <data name="SshNativeHostKeyChanged" xml:space="preserve">
+    <value>WARNING: the host key for {0} has changed.
+
+Key algorithm: {1}
+New fingerprint: {2}
+Previously accepted: {3}
+
+This happens when a server is rebuilt or its key is replaced — and it also happens when something is intercepting the connection. Nothing on this side can tell the two apart.
+
+Do not continue unless you know why the key changed.
+
+Accept the new key and continue connecting?</value>
+  </data>
   <data name="VaultOpenbaoSecretEngineSSHOTP" xml:space="preserve">
     <value>SSH engine OTP mode</value>
   </data>

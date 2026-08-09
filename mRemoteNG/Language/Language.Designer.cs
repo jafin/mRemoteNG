@@ -8446,6 +8446,33 @@ namespace mRemoteNG.Resources.Language {
                 return ResourceManager.GetString("SshNativeClipboardFailed", resourceCulture);
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to SSH host key.
+        /// </summary>
+        internal static string SshNativeHostKeyTitle {
+            get {
+                return ResourceManager.GetString("SshNativeHostKeyTitle", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The server at {0} is not known..
+        /// </summary>
+        internal static string SshNativeHostKeyUnknown {
+            get {
+                return ResourceManager.GetString("SshNativeHostKeyUnknown", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to WARNING: the host key for {0} has changed..
+        /// </summary>
+        internal static string SshNativeHostKeyChanged {
+            get {
+                return ResourceManager.GetString("SshNativeHostKeyChanged", resourceCulture);
+            }
+        }
 
         /// <summary>
         ///   Looks up a localized string similar to WSL.

@@ -9,6 +9,7 @@ using Microsoft.Web.WebView2.WinForms;
 using mRemoteNG.App;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
+using mRemoteNG.Connection.Protocol.SSH.Native.HostKeys;
 using mRemoteNG.Security.Ssh;
 
 namespace mRemoteNG.Connection.Protocol.SSH.Native;
@@ -191,7 +192,12 @@ public class ProtocolNativeSsh : ProtocolBase
 
         try
         {
-            NativeSshTerminalSession session = NativeSshTerminalSession.ForConnection(_connectionInfo);
+            // The dialog marshals to the terminal control, so the prompt appears over the tab the
+            // user is actually looking at rather than behind it.
+            HostKeyGate hostKeys = new(new FileHostKeyStore(), new DialogHostKeyVerifier(_webView));
+
+            NativeSshTerminalSession session =
+                NativeSshTerminalSession.ForConnection(_connectionInfo, hostKeys: hostKeys);
             _session = session;
 
             ReplayCredentialDiagnostics(session.Diagnostics);

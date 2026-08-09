@@ -4,6 +4,7 @@ using System.Runtime.Versioning;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using mRemoteNG.Connection.Protocol.SSH.Native.HostKeys;
 using mRemoteNG.Security.Ssh;
 using mRemoteNG.Security.Ssh.Adapters;
 using mRemoteNG.Security.Ssh.Agent;
@@ -35,6 +36,7 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
     private readonly int _port;
     private readonly ResolvedSshCredential _credential;
     private readonly SshNetAuthentication _authentication;
+    private readonly HostKeyGate _hostKeys;
     private readonly CancellationTokenSource _teardown = new();
 
     private SshClient? _client;
@@ -49,7 +51,13 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
     /// Ownership passes to this instance. The authentication methods read it lazily, so it must
     /// stay alive for the life of the connection.
     /// </param>
-    public NativeSshTerminalSession(string host, int port, ResolvedSshCredential credential)
+    /// <param name="hostKeys">
+    /// Decides whether the presented host key is acceptable. Omitting it refuses every key: a
+    /// session with no way to ask must not answer on the user's behalf, and silent acceptance is
+    /// the one outcome the spec forbids.
+    /// </param>
+    public NativeSshTerminalSession(
+        string host, int port, ResolvedSshCredential credential, HostKeyGate? hostKeys = null)
     {
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(credential);
@@ -57,6 +65,7 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
         _host = host;
         _port = port;
         _credential = credential;
+        _hostKeys = hostKeys ?? new HostKeyGate(new FileHostKeyStore(), new DenyUnverifiedHostKeys());
 
         // Translated up front rather than at connect time so Diagnostics is answerable before a
         // connection exists — the protocol reports them whether or not the session got that far.
@@ -76,7 +85,8 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
     /// </param>
     public static NativeSshTerminalSession ForConnection(
         ConnectionInfo connectionInfo,
-        Sftp.SftpSession.ISshAgentSettingsSource? agentSettings = null)
+        Sftp.SftpSession.ISshAgentSettingsSource? agentSettings = null,
+        HostKeyGate? hostKeys = null)
     {
         ArgumentNullException.ThrowIfNull(connectionInfo);
 
@@ -89,7 +99,8 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
                 agentEnabled ? new SshNetAgentProvider() : null)
             .Resolve(connectionInfo, SshCredentialResolutionOptions.ForSshNet(agentEnabled));
 
-        return new NativeSshTerminalSession(connectionInfo.Hostname.Trim(), connectionInfo.Port, credential);
+        return new NativeSshTerminalSession(
+            connectionInfo.Hostname.Trim(), connectionInfo.Port, credential, hostKeys);
     }
 
     public IReadOnlyList<SshCredentialDiagnostic> Diagnostics { get; }
@@ -109,6 +120,10 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
         SshClient client = new(connectionInfo);
         client.ErrorOccurred += OnTransportError;
 
+        // Without a handler SSH.NET trusts whatever it is given. That is the silent acceptance the
+        // spec rules out, so this is not optional decoration.
+        client.HostKeyReceived += OnHostKeyReceived;
+
         try
         {
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
@@ -116,6 +131,7 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
         catch
         {
             client.ErrorOccurred -= OnTransportError;
+            client.HostKeyReceived -= OnHostKeyReceived;
             client.Dispose();
             throw;
         }
@@ -168,6 +184,13 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
         }
     }
 
+    private void OnHostKeyReceived(object? sender, HostKeyEventArgs e)
+    {
+        // FingerPrintSHA256 is base64 without padding, matching what OpenSSH prints, so a user can
+        // compare it against ssh-keyscan output character for character.
+        e.CanTrust = _hostKeys.Evaluate(_host, _port, e.HostKeyName, $"SHA256:{e.FingerPrintSHA256}");
+    }
+
     private void OnTransportError(object sender, ExceptionEventArgs e) =>
         RaiseDisconnected(e.Exception?.Message ?? "The SSH transport failed.");
 
@@ -192,7 +215,10 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
         try { _teardown.Cancel(); } catch (ObjectDisposedException) { /* already torn down */ }
 
         if (_client is not null)
+        {
             _client.ErrorOccurred -= OnTransportError;
+            _client.HostKeyReceived -= OnHostKeyReceived;
+        }
 
         SafeDispose(_shell);
         SafeDispose(_client);

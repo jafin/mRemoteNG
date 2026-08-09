@@ -33,16 +33,16 @@
 
 ## 5. Terminal behaviour
 
-- [ ] 5.1 Wire the input handling identified in 1.2. — keys themselves are clean; the work is `preventDefault()` + ignore `event.repeat` on any chord the host claims, and keeping Ctrl+C as SIGINT.
-- [ ] 5.2 Clipboard copy and paste, including bracketed paste. — host-side clipboard (not `navigator.clipboard`); copy-on-select + Ctrl+Insert/Ctrl+Shift+C; paste routed **back through the page** so bracketed-paste wrapping still applies. Open decision: Ctrl+V vs readline quoted-insert — see design.md S1.2.
-- [ ] 5.3 Focus behaviour on tab activation, matching the other protocols.
+- [x] 5.1 Wire the input handling identified in 1.2. — keys themselves are clean; the work is `preventDefault()` + ignore `event.repeat` on any chord the host claims, and keeping Ctrl+C as SIGINT. Done in `Assets/terminal.js`.
+- [x] 5.2 Clipboard copy and paste, including bracketed paste. — host-side clipboard (not `navigator.clipboard`); copy-on-select + Ctrl+Insert/Ctrl+Shift+C; paste routed **back through the page** so bracketed-paste wrapping still applies. **Still open:** Ctrl+V vs readline quoted-insert. Ctrl+V is bound for now; making it a setting belongs with the Options page in 7.1, so that is where the decision should land.
+- [x] 5.3 Focus behaviour on tab activation, matching the other protocols. — `Focus()` gives the control OS focus via the base and then tells the page to focus the terminal; both are needed, since a focused WebView with an unfocused xterm swallows keystrokes. `ConnectionWindow` already calls `Protocol.Focus()` on activation, and the session focuses once on connect.
 - [x] 5.4 Confirm remote output containing HTML or script markup renders as literal text. — verified in the spike (1.2 item 11); re-confirm against the shipping host document in 2.2.
 
 ## 6. Host keys
 
-- [ ] 6.1 Present unknown and changed host keys for confirmation; never accept silently.
-- [ ] 6.2 Decide and implement where accepted keys are stored (design.md D5, open question).
-- [ ] 6.3 Tests: unknown key prompts; changed key is reported as a change; known key does not prompt.
+- [x] 6.1 Present unknown and changed host keys for confirmation; never accept silently. — `HostKeyGate` + `DialogHostKeyVerifier`. Without a `HostKeyReceived` handler SSH.NET trusts whatever it is given, so this closed a real hole: the session as first committed accepted every key in silence.
+- [x] 6.2 Decide and implement where accepted keys are stored (design.md D5, open question). — **mRemoteNG's own file**, `hostkeys.txt` in the settings folder, tab separated and hand-editable. Reusing OpenSSH `known_hosts` would be friendlier but means writing a file another tool owns, in a format with hashed hostnames, CA markers and revocation entries we could corrupt while meaning well. Reading `known_hosts` to skip a first-connection prompt stays available as an additive follow-up.
+- [x] 6.3 Tests: unknown key prompts; changed key is reported as a change; known key does not prompt. — 14 tests over the gate and the file store, including refusal recording nothing, a different port not being a change, and a second algorithm for the same host not being a change. Also verified end to end against the container: unknown key refused, accepted key silent on reconnect, tampered fingerprint presented as Changed, and the fingerprint matches `ssh-keygen -lf` character for character.
 
 ## 7. Appearance and settings
 

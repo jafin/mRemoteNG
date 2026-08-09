@@ -1,4 +1,4 @@
-# Design
+﻿# Design
 
 ## Context
 
@@ -265,6 +265,11 @@ HTTP users as an unexplained "set properties failed". Fixing that belongs to its
 
 - ~~Serve assets from disk (`SetVirtualHostNameToFolderMapping`) or inline (`NavigateToString`)?~~
   **Resolved by S1.3 — virtual host mapping, on CSP grounds.**
-- Store accepted host keys in mRemoteNG's own store, or reuse OpenSSH `known_hosts`?
+- ~~Store accepted host keys in mRemoteNG's own store, or reuse OpenSSH `known_hosts`?~~
+  **Resolved in 6.2 — mRemoteNG's own file.** Writing `known_hosts` means mutating a file another
+  tool owns, in a format carrying hashed hostnames, CA markers and revocation entries that we could
+  corrupt while meaning well. Owning a small file is reversible; adopting someone else's is not.
+  Reading `known_hosts` to skip a first-connection prompt remains available as a purely additive
+  follow-up and does not disturb this.
 - Should the native terminal eventually replace SSH2, and if so, how do existing connections migrate?
 - Can the keyboard-interactive prompt gap be closed here, given a terminal has somewhere to prompt?
