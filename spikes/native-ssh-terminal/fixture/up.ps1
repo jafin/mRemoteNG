@@ -52,8 +52,25 @@ Write-Host "Installing a keypair..."
 New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
 $key = Join-Path $KeyDir "spike_key"
 if (Test-Path $key) { Remove-Item "$key*" -Force }
-ssh-keygen -t ed25519 -N '""' -f $key -C spike | Out-Null
-Get-Content "$key.pub" | docker exec -i $Name sh -c "mkdir -p /config/.ssh && cat > /config/.ssh/authorized_keys && chmod 700 /config/.ssh && chmod 600 /config/.ssh/authorized_keys && chown -R 1000:1000 /config/.ssh"
+
+# Generated inside the container, not on the host: ssh-keygen is not reliably on PATH on Windows,
+# and an empty passphrase cannot be expressed portably through PowerShell's native argument
+# quoting -- `-N '""'` passes a literal two-character passphrase.
+docker exec $Name sh -c @'
+rm -f /tmp/spike_key /tmp/spike_key.pub
+ssh-keygen -q -t ed25519 -N "" -f /tmp/spike_key -C spike
+mkdir -p /config/.ssh
+cp /tmp/spike_key.pub /config/.ssh/authorized_keys
+chmod 700 /config/.ssh
+chmod 600 /config/.ssh/authorized_keys
+chown -R 1000:1000 /config/.ssh
+rm -f /tmp/spike_key.pub
+'@ | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "key generation failed inside $Name" }
+
+docker cp "${Name}:/tmp/spike_key" $key | Out-Null
+if (-not (Test-Path $key)) { throw "could not copy the private key out of $Name" }
+docker exec $Name rm -f /tmp/spike_key | Out-Null
 
 Write-Host ""
 Write-Host "Ready." -ForegroundColor Green
