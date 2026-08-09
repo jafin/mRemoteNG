@@ -58,7 +58,7 @@ public partial class MultiSshToolStrip : ToolStrip
 
     private static ConnectionWindow? GetConnectionPanel(PuttyBase puttyBase)
     {
-        Control? current = puttyBase.InterfaceControl.Parent;
+        var current = puttyBase.InterfaceControl.Parent;
         while (current != null && current is not ConnectionWindow)
         {
             current = current.Parent;
@@ -81,7 +81,7 @@ public partial class MultiSshToolStrip : ToolStrip
         if (currentPanel == null)
             return true;
 
-        ConnectionWindow? connectionPanel = GetConnectionPanel(puttyBase);
+        var connectionPanel = GetConnectionPanel(puttyBase);
         return connectionPanel != null && ReferenceEquals(connectionPanel, currentPanel);
     }
 
@@ -118,14 +118,14 @@ public partial class MultiSshToolStrip : ToolStrip
 
     private static void SendTextToConnection(PuttyBase processHandler, string text, bool sendEnter)
     {
-        string textToSend = text;
+        var textToSend = text;
         if (processHandler.InterfaceControl?.Info != null)
         {
             var parser = new ExternalToolArgumentParser(processHandler.InterfaceControl.Info);
             textToSend = parser.ParseArguments(text, false);
         }
 
-        foreach (char c in textToSend)
+        foreach (var c in textToSend)
         {
             NativeMethods.PostMessage(processHandler.PuttyHandle, NativeMethods.WM_CHAR, (int)c, new IntPtr(0));
         }
@@ -148,10 +148,10 @@ public partial class MultiSshToolStrip : ToolStrip
 
     private static void SendScriptToConnection(PuttyBase processHandler, string script)
     {
-        string[] lines = script.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
-        for (int i = 0; i < lines.Length; i++)
+        var lines = script.Split(["\r\n", "\r", "\n"], StringSplitOptions.None);
+        for (var i = 0; i < lines.Length; i++)
         {
-            bool lastEmptyLine = i == lines.Length - 1 && string.IsNullOrEmpty(lines[i]);
+            var lastEmptyLine = i == lines.Length - 1 && string.IsNullOrEmpty(lines[i]);
             if (lastEmptyLine)
                 continue;
 
@@ -165,7 +165,7 @@ public partial class MultiSshToolStrip : ToolStrip
 
         foreach (PuttyBase processHandler in processHandlers)
         {
-            ConnectionInfo? connectionInfo = GetConnectionInfoForProcess(processHandler);
+            var connectionInfo = GetConnectionInfoForProcess(processHandler);
             if (connectionInfo == null || string.IsNullOrWhiteSpace(connectionInfo.MultiSshScript))
                 continue;
 
@@ -181,25 +181,24 @@ public partial class MultiSshToolStrip : ToolStrip
             if (processHandlers.Count == 0)
                 return;
 
-            using OpenFileDialog openFileDialog = new()
-            {
-                CheckFileExists = true,
-                CheckPathExists = true,
-                Filter = "Script files (*.txt;*.sh;*.ps1;*.cmd;*.bat)|*.txt;*.sh;*.ps1;*.cmd;*.bat|All files (*.*)|*.*",
-                RestoreDirectory = true,
-                Title = "Load Multi SSH Script"
-            };
+            using OpenFileDialog openFileDialog = new();
+            openFileDialog.CheckFileExists = true;
+            openFileDialog.CheckPathExists = true;
+            openFileDialog.Filter =
+                "Script files (*.txt;*.sh;*.ps1;*.cmd;*.bat)|*.txt;*.sh;*.ps1;*.cmd;*.bat|All files (*.*)|*.*";
+            openFileDialog.RestoreDirectory = true;
+            openFileDialog.Title = "Load Multi SSH Script";
 
             if (openFileDialog.ShowDialog() != DialogResult.OK)
                 return;
 
-            string scriptContent = File.ReadAllText(openFileDialog.FileName);
+            var scriptContent = File.ReadAllText(openFileDialog.FileName);
             if (string.IsNullOrWhiteSpace(scriptContent))
                 return;
 
             foreach (PuttyBase processHandler in processHandlers)
             {
-                ConnectionInfo? connectionInfo = GetConnectionInfoForProcess(processHandler);
+                var connectionInfo = GetConnectionInfoForProcess(processHandler);
                 if (connectionInfo != null)
                     connectionInfo.MultiSshScript = scriptContent;
             }
@@ -217,17 +216,18 @@ public partial class MultiSshToolStrip : ToolStrip
     private void RefreshActiveConnections()
     {
         processHandlers.Clear();
-        ConnectionWindow? currentPanel = GetCurrentConnectionPanel();
+        var currentPanel = GetCurrentConnectionPanel();
 
         foreach (ConnectionInfo connection in quickConnectConnections)
         {
             processHandlers.AddRange(ProcessOpenConnections(connection, currentPanel));
         }
 
-        System.Collections.Generic.IEnumerable<ConnectionInfo>? connectionTreeConnections = Runtime.ConnectionsService.ConnectionTreeModel?.GetRecursiveChildList().Where(item => item.OpenConnections.Count > 0);
+        var connectionTreeConnections = Runtime.ConnectionsService
+            .ConnectionTreeModel?.GetRecursiveChildList().Where(item => item.OpenConnections.Count > 0);
         if (connectionTreeConnections is null) return;
 
-        foreach (ConnectionInfo connection in connectionTreeConnections)
+        foreach (var connection in connectionTreeConnections)
         {
             processHandlers.AddRange(ProcessOpenConnections(connection, currentPanel));
         }
@@ -257,7 +257,10 @@ public partial class MultiSshToolStrip : ToolStrip
                         return;
                 }
             }
-            catch { }
+            catch
+            {
+                // ignored
+            }
 
             txtMultiSsh.Text = previousCommands[previousCommandIndex]?.ToString() ?? string.Empty;
             txtMultiSsh.SelectAll();
@@ -267,25 +270,26 @@ public partial class MultiSshToolStrip : ToolStrip
         {
             if (Clipboard.ContainsText())
             {
-                string text = Clipboard.GetText();
-                string[] lines = text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+                var text = Clipboard.GetText();
+                var lines = text.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
 
                 if (lines.Length > 1)
                 {
                     e.SuppressKeyPress = true;
                     RefreshActiveConnections();
 
-                    for (int i = 0; i < lines.Length - 1; i++)
+                    for (var i = 0; i < lines.Length - 1; i++)
                     {
                         SendTextToConnections(lines[i], true);
                     }
 
-                    if (!string.IsNullOrEmpty(lines[lines.Length - 1]))
+                    if (!string.IsNullOrEmpty(lines[^1]))
                     {
-                        txtMultiSsh.TextBox.SelectedText = lines[lines.Length - 1];
+                        txtMultiSsh.TextBox.SelectedText = lines[^1];
                     }
                 }
             }
+
             return;
         }
 
@@ -321,7 +325,7 @@ public partial class MultiSshToolStrip : ToolStrip
     {
         if (disposing)
         {
-            if(components != null)
+            if (components != null)
                 components.Dispose();
         }
 
@@ -340,39 +344,40 @@ public partial class MultiSshToolStrip : ToolStrip
         this.btnLoadScript = new ToolStripButton();
         this.btnCurrentPanelOnly = new ToolStripButton();
         this.SuspendLayout();
-        // 
+        //
         // lblMultiSSH
-        // 
+        //
         this.lblMultiSsh.Name = "_lblMultiSsh";
         this.lblMultiSsh.Size = new System.Drawing.Size(77, 22);
         this.lblMultiSsh.Text = Language.MultiSsh;
-        // 
+        //
         // txtMultiSsh
-        // 
+        //
         this.txtMultiSsh.Name = "_txtMultiSsh";
         this.txtMultiSsh.Size = new System.Drawing.Size(new DisplayProperties().ScaleWidth(300), 25);
         this.txtMultiSsh.ToolTipText = Language.MultiSshToolTip;
         this.txtMultiSsh.Enter += RefreshActiveConnections;
         this.txtMultiSsh.KeyDown += ProcessKeyPress;
         this.txtMultiSsh.KeyUp += ProcessKeyRelease;
-        // 
+        //
         // btnLoadScript
-        // 
+        //
         this.btnLoadScript.DisplayStyle = ToolStripItemDisplayStyle.Text;
         this.btnLoadScript.Name = "_btnLoadScript";
         this.btnLoadScript.Size = new System.Drawing.Size(77, 22);
         this.btnLoadScript.Text = "Load Script";
         this.btnLoadScript.ToolTipText = "Load a script file and run it on all active Multi SSH sessions.";
         this.btnLoadScript.Click += LoadAndRunScript;
-        // 
+        //
         // btnCurrentPanelOnly
-        // 
+        //
         this.btnCurrentPanelOnly.CheckOnClick = true;
         this.btnCurrentPanelOnly.DisplayStyle = ToolStripItemDisplayStyle.Text;
         this.btnCurrentPanelOnly.Name = "_btnCurrentPanelOnly";
         this.btnCurrentPanelOnly.Size = new System.Drawing.Size(81, 22);
         this.btnCurrentPanelOnly.Text = "Current panel";
-        this.btnCurrentPanelOnly.ToolTipText = "Send commands only to tabs in the current panel. Use tab context menu to include or exclude specific tabs.";
+        this.btnCurrentPanelOnly.ToolTipText =
+            "Send commands only to tabs in the current panel. Use tab context menu to include or exclude specific tabs.";
         this.btnCurrentPanelOnly.CheckedChanged += RefreshActiveConnections;
 
         this.Items.AddRange(new ToolStripItem[]
@@ -386,5 +391,4 @@ public partial class MultiSshToolStrip : ToolStrip
     }
 
     #endregion
-
 }

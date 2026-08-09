@@ -35,8 +35,7 @@ public partial class frmAbout : BaseWindow
         llCredits.Text = Language.OriginalCredits;
         llLicense.Text = Language.License;
         lblCopyright.Text = GeneralAppInfo.Copyright;
-        lblTitle.Text = "mRemoteNG Community Edition — .NET 10, 16 protocols, 6,211 tests, " +
-                        "0 warnings, 712 issues fixed.\nAI-assisted open source remote connections manager for Windows.";
+        lblTitle.Text = "mRemoteNG";
         var puttyVersion = PuttyTypeDetector.GetPuttyVersion(GeneralAppInfo.PuttyPath);
         var puttyVersionStr = (puttyVersion.Major > 0 || puttyVersion.Minor > 0)
             ? $" | PuTTY {puttyVersion.Major}.{puttyVersion.Minor}"
@@ -182,7 +181,7 @@ public partial class frmAbout : BaseWindow
             catch
             {
                 // Unable to open URL - notify the user
-                Runtime.MessageCollector?.AddMessage(MessageClass.WarningMsg,
+                Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg,
                     "Unable to open URL in browser. Please open manually: " + url, true);
             }
         }

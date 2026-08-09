@@ -3,6 +3,7 @@ using System.IO;
 using FlaUI.Core;
 using FlaUI.Core.AutomationElements;
 using FlaUI.UIA3;
+using Debug = System.Diagnostics.Debug;
 
 namespace mRemoteNGSpecs.Drivers;
 
@@ -37,6 +38,7 @@ public sealed class AppDriver : IDisposable
         _application = Application.Launch(exePath);
 
         var mainWindow = _application.GetMainWindow(_automation, timeout ?? TimeSpan.FromSeconds(30));
+        Debug.Assert(mainWindow != null, nameof(mainWindow) + " != null");
         return mainWindow;
     }
 

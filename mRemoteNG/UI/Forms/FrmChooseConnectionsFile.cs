@@ -26,6 +26,7 @@ public sealed class FrmChooseConnectionsFile : Form
     private readonly IReadOnlyList<ConnectionsFileResolver.Candidate> _candidates;
 
     public ConnectionsFileResolver.Candidate? Chosen { get; private set; }
+
     public bool RememberChoice => _rememberBox.Checked;
 
     public FrmChooseConnectionsFile(IReadOnlyList<ConnectionsFileResolver.Candidate> candidates,
@@ -95,7 +96,11 @@ public sealed class FrmChooseConnectionsFile : Form
 
         _cancelButton.Text = "&Cancel";
         _cancelButton.AutoSize = true;
-        _cancelButton.Click += (_, _) => { DialogResult = DialogResult.Cancel; Close(); };
+        _cancelButton.Click += (_, _) =>
+        {
+            DialogResult = DialogResult.Cancel;
+            Close();
+        };
 
         FlowLayoutPanel buttons = new()
         {
@@ -150,10 +155,10 @@ public sealed class FrmChooseConnectionsFile : Form
 
         Color dialogBg = palette.getColor("Dialog_Background");
         Color dialogFg = palette.getColor("Dialog_Foreground");
-        Color textBg   = palette.getColor("TextBox_Background");
-        Color textFg   = palette.getColor("TextBox_Foreground");
-        Color btnBg    = palette.getColor("Button_Background");
-        Color btnFg    = palette.getColor("Button_Foreground");
+        Color textBg = palette.getColor("TextBox_Background");
+        Color textFg = palette.getColor("TextBox_Foreground");
+        Color btnBg = palette.getColor("Button_Background");
+        Color btnFg = palette.getColor("Button_Foreground");
 
         BackColor = dialogBg;
         ForeColor = dialogFg;
@@ -167,7 +172,7 @@ public sealed class FrmChooseConnectionsFile : Form
         _rememberBox.BackColor = dialogBg;
         _rememberBox.ForeColor = dialogFg;
 
-        foreach (Button b in new[] { _okButton, _cancelButton })
+        foreach (var b in new[] { _okButton, _cancelButton })
         {
             b.BackColor = btnBg;
             b.ForeColor = btnFg;
@@ -208,6 +213,7 @@ public sealed class FrmChooseConnectionsFile : Form
         {
             result = dlg.ShowDialog();
         }
+
         return result == DialogResult.OK
             ? (dlg.Chosen, dlg.RememberChoice)
             : (null, false);
