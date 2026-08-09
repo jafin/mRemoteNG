@@ -1040,10 +1040,18 @@ namespace mRemoteNG.UI.Controls
                 _cMenTreeTypeClipboard.Enabled = false;
             }
 
+            // Braced deliberately: this was a single-statement if, and appending a second line to
+            // it silently made that line unconditional.
             if (!(connectionInfo.Protocol == ProtocolType.SSH1 | connectionInfo.Protocol == ProtocolType.SSH2))
+            {
                 _cMenTreeToolsTransferFile.Enabled = false;
-                _cMenTreeToolsFileManager.Enabled = false;
-            _cMenTreeToolsFileManager.Enabled = false;
+            }
+
+            // Set positively rather than mirroring the transfer window's gate. The file manager
+            // opens its own SSH.NET connection, so it also serves an OpenSSH connection - but not
+            // SSH1, which SSH.NET's SFTP does not support.
+            _cMenTreeToolsFileManager.Enabled =
+                connectionInfo.Protocol is ProtocolType.SSH2 or ProtocolType.OpenSSH;
 
             _cMenTreeToolsWakeOnLan.Enabled = WakeOnLan.IsValidMacAddress(connectionInfo.MacAddress);
 
@@ -1082,10 +1090,18 @@ namespace mRemoteNG.UI.Controls
                 _cMenTreeTypeClipboard.Enabled = false;
             }
 
+            // Braced deliberately: this was a single-statement if, and appending a second line to
+            // it silently made that line unconditional.
             if (!(connectionInfo.Protocol == ProtocolType.SSH1 | connectionInfo.Protocol == ProtocolType.SSH2))
+            {
                 _cMenTreeToolsTransferFile.Enabled = false;
-                _cMenTreeToolsFileManager.Enabled = false;
-            _cMenTreeToolsFileManager.Enabled = false;
+            }
+
+            // Set positively rather than mirroring the transfer window's gate. The file manager
+            // opens its own SSH.NET connection, so it also serves an OpenSSH connection - but not
+            // SSH1, which SSH.NET's SFTP does not support.
+            _cMenTreeToolsFileManager.Enabled =
+                connectionInfo.Protocol is ProtocolType.SSH2 or ProtocolType.OpenSSH;
 
             _cMenTreeToolsWakeOnLan.Enabled = WakeOnLan.IsValidMacAddress(connectionInfo.MacAddress);
 
