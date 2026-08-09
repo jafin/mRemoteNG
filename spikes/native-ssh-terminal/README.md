@@ -64,10 +64,15 @@ Throughput can be measured unattended. Keyboard fidelity cannot. Run:
 A live shell opens. Work through this list and record what fails — the failures become the
 acceptance criteria for tasks 5.1–5.3:
 
-- [ ] F1–F12 (try `showkey -a`, or `vim` then `:map <F5>`)
-- [ ] Alt combinations (`Alt+B` / `Alt+F` word movement in a bash line)
-- [ ] Ctrl-C interrupts a running `sleep 60`
-- [ ] Ctrl-Z suspends, `fg` resumes
+- [ ] F1–F12 — run `showkey -a` and press each; it prints the bytes as they arrive. (`cat -v`
+      also works but is line-buffered, so nothing shows until you press Enter.)
+- [ ] Alt combinations — in `showkey -a`, `Alt+B` / `Alt+F` / `Alt+D` should give `^[b` `^[f` `^[d`
+- [ ] Ctrl-C — run `sleep 60` **and press Enter first**, so a job is actually running, then Ctrl-C.
+      The prompt should return at once.
+- [ ] Ctrl-Z — again **press Enter** to start `sleep 60`, then Ctrl-Z for `[1]+ Stopped`, then
+      `fg` to resume. Ctrl-Z at an idle prompt correctly does nothing, so testing it there proves
+      nothing. Test these two outside `showkey -a`: in raw mode it captures Ctrl-C/Ctrl-Z as bytes
+      instead of letting them become signals.
 - [ ] Bracketed paste — paste multi-line text into `cat`, confirm it is not executed line by line
 - [ ] Clipboard copy from the terminal (selection, Ctrl+Insert, right-click)
 - [ ] Clipboard paste into the terminal (Ctrl+V, Shift+Insert, middle-click)
