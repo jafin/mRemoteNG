@@ -2,10 +2,10 @@
 
 ## 1. Spikes (do these first — they can invalidate the approach)
 
-- [ ] 1.1 **Throughput.** Prototype `ShellStream` → WebView2 → `xterm.js` and measure `cat` of a large file and a full-screen editor redraw against a real host. Record throughput and perceived latency. If it stutters, decide between batching, a different channel, or stopping. Gates everything below.
-- [ ] 1.2 **Input fidelity.** In the same prototype, check function keys, Alt combinations, Ctrl-C/Ctrl-Z, bracketed paste, clipboard copy/paste, and one IME. Record what does not work; these are the acceptance criteria for section 5.
-- [ ] 1.3 **Asset delivery.** Try `SetVirtualHostNameToFolderMapping` and `NavigateToString`; pick one on packaging and CSP grounds and record why in design.md D3.
-- [ ] 1.4 Confirm the WebView2 runtime detection story: what `CoreWebView2Environment.CreateAsync` does when the runtime is absent, and what the user should be told.
+- [x] 1.1 **Throughput.** Prototype `ShellStream` → WebView2 → `xterm.js` and measure `cat` of a large file and a full-screen editor redraw against a real host. Record throughput and perceived latency. If it stutters, decide between batching, a different channel, or stopping. Gates everything below. — **25.1 MB/s bulk, 2.4 ms per full-screen repaint, no batching needed.** See design.md S1.1. Perceived latency still needs a human: run the spike with `--interactive` (see 1.2).
+- [ ] 1.2 **Input fidelity.** In the same prototype, check function keys, Alt combinations, Ctrl-C/Ctrl-Z, bracketed paste, clipboard copy/paste, and one IME. Record what does not work; these are the acceptance criteria for section 5. — **NEEDS A HUMAN.** Harness ready: `spikes/native-ssh-terminal/`, run `fixture/up.ps1` then `NativeTerminalSpike.exe --interactive`. Checklist in that README.
+- [x] 1.3 **Asset delivery.** Try `SetVirtualHostNameToFolderMapping` and `NavigateToString`; pick one on packaging and CSP grounds and record why in design.md D3. — **`SetVirtualHostNameToFolderMapping`**; the inline route cannot express `script-src 'self'`. See design.md S1.3.
+- [x] 1.4 Confirm the WebView2 runtime detection story: what `CoreWebView2Environment.CreateAsync` does when the runtime is absent, and what the user should be told. — **`WebView2RuntimeNotFoundException`**, see design.md S1.4. Distinguishable by type; the HTTP protocol's blind `catch (Exception)` must not be copied.
 
 ## 2. Vendored front end
 

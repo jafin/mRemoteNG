@@ -1,0 +1,21 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+  Mode A (SetVirtualHostNameToFolderMapping) CSP: a real origin exists, so scripts and styles
+  can be restricted to 'self' with no inline execution permitted at all.
+  default-src 'none' means nothing loads unless named below. No network origin appears anywhere.
+-->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self'; font-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="./xterm.css">
+<link rel="stylesheet" href="./host.css">
+</head>
+<body>
+<div id="term"></div>
+<script src="./xterm.js"></script>
+<script src="./addon-fit.js"></script>
+<script src="./bridge.js"></script>
+</body>
+</html>

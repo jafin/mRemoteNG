@@ -106,6 +106,85 @@ theming and settings work is done on top of it.
 
 Measured against a real session, not a synthetic loop.
 
+## Spike findings
+
+Measured with `spikes/native-ssh-terminal/` against a containerised OpenSSH server
+(`linuxserver/openssh-server`, loopback, port 2222, publickey auth), xterm.js 6.0.0 in WebView2
+1.0.4129.50, terminal 98x31. Raw numbers in that directory's README.
+
+### S1.1 — Throughput (task 1.1): the pipe is not the bottleneck
+
+| Scenario | Bytes | Wall | Rendered | Max render lag | Max hitch |
+|---|---|---|---|---|---|
+| `cat` 5.3 MB ASCII | 5,395,102 | 205 ms | **25.1 MB/s** | 190 ms | 185 ms |
+| `cat` 2.2 MB UTF-8/CJK | 2,260,099 | 136 ms | **15.9 MB/s** | 90 ms | 86 ms |
+| 200 full-screen redraws | 913,561 | 471 ms | **2.4 ms per repaint** | 5 ms | 5 ms |
+
+"Rendered" is measured at xterm's `write()` completion callback, not at the point bytes are handed
+to the page — bytes accepted are not bytes on screen, and only the latter is what a user sees.
+
+**Verdict: proceed, with no batching layer.** 25 MB/s sustained over the web-message channel is an
+order of magnitude more than a real SSH session delivers; the transport will starve the renderer long
+before the renderer becomes the limit. The full-screen redraw case — the one that decides whether an
+editor feels alive — repaints in 2.4 ms with a worst-case 5 ms hitch, comfortably inside a frame.
+
+Two honest caveats:
+
+- This is loopback. Real latency makes the renderer's job *easier*, not harder, so the result holds
+  directionally, but absolute figures are a ceiling rather than a prediction.
+- The 185–190 ms "max hitch" on the bulk `cat` runs is a single event at the start of the burst, not
+  sustained stutter: median render gap is 0.0 ms and p95 is 0.0 ms across 1,160 chunks. It is the
+  first-chunk reflow, and it is the one thing worth re-checking once real theming and font loading
+  are in place.
+
+The decoder held: **zero U+FFFD** across 518 chunk boundaries of multi-byte CJK/Greek/Cyrillic
+output (1,240,099 chars from 2,260,099 bytes). This is the defect D2 predicts, and it is only absent
+because the `Decoder` is retained across reads.
+
+### S1.3 — Asset delivery (task 1.3): virtual host mapping
+
+Both mechanisms were implemented and measured. Performance is a wash — inline was ~15% faster to
+first paint (894 ms vs 909 ms) and marginally faster on bulk throughput, all within run-to-run
+noise. **The decision is therefore made entirely on CSP and packaging, as D3 anticipated.**
+
+| | `SetVirtualHostNameToFolderMapping` | `NavigateToString` |
+|---|---|---|
+| Origin | real (`https://terminal.spike.invalid`) | opaque |
+| Strictest achievable CSP | `default-src 'none'; script-src 'self'; style-src 'self'` | must allow `'unsafe-inline'` for script **and** style |
+| Size ceiling | none | 2 MB document limit; assets are 488 KB today (24%) |
+| Packaging | ships an `assets/` folder beside the executable | single binary, document rebuilt per session |
+
+**Decision: `SetVirtualHostNameToFolderMapping`, with `CoreWebView2HostResourceAccessKind.Deny`.**
+
+An opaque origin makes `'self'` match nothing, so the inline route cannot express "scripts may only
+come from the application" — it can only say "inline script is allowed", which is precisely the
+grant you least want on a surface whose whole threat model is remote output inside a browser engine.
+Verified working: the spike's mode A page loads and runs under `script-src 'self'` with no inline
+script at all. The cost is an `assets/` folder in the installer (task 2.3), which is the cheaper
+half of the trade.
+
+### S1.4 — WebView2 runtime absence (task 1.4, confirmed)
+
+`CoreWebView2Environment.CreateAsync(null, userDataFolder)` throws
+`WebView2RuntimeNotFoundException` (namespace `Microsoft.Web.WebView2.Core`) when no compatible
+runtime is installed. Confirmed present in the pinned SDK, `Microsoft.Web.WebView2` 1.0.4129.50.
+Passing `null` for `browserExecutableFolder` selects the machine-wide runtime first, then per-user;
+the exception is raised only when neither is found.
+
+The failure is therefore **distinguishable by type**, which is what the spec's "not reported as an
+authentication or network error" scenario needs — no message-text matching required.
+
+The existing HTTP protocol does not distinguish it.
+`Connection.Protocol.HTTPBase.InitializeWebView2Async` wraps the call in `catch (Exception ex)` and
+reports everything as `Language.HttpSetPropsFailed`
+(`mRemoteNG/Connection/Protocol/Http/Connection.Protocol.HTTPBase.cs:250`). Copying that pattern into
+the terminal would violate the spec. The terminal must catch `WebView2RuntimeNotFoundException`
+specifically, ahead of the general handler, and fail the connection with a message that names the
+WebView2 runtime and where to get it.
+
+Out of scope here, but worth noting: the same blind catch means a missing runtime today surfaces to
+HTTP users as an unexplained "set properties failed". Fixing that belongs to its own change.
+
 ## Risks
 
 - **Emulator fidelity.** Function keys, Alt combinations, bracketed paste, IME, mouse reporting and
@@ -120,7 +199,8 @@ Measured against a real session, not a synthetic loop.
 
 ## Open Questions
 
-- Serve assets from disk (`SetVirtualHostNameToFolderMapping`) or inline (`NavigateToString`)?
+- ~~Serve assets from disk (`SetVirtualHostNameToFolderMapping`) or inline (`NavigateToString`)?~~
+  **Resolved by S1.3 — virtual host mapping, on CSP grounds.**
 - Store accepted host keys in mRemoteNG's own store, or reuse OpenSSH `known_hosts`?
 - Should the native terminal eventually replace SSH2, and if so, how do existing connections migrate?
 - Can the keyboard-interactive prompt gap be closed here, given a terminal has somewhere to prompt?
