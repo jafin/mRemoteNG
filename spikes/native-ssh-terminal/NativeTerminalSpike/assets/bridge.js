@@ -89,6 +89,51 @@
     // User input -> host -> ShellStream.
     term.onData(function (d) { post({ t: 'i', d: d }); });
 
+    // Clipboard is done on the host, not through navigator.clipboard. The web clipboard API is
+    // gesture- and permission-gated inside WebView2, and mRemoteNG is a WinForms application that
+    // already owns the Windows clipboard — routing through the page would add a permission prompt
+    // to buy nothing. The page only ever reports the selected text or asks for the current one.
+    function copySelection() {
+        if (term.hasSelection()) post({ t: 'copy', d: term.getSelection() });
+    }
+
+    // Copy on select, the way PuTTY does it — that is the behaviour these users have today.
+    term.onSelectionChange(copySelection);
+
+    term.attachCustomKeyEventHandler(function (e) {
+        if (e.type !== 'keydown') return true;
+
+        var isC = e.key === 'c' || e.key === 'C';
+        var isV = e.key === 'v' || e.key === 'V';
+
+        // Ctrl+Insert / Ctrl+Shift+C copy. Plain Ctrl+C is deliberately left alone: it must keep
+        // sending SIGINT, which is why PuTTY put copy on Ctrl+Insert in the first place.
+        if ((e.ctrlKey && e.key === 'Insert') || (e.ctrlKey && e.shiftKey && isC)) {
+            copySelection();
+            return false;
+        }
+
+        // Shift+Insert and Ctrl+Shift+V are the terminal conventions. Plain Ctrl+V is included
+        // because Windows users reach for it first and it does NOT work on its own here — measured.
+        // The cost is real: Ctrl+V is readline's quoted-insert (^V), so intercepting it removes the
+        // only way to type a literal control character. PuTTY declines that trade; a Windows-native
+        // app probably should not. Worth making configurable in 5.2 rather than deciding by default.
+        if ((e.shiftKey && e.key === 'Insert') || (e.ctrlKey && e.shiftKey && isV) ||
+            (e.ctrlKey && !e.shiftKey && !e.altKey && isV)) {
+            post({ t: 'wantpaste' });
+            return false;
+        }
+
+        return true;
+    });
+
+    term.element.addEventListener('mousedown', function (e) {
+        if (e.button === 1) {          // middle click
+            e.preventDefault();
+            post({ t: 'wantpaste' });
+        }
+    });
+
     // Report size changes so the host can drive ChangeWindowSize.
     term.onResize(function (e) { post({ t: 'r', cols: e.cols, rows: e.rows }); });
 

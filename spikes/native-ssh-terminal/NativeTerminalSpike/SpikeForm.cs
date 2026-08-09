@@ -1,4 +1,5 @@
 ﻿using System.Diagnostics;
+using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
@@ -200,6 +201,14 @@ public sealed class SpikeForm : Form
                 _session?.Write(node["d"]?.GetValue<string>() ?? string.Empty);
                 break;
 
+            case "copy":
+                CopyToClipboard(node["d"]?.GetValue<string>());
+                break;
+
+            case "wantpaste":
+                PasteFromClipboard();
+                break;
+
             case "r":
                 _session?.Resize(
                     (uint)(node["cols"]?.GetValue<int>() ?? 80),
@@ -360,6 +369,56 @@ public sealed class SpikeForm : Form
 
         WriteResults(results);
         Finish(success: results.TrueForAll(r => !r.TimedOut));
+    }
+
+    /// <summary>
+    /// The clipboard belongs to the host. Both directions run on the UI thread, which WinForms
+    /// already guarantees is STA — the clipboard requires it.
+    /// </summary>
+    private void CopyToClipboard(string? text)
+    {
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        try
+        {
+            Clipboard.SetText(text);
+            Log($"copied {text.Length} chars to the clipboard");
+        }
+        catch (ExternalException ex)
+        {
+            // Another process can hold the clipboard open; Windows offers no way to wait politely.
+            Log($"clipboard copy failed: {ex.Message}");
+        }
+    }
+
+    private void PasteFromClipboard()
+    {
+        string text;
+        try
+        {
+            if (!Clipboard.ContainsText())
+            {
+                Log("paste requested but the clipboard holds no text");
+                return;
+            }
+
+            text = Clipboard.GetText();
+        }
+        catch (ExternalException ex)
+        {
+            Log($"clipboard read failed: {ex.Message}");
+            return;
+        }
+
+        if (string.IsNullOrEmpty(text))
+            return;
+
+        // Back through the page so xterm applies bracketed-paste wrapping, rather than writing
+        // straight to the shell and losing it.
+        JsonObject paste = new() { ["t"] = "paste", ["d"] = text };
+        _web.CoreWebView2.PostWebMessageAsJson(paste.ToJsonString());
+        Log($"pasted {text.Length} chars into the terminal");
     }
 
     /// <summary>

@@ -79,11 +79,31 @@ acceptance criteria for tasks 5.1–5.3:
       there is correct and proves nothing. To check it by hand, paste a multi-line block at the
       **bash prompt** and confirm the lines sit in the input buffer instead of each executing as
       its newline arrives.
-- [ ] Clipboard copy from the terminal (selection, Ctrl+Insert, right-click)
-- [ ] Clipboard paste into the terminal (Ctrl+V, Shift+Insert, middle-click)
+- [ ] Clipboard copy — select with the mouse (copies on select, PuTTY-style), or Ctrl+Insert /
+      Ctrl+Shift+C. Paste into Notepad to confirm it left the app.
+- [ ] Clipboard paste — Shift+Insert, Ctrl+Shift+V, Ctrl+V, middle-click. Note which work.
 - [ ] One IME (any non-Latin input method); type into `cat` and confirm composition works
 - [ ] Resize the window during `vim` or `top` and confirm the remote redraws at the new size
 - [ ] Remote output containing `<img src=x onerror=alert(1)>` renders as literal text
+
+## Clipboard: a finding, not just an implementation
+
+Nothing about the clipboard is free. xterm does not copy on selection, and inside WebView2 only
+**Shift+Insert** pastes without help — Ctrl+V and middle-click do nothing at all (measured). So the
+binding layer owns all of it, which is exactly the risk design.md predicted.
+
+It is done **on the host**, not through `navigator.clipboard`. The web clipboard API is gesture- and
+permission-gated inside WebView2, and mRemoteNG is a WinForms app that already owns the Windows
+clipboard; routing through the page would add a permission prompt and buy nothing. The page only
+reports the selected text, or asks for the current clipboard contents.
+
+Paste is sent back **through the page** rather than written straight to the shell, so xterm applies
+bracketed-paste wrapping. Writing it directly to `ShellStream` would silently lose that protection.
+
+One decision for task 5.2 rather than for a spike: **Ctrl+V is readline's quoted-insert (`^V`)**.
+Binding it to paste removes the only way to type a literal control character. PuTTY declines that
+trade and uses Shift+Insert; a Windows-native app probably should not. The spike binds it so the
+behaviour can be seen, and the trade recorded — it likely wants to be configurable.
 
 ## Third-party assets
 
