@@ -1,4 +1,4 @@
-# Tasks
+﻿# Tasks
 
 ## 1. Spikes (do these first — they can invalidate the approach)
 
@@ -15,12 +15,12 @@
 
 ## 3. Transport
 
-- [ ] 3.1 Add `mRemoteNG/Connection/Protocol/SSH/Native/` with a session type wrapping `SshClient` + `CreateShellStream`.
-- [ ] 3.2 Authenticate via `SshCredentialResolver` + `SshNetAuthAdapter`; replay resolution diagnostics on the connection's message channel.
-- [ ] 3.3 Read loop with a **stateful** UTF-8 decoder retained across reads, so a multi-byte sequence split across two buffers is not corrupted.
-- [ ] 3.4 Write path from the page to `ShellStream`.
-- [ ] 3.5 Report remote shell exit and transport failure as a disconnect.
-- [ ] 3.6 Tests: decoder handles a split multi-byte sequence; exit reported as disconnect; resize while disconnected is a no-op; credential diagnostics replayed.
+- [x] 3.1 Add `mRemoteNG/Connection/Protocol/SSH/Native/` with a session type wrapping `SshClient` + `CreateShellStream`. — `NativeSshTerminalSession` behind `INativeSshTerminalSession`.
+- [x] 3.2 Authenticate via `SshCredentialResolver` + `SshNetAuthAdapter`; replay resolution diagnostics on the connection's message channel. — `ForConnection` mirrors `SftpSession`; the session exposes `Diagnostics` (resolution + adapter-unsupported) for the protocol to replay in 4.3, since `Event_ErrorOccured` is protected.
+- [x] 3.3 Read loop with a **stateful** UTF-8 decoder retained across reads, so a multi-byte sequence split across two buffers is not corrupted. — `ShellStreamPump`, isolated from SSH.NET behind `Stream` so it is testable without a server.
+- [x] 3.4 Write path from the page to `ShellStream`. — transport half (`Send`); the page wiring is 4.3.
+- [x] 3.5 Report remote shell exit and transport failure as a disconnect. — both routed to one `Disconnected`, raised once.
+- [x] 3.6 Tests: decoder handles a split multi-byte sequence; exit reported as disconnect; resize while disconnected is a no-op; credential diagnostics replayed. — 16 tests, all green. Also verified end to end against the container fixture: PTY sized at 100x40, `ChangeWindowSize` to 132x50 honoured by the remote, CJK/Greek intact, zero U+FFFD, remote `exit` reported as a disconnect.
 
 ## 4. Protocol integration
 
