@@ -53,7 +53,7 @@ Delivery comparison (same run, `--delivery inline`): 29.2 MB/s / 19.4 MB/s / 380
 **Read the caveats in design.md S1.1 before quoting these numbers.** Loopback is a ceiling, not a
 prediction.
 
-## Task 1.2 — still needs a human
+## Task 1.2 — complete (2026-08-09): all 11 checks pass
 
 Throughput can be measured unattended. Keyboard fidelity cannot. Run:
 
@@ -61,8 +61,10 @@ Throughput can be measured unattended. Keyboard fidelity cannot. Run:
 ./NativeTerminalSpike.exe --interactive --key ../../../../fixture/.keys/spike_key
 ```
 
-A live shell opens. Work through this list and record what fails — the failures become the
-acceptance criteria for tasks 5.1–5.3:
+A live shell opens. The checklist below was worked through on 2026-08-09 and every item passes.
+It is kept because it is the regression list for sections 4 and 5 — the two defects it found
+(no clipboard at all, and double paste) live in the binding layer, which is the code those
+sections write. See design.md S1.2.
 
 - [ ] F1–F12 — run `showkey -a` and press each; it prints the bytes as they arrive. (`cat -v`
       also works but is line-buffered, so nothing shows until you press Enter.)

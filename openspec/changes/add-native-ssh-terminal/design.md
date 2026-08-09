@@ -141,6 +141,52 @@ The decoder held: **zero U+FFFD** across 518 chunk boundaries of multi-byte CJK/
 output (1,240,099 chars from 2,260,099 bytes). This is the defect D2 predicts, and it is only absent
 because the `Decoder` is retained across reads.
 
+### S1.2 — Input fidelity (task 1.2): the emulator is fine, the binding layer is the work
+
+All eleven checks pass. Function keys, Alt combinations, Ctrl-C, Ctrl-Z with `fg`, bracketed paste,
+clipboard both directions, IME composition, resize during a full-screen application, and remote
+markup rendering as literal text.
+
+**Nothing here invalidates the approach.** No input case was found that `xterm.js` cannot express,
+which is the question section 1 existed to answer.
+
+That result is less reassuring than it looks, because of *how* the passes were reached:
+
+- **Two apparent failures were bad test procedure, not defects.** Ctrl-Z was tested at an idle
+  prompt, where doing nothing is correct; bracketed paste was tested inside `cat -v`, where bash has
+  already cleared mode 2004 so not wrapping is correct. Both now have unambiguous procedures, and
+  bracketed paste is asserted automatically by the spike rather than left to a human getting it
+  right.
+- **Two were real defects in the binding layer**, and both are work items for section 5 rather than
+  facts about xterm:
+
+  1. **The clipboard is entirely the host's job.** xterm does not copy on selection, and inside
+     WebView2 only Shift+Insert pastes unaided — Ctrl+V and middle-click do nothing at all. Copy on
+     select, Ctrl+Insert, Ctrl+Shift+C, Ctrl+Shift+V, Ctrl+V and middle-click each had to be built.
+  2. **Binding a paste key double-pastes unless the browser is suppressed.** Returning `false` from
+     `attachCustomKeyEventHandler` stops xterm handling the key but not the browser's default paste
+     and not key auto-repeat; either lands a second paste. It presented as an intermittent Ctrl+V
+     quirk and was neither. A duplicated paste of a command line is a command run twice, so this is
+     a correctness issue, not a polish one.
+
+Both confirm the risk this document already named: *"xterm.js handles these well, but the binding
+layer is ours and is where the defects will be."* It was right, and section 5 should be estimated on
+that basis — the emulator is not the work, the wiring is.
+
+**Carry into section 5, established here rather than to be rediscovered:**
+
+- Clipboard belongs on the host, not `navigator.clipboard` — the web API is gesture- and
+  permission-gated in WebView2, and a WinForms app already owns the Windows clipboard.
+- Paste must be routed back *through the page* so xterm applies bracketed-paste wrapping. Writing
+  it straight to `ShellStream` silently drops that protection.
+- Paste key handlers must `preventDefault()` and ignore `event.repeat`.
+- Ctrl+C must stay SIGINT; copy goes on Ctrl+Insert, as PuTTY does.
+
+**One decision deliberately left open:** Ctrl+V is readline's quoted-insert (`^V`), so binding it to
+paste removes the only way to type a literal control character. PuTTY declines that trade; a
+Windows-native application probably should not. The spike binds it so the behaviour is visible.
+This likely wants to be a setting rather than a default chosen by whoever writes 5.2.
+
 ### S1.3 — Asset delivery (task 1.3): virtual host mapping
 
 Both mechanisms were implemented and measured. Performance is a wash — inline was ~15% faster to

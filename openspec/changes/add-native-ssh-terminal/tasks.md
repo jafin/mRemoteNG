@@ -3,7 +3,7 @@
 ## 1. Spikes (do these first — they can invalidate the approach)
 
 - [x] 1.1 **Throughput.** Prototype `ShellStream` → WebView2 → `xterm.js` and measure `cat` of a large file and a full-screen editor redraw against a real host. Record throughput and perceived latency. If it stutters, decide between batching, a different channel, or stopping. Gates everything below. — **25.1 MB/s bulk, 2.4 ms per full-screen repaint, no batching needed.** See design.md S1.1. Perceived latency still needs a human: run the spike with `--interactive` (see 1.2).
-- [ ] 1.2 **Input fidelity.** In the same prototype, check function keys, Alt combinations, Ctrl-C/Ctrl-Z, bracketed paste, clipboard copy/paste, and one IME. Record what does not work; these are the acceptance criteria for section 5. — **NEEDS A HUMAN.** Harness ready: `spikes/native-ssh-terminal/`, run `fixture/up.ps1` then `NativeTerminalSpike.exe --interactive`. Checklist in that README.
+- [x] 1.2 **Input fidelity.** In the same prototype, check function keys, Alt combinations, Ctrl-C/Ctrl-Z, bracketed paste, clipboard copy/paste, and one IME. Record what does not work; these are the acceptance criteria for section 5. — **all 11 checks pass.** No input case xterm.js cannot express. Two defects found, both in the binding layer not the emulator: the clipboard is entirely unimplemented by default, and paste keys double-paste unless the browser default and key auto-repeat are suppressed. See design.md S1.2 for what section 5 must carry forward.
 - [x] 1.3 **Asset delivery.** Try `SetVirtualHostNameToFolderMapping` and `NavigateToString`; pick one on packaging and CSP grounds and record why in design.md D3. — **`SetVirtualHostNameToFolderMapping`**; the inline route cannot express `script-src 'self'`. See design.md S1.3.
 - [x] 1.4 Confirm the WebView2 runtime detection story: what `CoreWebView2Environment.CreateAsync` does when the runtime is absent, and what the user should be told. — **`WebView2RuntimeNotFoundException`**, see design.md S1.4. Distinguishable by type; the HTTP protocol's blind `catch (Exception)` must not be copied.
 
@@ -33,10 +33,10 @@
 
 ## 5. Terminal behaviour
 
-- [ ] 5.1 Wire the input handling identified in 1.2.
-- [ ] 5.2 Clipboard copy and paste, including bracketed paste.
+- [ ] 5.1 Wire the input handling identified in 1.2. — keys themselves are clean; the work is `preventDefault()` + ignore `event.repeat` on any chord the host claims, and keeping Ctrl+C as SIGINT.
+- [ ] 5.2 Clipboard copy and paste, including bracketed paste. — host-side clipboard (not `navigator.clipboard`); copy-on-select + Ctrl+Insert/Ctrl+Shift+C; paste routed **back through the page** so bracketed-paste wrapping still applies. Open decision: Ctrl+V vs readline quoted-insert — see design.md S1.2.
 - [ ] 5.3 Focus behaviour on tab activation, matching the other protocols.
-- [ ] 5.4 Confirm remote output containing HTML or script markup renders as literal text.
+- [x] 5.4 Confirm remote output containing HTML or script markup renders as literal text. — verified in the spike (1.2 item 11); re-confirm against the shipping host document in 2.2.
 
 ## 6. Host keys
 
