@@ -383,14 +383,21 @@ public sealed class SpikeForm : Form
         try
         {
             Clipboard.SetText(text);
-            Log($"copied {text.Length} chars to the clipboard");
+            Log($"copied {text.Length} chars to the clipboard: \"{Preview(text)}\"");
         }
         catch (ExternalException ex)
         {
             // Another process can hold the clipboard open; Windows offers no way to wait politely.
             Log($"clipboard copy failed: {ex.Message}");
         }
+
+        // Flushed immediately: in interactive mode nothing else writes the log, and the whole
+        // point is to distinguish "the handler never fired" from "the clipboard call failed".
+        FlushLog();
     }
+
+    private static string Preview(string text) =>
+        text.Length <= 40 ? text.ReplaceLineEndings("\\n") : text[..40].ReplaceLineEndings("\\n") + "...";
 
     private void PasteFromClipboard()
     {
@@ -400,6 +407,7 @@ public sealed class SpikeForm : Form
             if (!Clipboard.ContainsText())
             {
                 Log("paste requested but the clipboard holds no text");
+                FlushLog();
                 return;
             }
 
@@ -408,6 +416,7 @@ public sealed class SpikeForm : Form
         catch (ExternalException ex)
         {
             Log($"clipboard read failed: {ex.Message}");
+            FlushLog();
             return;
         }
 
@@ -418,7 +427,8 @@ public sealed class SpikeForm : Form
         // straight to the shell and losing it.
         JsonObject paste = new() { ["t"] = "paste", ["d"] = text };
         _web.CoreWebView2.PostWebMessageAsJson(paste.ToJsonString());
-        Log($"pasted {text.Length} chars into the terminal");
+        Log($"pasted {text.Length} chars into the terminal: \"{Preview(text)}\"");
+        FlushLog();
     }
 
     /// <summary>
