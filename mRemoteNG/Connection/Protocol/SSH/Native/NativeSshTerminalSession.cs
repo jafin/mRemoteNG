@@ -109,8 +109,12 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
     public IReadOnlyList<string> OfferedMethods =>
         [.. System.Linq.Enumerable.Select(_authentication.Methods, m => m.Name)];
 
-    /// <summary>The key file offered, if authentication used one. Not a secret; a path.</summary>
-    public string? OfferedKeyPath => _credential.PrivateKeyPath;
+    /// <summary>
+    /// The key file that actually became an authentication source, or null if none did. Not a
+    /// secret; a path. Deliberately not the credential's resolved path — a key that failed to load
+    /// was never sent, and naming it would point the reader at a file the server never saw.
+    /// </summary>
+    public string? OfferedKeyPath => _authentication.KeyFileOffered;
 
     /// <summary>The endpoint actually dialled. The port is not shown anywhere else.</summary>
     public string Endpoint => string.Create(System.Globalization.CultureInfo.InvariantCulture, $"{_host}:{_port}");

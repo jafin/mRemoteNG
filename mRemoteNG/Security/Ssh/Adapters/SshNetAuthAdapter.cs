@@ -27,8 +27,10 @@ public sealed class SshNetAuthentication : IDisposable
         AuthenticationMethod[] methods,
         IReadOnlyList<SshCredentialDiagnostic> unsupported,
         IReadOnlyList<IDisposable> owned,
-        List<string> unansweredPrompts)
+        List<string> unansweredPrompts,
+        string? keyFileOffered = null)
     {
+        KeyFileOffered = keyFileOffered;
         Username = username;
         Methods = methods;
         Unsupported = unsupported;
@@ -38,6 +40,16 @@ public sealed class SshNetAuthentication : IDisposable
 
     /// <summary>The username every method authenticates as.</summary>
     public string Username { get; }
+
+    /// <summary>
+    /// The key file that actually became an authentication source, or null if none did.
+    /// </summary>
+    /// <remarks>
+    /// Not the same as the credential's key path. A path that was resolved but could not be loaded
+    /// contributed nothing, and reporting it as offered describes a key the server never saw —
+    /// which is the class of half-true message that makes a refusal take four rounds to diagnose.
+    /// </remarks>
+    public string? KeyFileOffered { get; }
 
     /// <summary>
     /// The authentication methods, in the order SSH.NET should try them: public key first,
@@ -129,7 +141,7 @@ public static class SshNetAuthAdapter
         }
 
         CollectAgentIdentities(credential, keySources, unsupported);
-        CollectKeyFile(credential, keySources, owned, unsupported);
+        string? keyFileOffered = CollectKeyFile(credential, keySources, owned, unsupported);
         CollectKeyMaterial(credential, keySources, owned, unsupported);
 
         List<AuthenticationMethod> methods = [];
@@ -152,7 +164,8 @@ public static class SshNetAuthAdapter
             AnswerPrompts(e, credential, unansweredPrompts);
         methods.Add(keyboardInteractive);
 
-        return new SshNetAuthentication(username, [.. methods], unsupported, owned, unansweredPrompts);
+        return new SshNetAuthentication(
+            username, [.. methods], unsupported, owned, unansweredPrompts, keyFileOffered);
     }
 
     /// <summary>
@@ -209,14 +222,14 @@ public static class SshNetAuthAdapter
         }
     }
 
-    private static void CollectKeyFile(
+    private static string? CollectKeyFile(
         ResolvedSshCredential credential,
         List<IPrivateKeySource> keySources,
         List<IDisposable> owned,
         List<SshCredentialDiagnostic> unsupported)
     {
         if (credential.PrivateKeyPath is not { } path)
-            return;
+            return null;
 
         // A key the user chose failing is an error they must act on. A key discovery went looking
         // for failing is usually not actionable and not theirs - a passphrase on ~/.ssh/id_rsa is
@@ -235,7 +248,7 @@ public static class SshNetAuthAdapter
                 discovered
                     ? $"A private key found by default discovery has since gone: {path}"
                     : $"The configured private key file was not found: {path}"));
-            return;
+            return null;
         }
 
         try
@@ -243,6 +256,7 @@ public static class SshNetAuthAdapter
             PrivateKeyFile keyFile = LoadKeyFile(path, credential);
             keySources.Add(keyFile);
             owned.Add(keyFile);
+            return path;
         }
         catch (Exception ex)
         {
@@ -254,6 +268,8 @@ public static class SshNetAuthAdapter
                       "Set it on the connection if you want it offered."
                     : $"The private key file {path} could not be loaded: {ex.Message}"));
         }
+
+        return null;
     }
 
     private static PrivateKeyFile LoadKeyFile(string path, ResolvedSshCredential credential)

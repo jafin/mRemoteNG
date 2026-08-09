@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using mRemoteNG.Connection;
@@ -145,6 +145,44 @@ public class SshCredentialDiagnosticSeverityTests
         using ResolvedSshCredential credential = new("alice", privateKeyPath: _encryptedKey);
 
         Assert.That(credential.KeyPathOrigin, Is.EqualTo(SshKeyPathOrigin.Configured));
+    }
+
+    // ---- what was actually offered --------------------------------------------
+
+    [Test]
+    public void AKeyThatFailedToLoadIsNotReportedAsOffered()
+    {
+        // It contributed nothing, so the server never saw it. Naming it points the reader at a
+        // file that had no part in the refusal — the class of half-true message that made an
+        // earlier failure take four rounds to diagnose.
+        using ResolvedSshCredential credential = new("alice",
+            privateKeyPath: _encryptedKey, keyPathOrigin: SshKeyPathOrigin.Discovered);
+
+        using SshNetAuthentication authentication = SshNetAuthAdapter.Translate(credential);
+
+        Assert.That(authentication.KeyFileOffered, Is.Null);
+    }
+
+    [Test]
+    public void AMissingKeyIsNotReportedAsOffered()
+    {
+        using ResolvedSshCredential credential = new("alice",
+            privateKeyPath: Path.Combine(Path.GetTempPath(), $"absent-{Guid.NewGuid():N}"),
+            keyPathOrigin: SshKeyPathOrigin.Configured);
+
+        using SshNetAuthentication authentication = SshNetAuthAdapter.Translate(credential);
+
+        Assert.That(authentication.KeyFileOffered, Is.Null);
+    }
+
+    [Test]
+    public void WithNoKeyConfiguredNothingIsReportedAsOffered()
+    {
+        using ResolvedSshCredential credential = new("alice", secret: "hunter2");
+
+        using SshNetAuthentication authentication = SshNetAuthAdapter.Translate(credential);
+
+        Assert.That(authentication.KeyFileOffered, Is.Null);
     }
 
     // ---- missing username -----------------------------------------------------
