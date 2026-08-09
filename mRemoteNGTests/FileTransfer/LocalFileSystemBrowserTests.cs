@@ -45,6 +45,51 @@ namespace mRemoteNGTests.FileTransfer
         }
 
         [Test]
+        public async Task EnsuringANewDirectoryReportsThatItCreatedIt()
+        {
+            string target = Path.Combine(_root, "fresh");
+
+            bool created = await _browser.EnsureDirectoryAsync(target);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(created, Is.True);
+                Assert.That(Directory.Exists(target), Is.True);
+            });
+        }
+
+        /// <summary>
+        /// Called once per directory of a transferred tree, and a tree transferred twice hits every one
+        /// of them a second time. Failing there would abandon the branch.
+        /// </summary>
+        [Test]
+        public async Task EnsuringAnExistingDirectoryIsHarmlessAndSaysSo()
+        {
+            string target = Path.Combine(_root, "already");
+            Directory.CreateDirectory(target);
+
+            bool created = await _browser.EnsureDirectoryAsync(target);
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(created, Is.False);
+                Assert.That(Directory.Exists(target), Is.True);
+            });
+        }
+
+        [Test]
+        public async Task AnOrdinaryDirectoryIsNotReportedAsALink()
+        {
+            string target = Path.Combine(_root, "plain");
+            Directory.CreateDirectory(target);
+
+            var entries = await _browser.ListAsync(_root);
+
+            Assert.That(entries.Single(e => string.Equals(e.Name, "plain", StringComparison.Ordinal)).IsSymbolicLink,
+                        Is.False);
+        }
+
+        [Test]
         public async Task FilesAndDirectoriesAreListed()
         {
             File.WriteAllText(Path.Combine(_root, "notes.txt"), "hello");

@@ -3664,6 +3664,69 @@ namespace mRemoteNG.Resources.Language {
                 return ResourceManager.GetString("ConfirmDeleteEntries", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Files already exist.
+        /// </summary>
+        internal static string TransferConflictTitle {
+            get {
+                return ResourceManager.GetString("TransferConflictTitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to {0} already exists at the destination..
+        /// </summary>
+        internal static string TransferConflictInstruction {
+            get {
+                return ResourceManager.GetString("TransferConflictInstruction", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Transferring: {0}, modified {1}.
+        /// </summary>
+        internal static string TransferConflictContent {
+            get {
+                return ResourceManager.GetString("TransferConflictContent", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Overwrite all.
+        /// </summary>
+        internal static string TransferOverwriteAll {
+            get {
+                return ResourceManager.GetString("TransferOverwriteAll", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Skip all.
+        /// </summary>
+        internal static string TransferSkipAll {
+            get {
+                return ResourceManager.GetString("TransferSkipAll", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Overwrite if newer.
+        /// </summary>
+        internal static string TransferOverwriteIfNewer {
+            get {
+                return ResourceManager.GetString("TransferOverwriteIfNewer", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Skipped {0} file(s) that already existed at the destination..
+        /// </summary>
+        internal static string TransferSkippedExisting {
+            get {
+                return ResourceManager.GetString("TransferSkippedExisting", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Looks up a localized string similar to Enter a new name:.

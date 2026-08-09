@@ -1,5 +1,6 @@
 ﻿using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Runtime.Versioning;
 using System.Threading;
@@ -44,6 +45,12 @@ namespace mRemoteNG.UI.Window
 
         private readonly RemoteFileEditor _editor;
 
+        /// <summary>
+        /// Cancels directory expansions still in progress. Replaced after each cancellation, because a
+        /// cancelled source cannot be reused and the next transfer must still be stoppable.
+        /// </summary>
+        private CancellationTokenSource _expansion = new();
+
         private bool _connected;
 
         public FileManagerTab(ConnectionInfo connectionInfo, ISftpSession session)
@@ -59,12 +66,15 @@ namespace mRemoteNG.UI.Window
 
             _queue = new TransferQueue(RunTransferAsync);
 
+            LocalFileSystemBrowser localBrowser = new();
+            RemoteFileSystemBrowser remoteBrowser = new(session);
+
             _local = new FilePaneControl(
-                new FilePaneController(new LocalFileSystemBrowser(), caseSensitivePaths: false),
+                new FilePaneController(localBrowser, localBrowser.PathsAreCaseSensitive),
                 Language.LocalSite, Language.Upload, new FilePanePrompts(this));
 
             _remote = new FilePaneControl(
-                new FilePaneController(new RemoteFileSystemBrowser(session), caseSensitivePaths: true),
+                new FilePaneController(remoteBrowser, remoteBrowser.PathsAreCaseSensitive),
                 Language.RemoteSite, Language.Download, new FilePanePrompts(this));
 
             _queueView = new TransferQueueControl(_queue);
@@ -82,6 +92,7 @@ namespace mRemoteNG.UI.Window
             _remote.ExternalFilesDropped += OnFilesDroppedOnRemote;
             _local.ExternalFilesDropped += OnFilesDroppedOnLocal;
             _remote.FileActivated += OnRemoteFileActivated;
+            _queue.AllCancelled += OnQueueCancelled;
             Activated += OnTabActivated;
             FormClosing += OnTabClosing;
             _session.Dropped += OnSessionDropped;
@@ -185,29 +196,107 @@ namespace mRemoteNG.UI.Window
                 ? $"{_connectionInfo.Name} (files)"
                 : $"{_connectionInfo.Name} (files — disconnected)";
 
+        /// <summary>
+        /// Expands the selection and queues everything in it.
+        /// </summary>
+        /// <remarks>
+        /// Files and directories take the same path deliberately. A directory needs walking and a file
+        /// does not, but both need the destination checked for something already there, and having one
+        /// route through means a folder and a multi-file selection cannot disagree about what happens
+        /// when they collide.
+        /// </remarks>
         private void QueueTransfer(IReadOnlyList<FileSystemEntry> entries, TransferDirection direction)
         {
             ArgumentNullException.ThrowIfNull(entries);
 
-            FilePaneControl destination = direction == TransferDirection.Upload ? _remote : _local;
-            List<TransferItem> items = [];
+            if (entries.Count == 0)
+                return;
 
-            foreach (FileSystemEntry entry in entries)
+            FilePaneControl sourcePane = direction == TransferDirection.Upload ? _local : _remote;
+            FilePaneControl destinationPane = direction == TransferDirection.Upload ? _remote : _local;
+
+            // One expander for the whole gesture: the overwrite question is asked once even when the
+            // user selected several folders at once, and a later transfer gets a fresh one and asks again.
+            DirectoryTransferExpander expander = new(sourcePane.Controller.Browser,
+                                                     destinationPane.Controller.Browser,
+                                                     new TransferConflictPrompt(this));
+
+            expander.Skipped += OnExpansionSkipped;
+
+            string destinationPath = destinationPane.Controller.CurrentPath;
+
+            _ = ExpandAndQueueAsync(expander, [.. entries], direction, destinationPath, _expansion.Token);
+        }
+
+        /// <summary>
+        /// Walks the selection in the background, queueing each file as it is found.
+        /// </summary>
+        /// <remarks>
+        /// Enqueued as they arrive rather than collected first. Walking a large tree over a slow link is
+        /// minutes of round trips, and a queue that stayed empty throughout would look broken while the
+        /// transfer was in fact under way — the first file starts moving while the rest is still being
+        /// discovered.
+        /// </remarks>
+        private async Task ExpandAndQueueAsync(DirectoryTransferExpander expander,
+                                               IReadOnlyList<FileSystemEntry> entries,
+                                               TransferDirection direction,
+                                               string destinationPath,
+                                               CancellationToken cancellationToken)
+        {
+            try
             {
-                // Directories would need recursive enumeration, which is out of scope; queueing them
-                // silently would produce a queue full of items that cannot succeed.
-                if (entry.IsDirectory)
+                foreach (FileSystemEntry entry in entries)
                 {
-                    Report($"Skipped {entry.Name}: transferring a whole directory is not supported yet.",
-                           MessageClass.InformationMsg);
-                    continue;
+                    await foreach (TransferPlanItem item in
+                                   expander.ExpandAsync(entry, destinationPath, cancellationToken)
+                                           .ConfigureAwait(false))
+                    {
+                        _queue.Enqueue(new TransferItem(direction, item.SourcePath, item.DestinationPath, item.Length));
+                    }
+
+                    if (expander.WasCancelledByUser)
+                        break;
                 }
 
-                string target = destination.Controller.Combine(destination.Controller.CurrentPath, entry.Name);
-                items.Add(new TransferItem(direction, entry.FullPath, target, entry.Length));
+                if (expander.SkippedExistingCount > 0)
+                    Report(string.Format(CultureInfo.CurrentCulture,
+                                         Language.TransferSkippedExisting,
+                                         expander.SkippedExistingCount),
+                           MessageClass.InformationMsg);
             }
+            catch (OperationCanceledException)
+            {
+                // The queue was cancelled or the tab closed. Both are the user's doing and neither is
+                // worth a message.
+            }
+            catch (Exception ex)
+            {
+                // A failure of the walk itself, as opposed to one branch of it, which the expander
+                // reports and recovers from on its own.
+                Report($"Could not expand the selection: {ex.Message}", MessageClass.WarningMsg);
+            }
+            finally
+            {
+                expander.Skipped -= OnExpansionSkipped;
+            }
+        }
 
-            _queue.EnqueueRange(items);
+        private void OnExpansionSkipped(object? sender, string message) =>
+            Report(message, MessageClass.InformationMsg);
+
+        /// <summary>
+        /// Stops any walk still running when the whole queue is cancelled.
+        /// </summary>
+        /// <remarks>
+        /// Without this, "Cancel all" would empty the queue and then watch an expansion still in
+        /// progress fill it straight back up.
+        /// </remarks>
+        private void OnQueueCancelled(object? sender, EventArgs e)
+        {
+            CancellationTokenSource previous = Interlocked.Exchange(ref _expansion, new CancellationTokenSource());
+
+            previous.Cancel();
+            previous.Dispose();
         }
 
         /// <summary>
@@ -273,10 +362,10 @@ namespace mRemoteNG.UI.Window
             {
                 if (Directory.Exists(path))
                 {
-                    // Marked as a directory so QueueTransfer reports it as unsupported, rather than
-                    // queueing an item that could only fail.
-                    entries.Add(new FileSystemEntry(Path.GetFileName(path), path, true, 0,
-                                                    DateTime.Now, string.Empty, false));
+                    DirectoryInfo directory = new(path);
+                    entries.Add(new FileSystemEntry(directory.Name, directory.FullName, true, 0,
+                                                    directory.LastWriteTime, string.Empty, false,
+                                                    directory.Attributes.HasFlag(FileAttributes.ReparsePoint)));
                     continue;
                 }
 
@@ -285,7 +374,8 @@ namespace mRemoteNG.UI.Window
 
                 FileInfo info = new(path);
                 entries.Add(new FileSystemEntry(info.Name, info.FullName, false, info.Length,
-                                                info.LastWriteTime, string.Empty, false));
+                                                info.LastWriteTime, string.Empty, false,
+                                                info.Attributes.HasFlag(FileAttributes.ReparsePoint)));
             }
 
             return entries;
@@ -374,6 +464,13 @@ namespace mRemoteNG.UI.Window
             {
                 ThemeManager.getInstance().ThemeChanged -= ApplyTheme;
                 _session.Dropped -= OnSessionDropped;
+                _queue.AllCancelled -= OnQueueCancelled;
+
+                // Before the queue and session go: a walk still running would otherwise keep calling
+                // into a disposed session.
+                _expansion.Cancel();
+                _expansion.Dispose();
+
                 _editor.Dispose();
                 _queue.Dispose();
                 _session.Dispose();

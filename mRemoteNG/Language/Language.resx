@@ -366,6 +366,30 @@
   <data name="EnterFileName" xml:space="preserve">
     <value>Enter a name for the new file:</value>
   </data>
+  <data name="TransferConflictTitle" xml:space="preserve">
+    <value>Files already exist</value>
+  </data>
+  <data name="TransferConflictInstruction" xml:space="preserve">
+    <value>{0} already exists at the destination.</value>
+  </data>
+  <data name="TransferConflictContent" xml:space="preserve">
+    <value>Transferring: {0}, modified {1}
+Already there: {2}, modified {3}
+
+Your choice applies to every file in this transfer.</value>
+  </data>
+  <data name="TransferOverwriteAll" xml:space="preserve">
+    <value>Overwrite all</value>
+  </data>
+  <data name="TransferSkipAll" xml:space="preserve">
+    <value>Skip all</value>
+  </data>
+  <data name="TransferOverwriteIfNewer" xml:space="preserve">
+    <value>Overwrite if newer</value>
+  </data>
+  <data name="TransferSkippedExisting" xml:space="preserve">
+    <value>Skipped {0} file(s) that already existed at the destination.</value>
+  </data>
   <data name="CommandExitProgram" xml:space="preserve">
     <value>E&amp;xit {0}</value>
   </data>

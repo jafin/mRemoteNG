@@ -5,6 +5,7 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using mRemoteNG.Connection.Sftp;
+using Renci.SshNet.Common;
 
 namespace mRemoteNG.FileTransfer
 {
@@ -27,6 +28,13 @@ namespace mRemoteNG.FileTransfer
         public bool SupportsPermissions => true;
 
         public char DirectorySeparator => '/';
+
+        /// <summary>
+        /// True. SFTP servers are overwhelmingly unix, where they are. A server on a case-insensitive
+        /// filesystem is possible, and the cost of assuming wrongly here is a collision reported as two
+        /// separate files rather than data lost.
+        /// </summary>
+        public bool PathsAreCaseSensitive => true;
 
         public async Task<IReadOnlyList<FileSystemEntry>> ListAsync(string path, CancellationToken cancellationToken = default)
         {
@@ -58,6 +66,45 @@ namespace mRemoteNG.FileTransfer
 
         public Task CreateFileAsync(string path, CancellationToken cancellationToken = default) =>
             _session.CreateFileAsync(path, cancellationToken);
+
+        /// <summary>
+        /// Checks first, then creates. SFTP's <c>mkdir</c> fails on an existing directory, so unlike the
+        /// local side this cannot simply be asked twice.
+        /// </summary>
+        /// <remarks>
+        /// The check and the create are not atomic. Losing that race means the create fails with
+        /// "already exists", which is the state the caller wanted, so it is swallowed rather than
+        /// guarded against — the alternative would be a lock that no second client would respect anyway.
+        /// </remarks>
+        public async Task<bool> EnsureDirectoryAsync(string path, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(path);
+
+            if (await _session.ExistsAsync(path, cancellationToken).ConfigureAwait(false))
+                return false;
+
+            try
+            {
+                await _session.CreateDirectoryAsync(path, cancellationToken).ConfigureAwait(false);
+                return true;
+            }
+            catch (SshException)
+            {
+                // Re-checked rather than filtered on, because a filter expression cannot await. If it
+                // is there now, someone else created it between the check and the create and the
+                // failure is moot; if it is not, the create genuinely failed and the caller must hear.
+                if (await _session.ExistsAsync(path, cancellationToken).ConfigureAwait(false))
+                    return false;
+
+                throw;
+            }
+        }
+
+        public Task<bool> LinkTargetIsDirectoryAsync(string path, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(path);
+            return _session.ResolvesToDirectoryAsync(path, cancellationToken);
+        }
 
         /// <summary>
         /// Buffers the remote file in memory and hands back a stream over it.
@@ -110,7 +157,8 @@ namespace mRemoteNG.FileTransfer
                 Length: entry.Length,
                 LastWriteTime: entry.LastWriteTime,
                 Permissions: entry.Permissions,
-                IsHidden: entry.IsHidden);
+                IsHidden: entry.IsHidden,
+                IsSymbolicLink: entry.IsSymbolicLink);
         }
 
         /// <summary>

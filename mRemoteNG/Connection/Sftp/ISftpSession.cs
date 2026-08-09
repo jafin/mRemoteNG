@@ -104,5 +104,18 @@ namespace mRemoteNG.Connection.Sftp
         Task CreateDirectoryAsync(string path, CancellationToken cancellationToken = default);
 
         Task CreateFileAsync(string path, CancellationToken cancellationToken = default);
+
+        /// <summary>Whether anything exists at <paramref name="path"/>, file or directory.</summary>
+        Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default);
+
+        /// <summary>
+        /// Follows <paramref name="path"/> and reports whether it lands on a directory.
+        /// </summary>
+        /// <remarks>
+        /// Deliberately a <i>following</i> stat, unlike a listing. A listing reports a symbolic link as
+        /// a link, so it cannot say what the link points at; this can, which is what lets a recursive
+        /// transfer treat a link to a file as a file and refuse to descend into a link to a directory.
+        /// </remarks>
+        Task<bool> ResolvesToDirectoryAsync(string path, CancellationToken cancellationToken = default);
     }
 }

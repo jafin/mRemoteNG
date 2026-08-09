@@ -9,6 +9,7 @@ using mRemoteNG.Security.Ssh;
 using mRemoteNG.Security.Ssh.Adapters;
 using mRemoteNG.Tools;
 using Renci.SshNet;
+using Renci.SshNet.Common;
 using Renci.SshNet.Sftp;
 using SshNetConnectionInfo = Renci.SshNet.ConnectionInfo;
 
@@ -209,6 +210,35 @@ namespace mRemoteNG.Connection.Sftp
             // synchronous only.
             using MemoryStream empty = new([]);
             await client.UploadFileAsync(empty, SftpPath.Normalize(path), cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<bool> ExistsAsync(string path, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(path);
+            SftpClient client = RequireConnected();
+
+            return await client.ExistsAsync(SftpPath.Normalize(path), cancellationToken).ConfigureAwait(false);
+        }
+
+        public async Task<bool> ResolvesToDirectoryAsync(string path, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(path);
+            SftpClient client = RequireConnected();
+
+            try
+            {
+                SftpFileAttributes attributes = await client
+                    .GetAttributesAsync(SftpPath.Normalize(path), cancellationToken)
+                    .ConfigureAwait(false);
+
+                return attributes.IsDirectory;
+            }
+            catch (SftpPathNotFoundException)
+            {
+                // A link whose target does not exist. Not a directory, and not worth failing over:
+                // the caller only wants to know whether it is safe to descend.
+                return false;
+            }
         }
 
         /// <summary>

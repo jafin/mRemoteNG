@@ -303,6 +303,14 @@ namespace mRemoteNGTests.FileTransfer
 
             public char DirectorySeparator => '/';
 
+            public bool PathsAreCaseSensitive => true;
+
+            public Task<bool> EnsureDirectoryAsync(string path, CancellationToken cancellationToken = default) =>
+                Task.FromResult(true);
+
+            public Task<bool> LinkTargetIsDirectoryAsync(string path, CancellationToken cancellationToken = default) =>
+                Task.FromResult(false);
+
             public Task<IReadOnlyList<FileSystemEntry>> ListAsync(string path, CancellationToken cancellationToken = default) =>
                 Task.FromResult<IReadOnlyList<FileSystemEntry>>([]);
 

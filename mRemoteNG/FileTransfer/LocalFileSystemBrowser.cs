@@ -33,6 +33,13 @@ namespace mRemoteNG.FileTransfer
 
         public char DirectorySeparator => Path.DirectorySeparatorChar;
 
+        /// <summary>
+        /// False. NTFS can be configured otherwise per directory, but Windows presents itself as
+        /// case-insensitive and treating it as sensitive would let a download quietly replace
+        /// <c>README.md</c> with <c>Readme.md</c> while reporting no collision.
+        /// </summary>
+        public bool PathsAreCaseSensitive => false;
+
         public Task<IReadOnlyList<FileSystemEntry>> ListAsync(string path, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(path);
@@ -107,6 +114,40 @@ namespace mRemoteNG.FileTransfer
             return Task.Run(() => Directory.CreateDirectory(path), cancellationToken);
         }
 
+        /// <summary>
+        /// Creates the directory if it is missing, reporting whether it had to.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Directory.CreateDirectory(string)"/> is already idempotent, so the only work here
+        /// is answering "did it exist" — which the caller needs, and which must be asked before the
+        /// create rather than after.
+        /// </remarks>
+        public Task<bool> EnsureDirectoryAsync(string path, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(path);
+
+            return Task.Run(() =>
+            {
+                bool existed = Directory.Exists(path);
+                Directory.CreateDirectory(path);
+                return !existed;
+            }, cancellationToken);
+        }
+
+        /// <summary>
+        /// Whether the reparse point at <paramref name="path"/> lands on a directory.
+        /// </summary>
+        /// <remarks>
+        /// <see cref="Directory.Exists(string)"/> follows a reparse point on Windows, so it answers the
+        /// question directly. A broken link returns false, which is the right answer for a caller
+        /// deciding whether it is safe to descend.
+        /// </remarks>
+        public Task<bool> LinkTargetIsDirectoryAsync(string path, CancellationToken cancellationToken = default)
+        {
+            ArgumentNullException.ThrowIfNull(path);
+            return Task.Run(() => Directory.Exists(path), cancellationToken);
+        }
+
         public Task CreateFileAsync(string path, CancellationToken cancellationToken = default)
         {
             ArgumentNullException.ThrowIfNull(path);
@@ -163,7 +204,8 @@ namespace mRemoteNG.FileTransfer
                 Length: isDirectory ? 0 : SafeLength(info),
                 LastWriteTime: info.LastWriteTime,
                 Permissions: string.Empty,
-                IsHidden: info.Attributes.HasFlag(FileAttributes.Hidden));
+                IsHidden: info.Attributes.HasFlag(FileAttributes.Hidden),
+                IsSymbolicLink: info.Attributes.HasFlag(FileAttributes.ReparsePoint));
         }
 
         /// <summary>

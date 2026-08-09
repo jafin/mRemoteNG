@@ -229,6 +229,22 @@ namespace mRemoteNGTests.FileTransfer
             });
         }
 
+        /// <summary>
+        /// Something may still be producing items — a directory expansion — and it has to hear this, or
+        /// "Cancel all" empties the queue and then watches it refill.
+        /// </summary>
+        [Test]
+        public void CancellingTheQueueAnnouncesItself()
+        {
+            using TransferQueue queue = new((_, _, _) => Task.CompletedTask);
+            int announced = 0;
+            queue.AllCancelled += (_, _) => announced++;
+
+            queue.CancelAll();
+
+            Assert.That(announced, Is.EqualTo(1));
+        }
+
         [Test]
         public async Task CancellingAFinishedItemIsHarmless()
         {

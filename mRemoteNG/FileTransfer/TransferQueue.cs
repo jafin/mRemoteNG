@@ -58,6 +58,16 @@ namespace mRemoteNG.FileTransfer
         /// <summary>Raised when the queue finishes everything it holds.</summary>
         public event EventHandler? Drained;
 
+        /// <summary>
+        /// Raised when the whole queue is cancelled.
+        /// </summary>
+        /// <remarks>
+        /// The queue does not know where its items come from, and something that is still producing them
+        /// needs to hear this. Without it, "Cancel all" would empty the queue and then watch a directory
+        /// expansion still in progress refill it.
+        /// </remarks>
+        public event EventHandler? AllCancelled;
+
         /// <summary>Every item, in the order queued, whatever its status.</summary>
         public IReadOnlyList<TransferItem> Items
         {
@@ -166,6 +176,8 @@ namespace mRemoteNG.FileTransfer
 
             foreach (TransferItem item in stillQueued)
                 Raise(item);
+
+            AllCancelled?.Invoke(this, EventArgs.Empty);
         }
 
         /// <summary>Removes finished items, leaving anything queued or running.</summary>

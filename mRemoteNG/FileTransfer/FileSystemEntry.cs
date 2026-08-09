@@ -17,6 +17,11 @@ namespace mRemoteNG.FileTransfer
     /// <param name="LastWriteTime">Last modification time.</param>
     /// <param name="Permissions">A <c>drwxr-xr-x</c> rendering, or empty where it does not apply.</param>
     /// <param name="IsHidden">Whether the filesystem considers this entry hidden.</param>
+    /// <param name="IsSymbolicLink">
+    /// Whether the entry is a link rather than the thing it points at — a symbolic link remotely, a
+    /// reparse point locally. A recursive transfer never descends into one, because a link pointing at
+    /// its own ancestor would make the tree infinite.
+    /// </param>
     public sealed record FileSystemEntry(
         string Name,
         string FullPath,
@@ -24,5 +29,6 @@ namespace mRemoteNG.FileTransfer
         long Length,
         DateTime LastWriteTime,
         string Permissions,
-        bool IsHidden);
+        bool IsHidden,
+        bool IsSymbolicLink = false);
 }
