@@ -58,7 +58,8 @@ public partial class FrmOptions : Form
             nameof(SecurityPage),
             nameof(AdvancedPage),
             nameof(BackupPage),
-            nameof(ConfigurationPage)
+            nameof(ConfigurationPage),
+            nameof(TerminalPage)
         ];
 
         InitOptionsPagesToListView();
@@ -284,6 +285,13 @@ public partial class FrmOptions : Form
             case "ConfigurationPage":
             {
                 page = new ConfigurationPage { Dock = DockStyle.Fill };
+                break;
+            }
+            case "TerminalPage":
+            {
+                if (Properties.OptionsTerminalPage.Default.cbTerminalPageInOptionMenu ||
+                    string.Equals(Properties.OptionsRbac.Default.ActiveRole, "AdminRole", StringComparison.Ordinal))
+                    page = new TerminalPage { Dock = DockStyle.Fill };
                 break;
             }
         }

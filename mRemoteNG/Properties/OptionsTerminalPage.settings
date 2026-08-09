@@ -1,0 +1,24 @@
+<?xml version='1.0' encoding='utf-8'?>
+<SettingsFile xmlns="http://schemas.microsoft.com/VisualStudio/2004/01/settings" CurrentProfile="(Default)" GeneratedClassNamespace="mRemoteNG.Properties" GeneratedClassName="OptionsTerminalPage">
+  <Profiles />
+  <Settings>
+    <Setting Name="TerminalFontFamily" Type="System.String" Scope="User">
+      <Value Profile="(Default)">Cascadia Mono, Consolas, monospace</Value>
+    </Setting>
+    <Setting Name="TerminalFontSize" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">14</Value>
+    </Setting>
+    <Setting Name="TerminalColorScheme" Type="System.String" Scope="User">
+      <Value Profile="(Default)">Follow</Value>
+    </Setting>
+    <Setting Name="TerminalScrollback" Type="System.Int32" Scope="User">
+      <Value Profile="(Default)">5000</Value>
+    </Setting>
+    <Setting Name="TerminalCtrlVPastes" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
+    <Setting Name="cbTerminalPageInOptionMenu" Type="System.Boolean" Scope="User">
+      <Value Profile="(Default)">True</Value>
+    </Setting>
+  </Settings>
+</SettingsFile>

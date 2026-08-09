@@ -11,6 +11,7 @@ using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Connection.Protocol.SSH.Native.HostKeys;
 using mRemoteNG.Security.Ssh;
+using mRemoteNG.Themes;
 
 namespace mRemoteNG.Connection.Protocol.SSH.Native;
 
@@ -146,7 +147,7 @@ public class ProtocolNativeSsh : ProtocolBase
         switch (node["t"]?.GetValue<string>())
         {
             case "loaded":
-                Post(new JsonObject { ["t"] = "start", ["theme"] = "dark" });
+                Post(BuildStartMessage());
                 break;
 
             case "ready":
@@ -177,6 +178,54 @@ public class ProtocolNativeSsh : ProtocolBase
                 PasteFromClipboard();
                 break;
         }
+    }
+
+    /// <summary>
+    /// The configured appearance and input options, applied as the terminal starts. Read here
+    /// rather than cached so a change takes effect on the next connection without a restart.
+    /// </summary>
+    private static JsonObject BuildStartMessage()
+    {
+        Properties.OptionsTerminalPage settings = Properties.OptionsTerminalPage.Default;
+
+        return new JsonObject
+        {
+            ["t"] = "start",
+            ["theme"] = ResolveColorScheme(settings.TerminalColorScheme),
+            ["fontFamily"] = string.IsNullOrWhiteSpace(settings.TerminalFontFamily)
+                ? "Cascadia Mono, Consolas, monospace"
+                : settings.TerminalFontFamily,
+            ["fontSize"] = Math.Clamp(settings.TerminalFontSize, 6, 32),
+            ["scrollback"] = Math.Clamp(settings.TerminalScrollback, 0, 200_000),
+            ["ctrlVPastes"] = settings.TerminalCtrlVPastes
+        };
+    }
+
+    /// <summary>
+    /// Resolves the configured scheme, including "Follow".
+    /// </summary>
+    /// <remarks>
+    /// Following the application theme picks the light or dark <i>variant</i>; it does not repaint
+    /// the terminal from the application palette. A terminal's colours are meaning, not decoration
+    /// — red is red because the remote host said so — so the theme chooses which palette, never
+    /// what is in it. Task 7.3.
+    /// </remarks>
+    private static string ResolveColorScheme(string? configured)
+    {
+        if (string.Equals(configured, "Dark", StringComparison.OrdinalIgnoreCase))
+            return "dark";
+
+        if (string.Equals(configured, "Light", StringComparison.OrdinalIgnoreCase))
+            return "light";
+
+        string themeName = ThemeManager.getInstance().ActiveTheme?.Name ?? string.Empty;
+
+        // Matched by name because the theme files carry no light/dark flag. "darcula" is listed
+        // explicitly because it is dark and does not contain "dark".
+        bool dark = themeName.Contains("dark", StringComparison.OrdinalIgnoreCase)
+                    || themeName.Contains("darcula", StringComparison.OrdinalIgnoreCase);
+
+        return dark ? "dark" : "light";
     }
 
     private static uint ReadDimension(JsonNode? value, uint fallback)

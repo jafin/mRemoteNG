@@ -316,6 +316,11 @@
       <AutoGen>True</AutoGen>
       <DependentUpon>OptionsThemePage.settings</DependentUpon>
     </Compile>
+    <Compile Update="Properties\OptionsTerminalPage.Designer.cs">
+      <DesignTimeSharedInput>True</DesignTimeSharedInput>
+      <AutoGen>True</AutoGen>
+      <DependentUpon>OptionsTerminalPage.settings</DependentUpon>
+    </Compile>
     <Compile Update="Properties\OptionsRbac.Designer.cs">
       <DesignTimeSharedInput>True</DesignTimeSharedInput>
       <AutoGen>True</AutoGen>
@@ -552,6 +557,10 @@
     <None Update="Properties\OptionsThemePage.settings">
       <Generator>SettingsSingleFileGenerator</Generator>
       <LastGenOutput>OptionsThemePage.Designer.cs</LastGenOutput>
+    </None>
+    <None Update="Properties\OptionsTerminalPage.settings">
+      <Generator>SettingsSingleFileGenerator</Generator>
+      <LastGenOutput>OptionsTerminalPage.Designer.cs</LastGenOutput>
     </None>
     <None Update="Properties\OptionsRbac.settings">
       <Generator>SettingsSingleFileGenerator</Generator>

@@ -85,9 +85,9 @@ public class OptionsFormTests
         var pnlMain = optionsForm.FindControl<Panel>("pnlMain");
         Assert.That(pnlMain, Is.Not.Null, "pnlMain should exist");
 
-        // 2. ListView has all 13 options pages
+        // 2. ListView has all 14 options pages
         ListViewTester listViewTester = new("lstOptionPages", optionsForm);
-        Assert.That(listViewTester.Items.Count, Is.EqualTo(13));
+        Assert.That(listViewTester.Items.Count, Is.EqualTo(14));
 
         // 3. SelectedObject is set
         var lstOptionPages = optionsForm.GetType()

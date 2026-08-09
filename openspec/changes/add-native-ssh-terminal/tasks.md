@@ -46,9 +46,9 @@
 
 ## 7. Appearance and settings
 
-- [ ] 7.1 Options page for font, colour scheme and scrollback length.
-- [ ] 7.2 Apply configured values to new sessions.
-- [ ] 7.3 Honour the application theme where it does not fight the terminal's own colour scheme.
+- [x] 7.1 Options page for font, colour scheme and scrollback length. — `TerminalPage`, backed by `OptionsTerminalPage.settings`. Also carries the **Ctrl+V pastes** setting that 5.2 deferred here, on by default (Windows behaviour); turning it off frees Ctrl+V for readline's quoted-insert, leaving Shift+Insert and Ctrl+Shift+V, which paste either way.
+- [x] 7.2 Apply configured values to new sessions. — read at `start` rather than cached, so a change applies to the next connection with no restart. Values are clamped on the way in and out: the settings file is hand-editable, and an out-of-range number assigned to a `NumericUpDown` throws, which would take the whole options form down on open.
+- [x] 7.3 Honour the application theme where it does not fight the terminal's own colour scheme. — the default scheme is **Follow**, which picks the light or dark *variant*; it never repaints the terminal from the application palette. A terminal's colours are meaning rather than decoration — red is red because the remote host said so — so the theme chooses which palette, never what is in it. Dark is matched by theme name, with `darcula` listed explicitly since it does not contain "dark".
 
 ## 8. Completion
 

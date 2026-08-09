@@ -8457,6 +8457,105 @@ namespace mRemoteNG.Resources.Language {
         }
         
         /// <summary>
+        ///   Looks up a localized string similar to Terminal.
+        /// </summary>
+        internal static string SshNativeTerminalOptions {
+            get {
+                return ResourceManager.GetString("SshNativeTerminalOptions", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to These settings apply to connections using the native SSH terminal, and take effect on the next connection.
+        /// </summary>
+        internal static string SshNativeOptionsIntro {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsIntro", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Font.
+        /// </summary>
+        internal static string SshNativeOptionsFont {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsFont", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Font size.
+        /// </summary>
+        internal static string SshNativeOptionsFontSize {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsFontSize", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Colour scheme.
+        /// </summary>
+        internal static string SshNativeOptionsColorScheme {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsColorScheme", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Scrollback lines.
+        /// </summary>
+        internal static string SshNativeOptionsScrollback {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsScrollback", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Follow the application theme.
+        /// </summary>
+        internal static string SshNativeOptionsSchemeFollow {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsSchemeFollow", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Dark.
+        /// </summary>
+        internal static string SshNativeOptionsSchemeDark {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsSchemeDark", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Light.
+        /// </summary>
+        internal static string SshNativeOptionsSchemeLight {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsSchemeLight", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Ctrl+V pastes into the terminal.
+        /// </summary>
+        internal static string SshNativeOptionsCtrlVPastes {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsCtrlVPastes", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Windows behaviour, on by default.
+        /// </summary>
+        internal static string SshNativeOptionsCtrlVNote {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsCtrlVNote", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to The server at {0} is not known..
         /// </summary>
         internal static string SshNativeHostKeyUnknown {

@@ -2946,6 +2946,39 @@ mRemoteNG will now quit and begin with the installation.</value>
   <data name="SshNativeHostKeyTitle" xml:space="preserve">
     <value>SSH host key</value>
   </data>
+  <data name="SshNativeTerminalOptions" xml:space="preserve">
+    <value>Terminal</value>
+  </data>
+  <data name="SshNativeOptionsIntro" xml:space="preserve">
+    <value>These settings apply to connections using the native SSH terminal, and take effect on the next connection.</value>
+  </data>
+  <data name="SshNativeOptionsFont" xml:space="preserve">
+    <value>Font</value>
+  </data>
+  <data name="SshNativeOptionsFontSize" xml:space="preserve">
+    <value>Font size</value>
+  </data>
+  <data name="SshNativeOptionsColorScheme" xml:space="preserve">
+    <value>Colour scheme</value>
+  </data>
+  <data name="SshNativeOptionsScrollback" xml:space="preserve">
+    <value>Scrollback lines</value>
+  </data>
+  <data name="SshNativeOptionsSchemeFollow" xml:space="preserve">
+    <value>Follow the application theme</value>
+  </data>
+  <data name="SshNativeOptionsSchemeDark" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="SshNativeOptionsSchemeLight" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="SshNativeOptionsCtrlVPastes" xml:space="preserve">
+    <value>Ctrl+V pastes into the terminal</value>
+  </data>
+  <data name="SshNativeOptionsCtrlVNote" xml:space="preserve">
+    <value>Windows behaviour, on by default. Turning this off frees Ctrl+V for the shell, where it is the quoted-insert key used to type a literal control character; paste is then Shift+Insert or Ctrl+Shift+V, which always work either way.</value>
+  </data>
   <data name="SshNativeHostKeyUnknown" xml:space="preserve">
     <value>The server at {0} is not known.
 

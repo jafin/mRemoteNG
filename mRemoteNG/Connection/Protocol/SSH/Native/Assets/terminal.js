@@ -37,10 +37,13 @@
 
     var term = null;
     var fit = null;
+    var ctrlVPastes = true;
 
     function post(msg) { host.postMessage(msg); }
 
     function start(options) {
+        ctrlVPastes = options.ctrlVPastes !== false;
+
         term = new Terminal({
             allowProposedApi: true,
             convertEol: false,
@@ -109,8 +112,12 @@
             return claim(e);
         }
 
+        // Shift+Insert and Ctrl+Shift+V are the terminal conventions and always paste. Plain Ctrl+V
+        // is the Windows habit and is on by default, but it is optional: Ctrl+V is readline's
+        // quoted-insert, the only way to type a literal control character, so a user who needs that
+        // can turn it off and keep the two conventional bindings.
         if ((e.shiftKey && e.key === 'Insert') || (e.ctrlKey && e.shiftKey && isV) ||
-            (e.ctrlKey && !e.shiftKey && !e.altKey && isV)) {
+            (ctrlVPastes && e.ctrlKey && !e.shiftKey && !e.altKey && isV)) {
             post({ t: 'wantpaste' });
             return claim(e);
         }
