@@ -23,4 +23,4 @@
 - [x] 4.2 Full test suite; zero failures, no `[Ignore]`. — 7382 passed.
 - [x] 4.3 `openspec validate fix-ssh-credential-diagnostics --strict`.
 - [ ] 4.4 Manual, one per shared caller, since all of them replay these diagnostics: a native SSH terminal connection with no key configured reports nothing at error severity; an SFTP connection is unaffected; a file transfer is unaffected. — **terminal confirmed (2026-08-10)**: discovery found `~/.ssh/id_rsa`, the connection succeeded, and no error was raised. **SFTP confirmed (2026-08-10)**: file manager opened from the connection tree, listed the remote directory, no error raised. File transfer (`SecureTransfer`) still to check.
-- [ ] 4.5 Manual: a connection with a **configured** key that is missing or unloadable still reports an error — the regression this change is most likely to cause.
+- [x] 4.5 Manual: a connection with a **configured** key that is missing or unloadable still reports an error — the regression this change is most likely to cause. — **confirmed (2026-08-10)**: a connection with a configured key path still raised an error.
