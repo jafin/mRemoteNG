@@ -22,21 +22,34 @@ Reshaped 2026-08-09: the target is a dual-pane file manager with a transfer queu
 WinSCP/FileZilla reference the maintainer supplied. The remote half from section 2 is unchanged; a
 local pane and a queue are new.
 
-- [ ] 3.1 A `FileSystemEntry` model and an `IFileSystemBrowser` both panes implement, so one list control serves local and remote. Permissions are remote-only and optional.
-- [ ] 3.2 `LocalFileSystemBrowser` over `System.IO`, async, reporting access-denied as a failure rather than an empty directory.
-- [ ] 3.3 `RemoteFileSystemBrowser` adapting `ISftpSession`.
-- [ ] 3.4 Navigation history (open, up, home, back, forward, typed path) as a reusable, UI-free type — it is identical for both panes and is the part most worth testing.
-- [ ] 3.5 Hidden-entry filtering, shared by both panes.
-- [ ] 3.6 Tests: local listing maps entries; access denied surfaces; history behaves; hidden filter applies; the two panes navigate independently.
+- [x] 3.1 A `FileSystemEntry` model and an `IFileSystemBrowser` both panes implement, so one list control serves local and remote. Permissions are remote-only and optional.
+- [x] 3.2 `LocalFileSystemBrowser` over `System.IO`, async, reporting access-denied as a failure rather than an empty directory.
+- [x] 3.3 `RemoteFileSystemBrowser` adapting `ISftpSession`.
+- [x] 3.4 Navigation history (open, up, home, back, forward, typed path) as a reusable, UI-free type — it is identical for both panes and is the part most worth testing.
+- [x] 3.5 Hidden-entry filtering, shared by both panes. `FileSystemEntry.IsHidden` is set by each side from what that filesystem actually means by hidden — the dot convention remotely, the file attribute locally — rather than applying one rule to both.
+- [x] 3.6 Tests: local listing maps entries; access denied surfaces; history behaves; hidden filter applies; the two panes navigate independently.
 
 ## 4. Transfer queue
 
-- [ ] 4.1 `TransferItem`: direction, source, destination, size, transferred, status, failure reason.
-- [ ] 4.2 `TransferQueue` running items off the UI thread, one at a time to start with; a failed item must not stop the queue.
-- [ ] 4.3 Cancel one item and cancel the whole queue.
-- [ ] 4.4 Progress per item, from `ProgressReportingStream`.
-- [ ] 4.5 Queued / failed / successful views over the same item list.
-- [ ] 4.6 Tests against a fake transfer operation — no server: items run in order; a failure is recorded and the queue continues; cancelling one leaves the rest; cancelling all stops the runner; progress reaches the item.
+- [x] 4.1 `TransferItem`: direction, source, destination, size, transferred, status, failure reason.
+- [x] 4.2 `TransferQueue` running items off the UI thread, one at a time to start with; a failed item must not stop the queue.
+- [x] 4.3 Cancel one item and cancel the whole queue.
+- [x] 4.4 Progress per item, from `ProgressReportingStream`.
+- [x] 4.5 Queued / failed / successful views over the same item list.
+- [x] 4.6 Tests against a fake transfer operation — no server: items run in order; a failure is recorded and the queue continues; cancelling one leaves the rest; cancelling all stops the runner; progress reaches the item.
+
+**Sections 3 and 4 results 2026-08-09:** full build green (69.6s); full suite **7075/7075**, 130s, 0 crashes. 51 new tests.
+
+The queue test for progress caught a real defect: `Progress<T>` posts to the captured
+synchronization context, so reports arrive asynchronously and unordered and a final report could
+land *after* the item was marked succeeded — leaving a finished transfer showing partial progress.
+Progress is now applied inline on the reporting thread. The UI marshals when it handles
+`ItemChanged`, which it must do anyway since that event already comes off a background thread.
+
+`LocalFileSystemBrowser` is tested against a real temporary directory rather than a substitute:
+the behaviour worth pinning is the interaction with the filesystem, including that a missing
+directory *fails* rather than listing as empty — "empty" and "unreadable" are different statements
+and only one of them is true.
 
 ## 5. The file manager tab
 
