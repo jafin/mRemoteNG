@@ -338,7 +338,9 @@ namespace mRemoteNG.UI.Controls.FileTransfer
 
             OLVColumn modified = new("Modified", nameof(FileSystemEntry.LastWriteTime))
             {
-                Width = 130,
+                // Wide enough for a padded date and time together. At the previous 130 the minutes
+                // were clipped, which defeats the padding that put the column in line.
+                Width = 156,
                 // Stays a DateTime so the column sorts chronologically rather than by the text, which
                 // for a dd/MM/yyyy locale would sort by day of the month.
                 AspectGetter = o => EntryPresentation.ModifiedOf((FileSystemEntry)o),
