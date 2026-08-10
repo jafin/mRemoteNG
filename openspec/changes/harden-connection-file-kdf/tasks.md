@@ -33,10 +33,10 @@ path.
 ## 5. Verification
 
 - [x] 5.1 Full build; zero new analyzer warnings.
-- [x] 5.2 Full test suite; zero failures, no `[Ignore]`. — 7394 passed.
+- [x] 5.2 Full test suite; zero failures, no `[Ignore]`. — 7394 passed; 7600 after merging `dev`.
 - [x] 5.3 `openspec validate harden-connection-file-kdf --strict`.
-- [ ] 5.4 Manual: open a connection file written by the current release, confirm connections decrypt, save at the classic level, confirm **no** attribute appears and an upstream mRemoteNG build still opens it.
-- [ ] 5.5 Manual: raise the level, save, confirm the attribute appears and the file reopens here.
+- [x] 5.4 Manual: open a connection file written by the current release, confirm connections decrypt, save at the classic level, confirm **no** attribute appears and an upstream mRemoteNG build still opens it. — Passed.
+- [x] 5.5 Manual: raise the level, save, confirm the attribute appears and the file reopens here. — Passed. **The level has no user interface yet**, so raising it meant hand-editing `StorageFormat="Hardened"` onto the root element. Safe to do by hand because the two attributes are read independently: derivation reads `KdfPrf` (absent means SHA-1), so a file carrying the level but not yet the function still opens, and the level only decides what the next save writes. That is the same sequence the deferred confirmation in §4/§5 of `add-storage-format-opt-in` will perform once it exists.
 - [ ] 5.6 Manual: set a master password on a migrated file, close, reopen, confirm it is still accepted.
 - [ ] 5.7 Manual: measure file-open time before and after on a file with 200 connections. The PRF change should not move it; a regression here means the cache keys are wrong and the KDF is running per field.
 
