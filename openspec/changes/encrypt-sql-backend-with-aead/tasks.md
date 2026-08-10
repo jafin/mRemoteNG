@@ -1,4 +1,4 @@
-# Tasks
+﻿# Tasks
 
 **This proposal is split across releases.** Section 1 ships a release ahead of the rest; sections 2
 onward wait for `add-storage-format-opt-in`. See
@@ -6,9 +6,14 @@ onward wait for `add-storage-format-opt-in`. See
 
 ## 1. Version refusal — ships first
 
-- [ ] 1.1 In `SqlDatabaseVersionVerifier`, treat a database version newer than the build as a refusal that names both versions, instead of proceeding to read rows.
-- [ ] 1.2 Tests: a newer version loads nothing and reports both numbers; the current version still loads; an older version still loads.
-- [ ] 1.3 Release this ahead of the rest. Until every client refuses a newer database, upgrading one produces silent garbage on the others rather than a message — see design.md, "Refuse a database newer than the build".
+- [x] 1.1 In `SqlDatabaseVersionVerifier`, treat a database version newer than the build as a refusal that names both versions, instead of proceeding to read rows. — Two defects, not one. The verifier did already return false, but reported it as a generic incompatibility warning; it now reports the newer case at error severity naming the database version, the product and the highest supported version (`ErrorDatabaseVersionNewerThanClient`). **`SqlConnectionsLoader` was discarding the result entirely** and reading rows regardless, so the check existed and changed nothing.
+- [x] 1.2 Tests: a newer version loads nothing and reports both numbers; the current version still loads; an older version still loads. — `SqlDatabaseVersionVerifierTests` plus two `SqlConnectionsLoaderIntegrationTests` cases, one asserting the rows are never read.
+- [x] 1.3 Release this ahead of the rest. Until every client refuses a newer database, upgrading one produces silent garbage on the others rather than a message — see design.md, "Refuse a database newer than the build".
+
+**Scope note.** `IsNewerThanSupported` was added to `ISqlDatabaseVersionVerifier` rather than making
+the loader honour `VerifyDatabaseVersion` outright. The two failure modes need opposite handling: a
+database too old to upgrade also returns false, and refusing those would lock out installations that
+work today. Only the newer case is refused.
 
 ## 2. Provider selection
 

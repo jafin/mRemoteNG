@@ -2184,6 +2184,15 @@ namespace mRemoteNG.Resources.Language {
                 return ResourceManager.GetString("ErrorConnectionListSaveFailed", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to The database is at version {0}, which is newer than this copy of {1} supports (up to version {2}). No connections were loaded. Upgrade {1} on this computer to open it..
+        /// </summary>
+        internal static string ErrorDatabaseVersionNewerThanClient {
+            get {
+                return ResourceManager.GetString("ErrorDatabaseVersionNewerThanClient", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Looks up a localized string similar to PuTTY could not be launched..

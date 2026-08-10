@@ -595,6 +595,9 @@ Starting with new connections file.</value>
   <data name="ErrorConnectionListSaveFailed" xml:space="preserve">
     <value>The connection list could not be saved.</value>
   </data>
+  <data name="ErrorDatabaseVersionNewerThanClient" xml:space="preserve">
+    <value>The database is at version {0}, which is newer than this copy of {1} supports (up to version {2}). No connections were loaded. Upgrade {1} on this computer to open it.</value>
+  </data>
   <data name="ErrorCouldNotLaunchPutty" xml:space="preserve">
     <value>PuTTY could not be launched.</value>
   </data>

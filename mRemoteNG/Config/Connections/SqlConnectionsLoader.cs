@@ -66,7 +66,18 @@ public class SqlConnectionsLoader : IConnectionsLoader
         if (!decryptionKey.Any())
             throw new InvalidOperationException("Could not load SQL connections");
 
-        _sqlDatabaseVersionVerifier.VerifyDatabaseVersion(metaData.ConfVersion);
+        bool versionSupported = _sqlDatabaseVersionVerifier.VerifyDatabaseVersion(metaData.ConfVersion);
+
+        // A database newer than this build is refused rather than read. Its rows may be encrypted
+        // or shaped in ways this client has no code for, and reading them anyway yields plausible
+        // nonsense — connections with blank passwords — which a user reads as data loss rather than
+        // as a version mismatch. The verifier has already said so on the message channel.
+        //
+        // A database that is merely too old to upgrade is left as it was: still attempted, because
+        // refusing it would lock out installations that work today.
+        if (!versionSupported && _sqlDatabaseVersionVerifier.IsNewerThanSupported(metaData.ConfVersion))
+            throw new InvalidOperationException("Could not load SQL connections");
+
         System.Data.DataTable dataTable = _sqlDataProvider.Load();
         DataTableDeserializer deserializer = new(_cryptographyProvider, decryptionKey.First());
         ConnectionTreeModel connectionTree = deserializer.Deserialize(dataTable);
