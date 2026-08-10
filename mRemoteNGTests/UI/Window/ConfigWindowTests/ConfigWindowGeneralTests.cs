@@ -388,6 +388,21 @@ public class ConfigWindowGeneralTests
                     nameof(ConnectionInfo.AlwaysPromptForCredentials),
                 });
                 break;
+            case ProtocolType.SSHNative:
+                // No PuttySession, SSHOptions or OpeningCommand: the first two configure an
+                // external client this protocol does not launch, and the third is not implemented
+                // for it yet. Offering them would advertise settings that do nothing.
+                expectedProperties.AddRange(new []
+                {
+                    nameof(ConnectionInfo.Username),
+                    nameof(ConnectionInfo.Password),
+                    nameof(ConnectionInfo.Port),
+                    nameof(ConnectionInfo.PrivateKeyPath),
+                    nameof(ConnectionInfo.ExternalAddressProvider),
+                    nameof(ConnectionInfo.ExternalCredentialProvider),
+                    nameof(ConnectionInfo.AlwaysPromptForCredentials),
+                });
+                break;
             case ProtocolType.Telnet:
             case ProtocolType.Rlogin:
             case ProtocolType.RAW:

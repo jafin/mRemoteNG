@@ -167,8 +167,14 @@ public sealed class SshCredentialResolver : ISshCredentialResolver
         // gating on the mere presence of a secret would strip the key it authenticates with.
         bool secretCanAuthenticate = options.BackendAcceptsSecret && !string.IsNullOrEmpty(password);
 
+        SshKeyPathOrigin keyPathOrigin = keyPath is null ? SshKeyPathOrigin.None : SshKeyPathOrigin.Configured;
+
         if (!hasUsableKeyMaterial && keyPath is null && !secretCanAuthenticate)
+        {
             keyPath = _keyLocator.Locate(options.DefaultKeyDiscovery);
+            if (keyPath is not null)
+                keyPathOrigin = SshKeyPathOrigin.Discovered;
+        }
 
         // ---- 5. SSH agent identities ------------------------------------------
         // Additive, not exclusive. An agent holding some key says nothing about whether it
@@ -189,7 +195,8 @@ public sealed class SshCredentialResolver : ISshCredentialResolver
             privateKeyPath: keyPath,
             agentIdentities: agentIdentities,
             provenance: provenance,
-            diagnostics: diagnostics);
+            diagnostics: diagnostics,
+            keyPathOrigin: keyPathOrigin);
     }
 
     /// <summary>

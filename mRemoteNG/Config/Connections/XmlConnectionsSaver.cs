@@ -54,7 +54,10 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
         }
         catch (Exception ex)
         {
+            // Logged here for the stack trace, then rethrown: only the caller knows whether
+            // this write was the user's connection file — and so whether they need telling.
             Runtime.MessageCollector?.AddExceptionStackTrace("SaveToXml failed", ex);
+            throw;
         }
     }
 }

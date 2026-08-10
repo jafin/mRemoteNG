@@ -43,11 +43,6 @@ public partial class ConnectionTree : TreeListView, IConnectionTree
     private ConnectionTreeModel? _connectionTreeModel;
     private List<ConnectionInfo> _clipboardNodes = [];
 
-    // When the model has exactly one connection root ("Connections"), that root is hidden and its
-    // children are shown at the top level — the pane heading already says "Connections", so the
-    // node is redundant and costs every entry an extra indent level. Null when not promoting
-    // (e.g. multiple connection roots). The root stays in the model; only the view is re-rooted.
-
     public ConnectionInfo SelectedNode => (ConnectionInfo)SelectedObject;
 
     public NodeSearcher? NodeSearcher { get; private set; }
@@ -780,14 +775,15 @@ public partial class ConnectionTree : TreeListView, IConnectionTree
         if (IsReadOnly) return;
         sortTarget ??= GetRootConnectionNode();
 
-        Runtime.ConnectionsService.BeginBatchingSaves();
-
-        if (sortTarget is ContainerInfo sortTargetAsContainer)
-            sortTargetAsContainer.SortRecursive(sortDirection);
-        else
-            SelectedNode?.Parent?.SortRecursive(sortDirection);
-
-        Runtime.ConnectionsService.EndBatchingSaves();
+        // Unbalanced, this leaves batching on for the rest of the session and every later
+        // save is silently swallowed into the deferred flag instead of reaching disk.
+        ExecuteInBatchedSaveContext(() =>
+        {
+            if (sortTarget is ContainerInfo sortTargetAsContainer)
+                sortTargetAsContainer.SortRecursive(sortDirection);
+            else
+                SelectedNode?.Parent?.SortRecursive(sortDirection);
+        });
     }
 
     public void SortSelectedNodesRecursive(ListSortDirection sortDirection)

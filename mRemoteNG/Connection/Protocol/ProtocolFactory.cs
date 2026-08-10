@@ -10,6 +10,7 @@ using mRemoteNG.Connection.Protocol.RDP;
 using mRemoteNG.Connection.Protocol.Rlogin;
 using mRemoteNG.Connection.Protocol.Serial;
 using mRemoteNG.Connection.Protocol.SSH;
+using mRemoteNG.Connection.Protocol.SSH.Native;
 using mRemoteNG.Connection.Protocol.Telnet;
 using mRemoteNG.Connection.Protocol.Terminal;
 using mRemoteNG.Connection.Protocol.VMRC;
@@ -44,6 +45,8 @@ public class ProtocolFactory : IProtocolFactory
                 return new ProtocolSSH2();
             case ProtocolType.OpenSSH:
                 return new ProtocolOpenSSH(connectionInfo);
+            case ProtocolType.SSHNative:
+                return new ProtocolNativeSsh(connectionInfo);
             case ProtocolType.Telnet:
                 return new ProtocolTelnet();
             case ProtocolType.Rlogin:

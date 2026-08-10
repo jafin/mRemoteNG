@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing.Design;
@@ -325,7 +325,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.ExternalCredentialProvider)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.PropertyDescriptionExternalCredentialProvider)),
      TypeConverter(typeof(MiscTools.EnumTypeConverter)),
-     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2)]
+     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2, ProtocolType.SSHNative)]
     public ExternalCredentialProvider ExternalCredentialProvider
     {
         get => GetPropertyValue(nameof(ExternalCredentialProvider), _externalCredentialProvider);
@@ -343,7 +343,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Connection), 2),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.UserViaAPI)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.PropertyDescriptionUserViaAPI)),
-     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2)]
+     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2, ProtocolType.SSHNative)]
     public virtual string UserViaAPI
     {
         get => GetPropertyValue(nameof(UserViaAPI), _userViaAPI);
@@ -353,7 +353,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Connection), 2),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.Username)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.PropertyDescriptionUsername)),
-     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2, ProtocolType.OpenSSH, ProtocolType.HTTP, ProtocolType.HTTPS, ProtocolType.IntApp, ProtocolType.Winbox, ProtocolType.VMRC)]
+     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2, ProtocolType.OpenSSH, ProtocolType.HTTP, ProtocolType.HTTPS, ProtocolType.IntApp, ProtocolType.Winbox, ProtocolType.VMRC, ProtocolType.SSHNative)]
     public virtual string Username
     {
         get => GetPropertyValue(nameof(Username), _username);
@@ -376,7 +376,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Connection), 2),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.VaultOpenbaoMount)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.VaultOpenbaoMountDescription)),
-     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2)]
+     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2, ProtocolType.SSHNative)]
     public virtual string VaultOpenbaoMount {
         get => GetPropertyValue(nameof(VaultOpenbaoMount), _vaultMount);
         set => SetField(ref _vaultMount, value, nameof(VaultOpenbaoMount));
@@ -385,7 +385,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Connection), 2),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.VaultOpenbaoRole)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.VaultOpenbaoRoleDescription)),
-     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2)]
+     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2, ProtocolType.SSHNative)]
     public virtual string VaultOpenbaoRole {
         get => GetPropertyValue(nameof(VaultOpenbaoRole), _vaultRole);
         set => SetField(ref _vaultRole, value, nameof(VaultOpenbaoRole));
@@ -396,7 +396,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.VaultOpenbaoSecretEngine)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.PropertyDescriptionVaultOpenbaoSecretEngine)),
      TypeConverter(typeof(MiscTools.EnumTypeConverter)),
-     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2)]
+     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH1, ProtocolType.SSH2, ProtocolType.SSHNative)]
     public VaultOpenbaoSecretEngine VaultOpenbaoSecretEngine {
         get => GetPropertyValue(nameof(VaultOpenbaoSecretEngine), _vaultSecretEngine);
         set => SetField(ref _vaultSecretEngine, value, nameof(VaultOpenbaoSecretEngine));
@@ -429,7 +429,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.ExternalAddressProvider)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.PropertyDescriptionExternalAddressProvider)),
      TypeConverter(typeof(MiscTools.EnumTypeConverter)),
-     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH2)]
+     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH2, ProtocolType.SSHNative)]
     public ExternalAddressProvider ExternalAddressProvider
     {
         get => GetPropertyValue(nameof(ExternalAddressProvider), _externalAddressProvider);
@@ -439,7 +439,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Connection), 2),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.EC2InstanceId)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.PropertyDescriptionEC2InstanceId)),
-     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH2)]
+     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH2, ProtocolType.SSHNative)]
     public string EC2InstanceId
     {
         get => GetPropertyValue(nameof(EC2InstanceId), _ec2InstanceId)?.Trim() ?? string.Empty;
@@ -449,7 +449,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Connection), 2),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.EC2Region)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.PropertyDescriptionEC2Region)),
-     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH2)]
+     AttributeUsedInProtocol(ProtocolType.RDP, ProtocolType.SSH2, ProtocolType.SSHNative)]
     public string EC2Region
     {
         get => GetPropertyValue(nameof(EC2Region), _ec2Region)?.Trim() ?? string.Empty;
@@ -546,9 +546,9 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
 
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Protocol), 3),
      DisplayName("Private Key File"),
-     Description("Path to a PuTTY private key (.ppk) file for SSH authentication. When set, the key is passed to PuTTY via the -i argument."),
+     Description("Path to a private key file for SSH authentication. PuTTY-backed protocols expect a PuTTY key (.ppk), passed to PuTTY via the -i argument; the native SSH terminal expects an OpenSSH-format key."),
      Editor(typeof(UI.Controls.ConnectionInfoPropertyGrid.PrivateKeyFileEditor), typeof(System.Drawing.Design.UITypeEditor)),
-     AttributeUsedInProtocol(ProtocolType.SSH1, ProtocolType.SSH2, ProtocolType.OpenSSH)]
+     AttributeUsedInProtocol(ProtocolType.SSH1, ProtocolType.SSH2, ProtocolType.OpenSSH, ProtocolType.SSHNative)]
     public virtual string PrivateKeyPath
     {
         get => GetPropertyValue(nameof(PrivateKeyPath), _privateKeyPath);

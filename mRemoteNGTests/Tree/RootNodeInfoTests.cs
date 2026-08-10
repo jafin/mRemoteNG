@@ -92,6 +92,91 @@ public class RootNodeInfoTests
         Assert.That(_rootNodeInfo.IsPasswordMatch(null), Is.False);
     }
 
+    /// <summary>
+    /// These properties are persisted, so an edit to one has to reach SaveConnectionsOnEdit
+    /// like any other. They were plain auto-properties — <c>Password</c> hiding the base
+    /// property that does notify — so setting or clearing the master password changed the
+    /// model and saved nothing, leaving the file encrypted under the previous key.
+    /// </summary>
+    [Test]
+    public void SettingPasswordProtectionRaisesPropertyChanged()
+    {
+        var raised = new System.Collections.Generic.List<string?>();
+        _rootNodeInfo.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _rootNodeInfo.Password = true;
+
+        Assert.That(raised, Does.Contain(nameof(RootNodeInfo.Password)));
+    }
+
+    [Test]
+    public void ClearingPasswordProtectionRaisesPropertyChanged()
+    {
+        _rootNodeInfo.PasswordString = "custom";
+
+        var raised = new System.Collections.Generic.List<string?>();
+        _rootNodeInfo.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _rootNodeInfo.PasswordString = "";
+
+        Assert.That(raised, Does.Contain(nameof(RootNodeInfo.Password)));
+        Assert.That(raised, Does.Contain(nameof(RootNodeInfo.PasswordString)));
+    }
+
+    [Test]
+    public void ChangingThePasswordItselfRaisesPropertyChanged()
+    {
+        _rootNodeInfo.PasswordString = "first";
+
+        var raised = new System.Collections.Generic.List<string?>();
+        _rootNodeInfo.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        // Still protected either way, so Password does not change — only the key does, and
+        // the file has to be rewritten under it.
+        _rootNodeInfo.PasswordString = "second";
+
+        Assert.That(raised, Does.Contain(nameof(RootNodeInfo.PasswordString)));
+    }
+
+    [Test]
+    public void SettingAPropertyToItsCurrentValueRaisesNothing()
+    {
+        _rootNodeInfo.Password = true;
+
+        var raised = new System.Collections.Generic.List<string?>();
+        _rootNodeInfo.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _rootNodeInfo.Password = true;
+
+        Assert.That(raised, Is.Empty);
+    }
+
+    [Test]
+    public void RenamingTheRootRaisesPropertyChanged()
+    {
+        var raised = new System.Collections.Generic.List<string?>();
+        _rootNodeInfo.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _rootNodeInfo.Name = "Renamed";
+
+        Assert.That(raised, Does.Contain(nameof(RootNodeInfo.Name)));
+    }
+
+    [Test]
+    public void EnablingTotpRaisesPropertyChanged()
+    {
+        var raised = new System.Collections.Generic.List<string?>();
+        _rootNodeInfo.PropertyChanged += (_, e) => raised.Add(e.PropertyName);
+
+        _rootNodeInfo.TotpEnabled = true;
+        _rootNodeInfo.TotpSecret = "ABCDEF";
+        _rootNodeInfo.AutoLockOnMinimize = true;
+
+        Assert.That(raised, Does.Contain(nameof(RootNodeInfo.TotpEnabled)));
+        Assert.That(raised, Does.Contain(nameof(RootNodeInfo.TotpSecret)));
+        Assert.That(raised, Does.Contain(nameof(RootNodeInfo.AutoLockOnMinimize)));
+    }
+
     [TestCase(RootNodeType.Connection, TreeNodeType.Root)]
     [TestCase(RootNodeType.PuttySessions, TreeNodeType.PuttyRoot)]
     public void RootNodeHasCorrectTreeNodeType(RootNodeType rootNodeType, TreeNodeType expectedTreeNodeType)

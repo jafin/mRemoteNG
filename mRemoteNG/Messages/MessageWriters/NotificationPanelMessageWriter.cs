@@ -1,5 +1,4 @@
 using System;
-using System.Collections.Generic;
 using System.Runtime.Versioning;
 using System.Windows.Forms;
 using mRemoteNG.UI;
@@ -11,101 +10,94 @@ namespace mRemoteNG.Messages.MessageWriters;
 public class NotificationPanelMessageWriter(ErrorAndInfoWindow messageWindow) : IMessageWriter
 {
     private readonly ErrorAndInfoWindow _messageWindow = messageWindow ?? throw new ArgumentNullException(nameof(messageWindow));
-    private List<ListViewItem>? _pendingItems = [];
+    private readonly NotificationMessageQueue _queue = new();
 
     /// <summary>
-    /// Set once the deferred flush has been posted. Until it runs, messages keep buffering:
-    /// letting one through early would put it in the list ahead of older ones and reintroduce
-    /// the missing-column problem the deferral exists to avoid.
+    /// Queues the message and makes sure a drain is on its way to the UI thread.
     /// </summary>
-    private bool _flushPosted;
-
+    /// <remarks>
+    /// Called from whichever thread reported the message. Nothing here touches the panel or any
+    /// state that is not synchronized, so there is no thread this is unsafe to call from — which
+    /// was not true when the buffering was a bare list mutated in place by every caller.
+    /// </remarks>
     public void Write(IMessage message)
-    {
-        NotificationMessageListViewItem lvItem = new(message);
-        AddToList(lvItem);
-    }
-
-    private void AddToList(ListViewItem lvItem)
     {
         if (_messageWindow.lvErrorCollector.IsDisposed)
             return;
 
-        // Buffer messages until the control handle is created.
-        // ErrorAndInfoWindow starts in DockBottomAutoHide — its handle is only
-        // created when the user first opens the panel, which is well after
-        // startup timing messages are posted (#53).
-        if (_pendingItems != null)
-        {
-            if (_flushPosted || !_messageWindow.lvErrorCollector.IsHandleCreated)
-            {
-                if (_pendingItems.Count == 0 && !_flushPosted)
-                    _messageWindow.lvErrorCollector.HandleCreated += OnHandleCreated;
-                _pendingItems.Add(lvItem);
-                return;
-            }
+        if (_queue.Enqueue(message))
+            ScheduleDrain();
+    }
 
-            // Handle already exists — flush and switch to direct mode
-            FlushPending();
+    private void ScheduleDrain()
+    {
+        ListView list = _messageWindow.lvErrorCollector;
+
+        // No window to post to yet. The panel starts in DockBottomAutoHide and its handle is
+        // created only when the user first opens it, which is well after startup messages are
+        // reported (#53). The messages stay queued until then.
+        if (!list.IsHandleCreated)
+        {
+            list.HandleCreated += OnHandleCreated;
+
+            // The handle may have appeared between the test and the subscription, in which case
+            // nothing will raise the event and the queue would never be drained.
+            if (!list.IsHandleCreated)
+                return;
+
+            list.HandleCreated -= OnHandleCreated;
         }
 
-        if (_messageWindow.lvErrorCollector.InvokeRequired)
-        {
-            try
-            {
-                _messageWindow.lvErrorCollector.Invoke((MethodInvoker)(() => AddToList(lvItem)));
-            }
-            catch (System.ComponentModel.InvalidAsynchronousStateException)
-            {
-                return;
-            }
-            catch (ObjectDisposedException)
-            {
-                return;
-            }
-            catch (InvalidOperationException)
-            {
-                return;
-            }
-        }
-        else
-        {
-            _messageWindow.AddMessage(lvItem);
-        }
+        PostDrain(list);
     }
 
     private void OnHandleCreated(object? sender, EventArgs e)
     {
-        _messageWindow.lvErrorCollector.HandleCreated -= OnHandleCreated;
+        ListView list = _messageWindow.lvErrorCollector;
+        list.HandleCreated -= OnHandleCreated;
 
-        // Post the flush rather than running it here. ListView.OnHandleCreated raises this
-        // event before it pushes its Columns to the native control, so an item added from
-        // inside the handler is inserted into a control that has no second column yet and
-        // renders its timestamp only — its message text never reaches the native item. A
-        // later Items.Clear() and re-add repairs it, which is why searching used to make the
-        // text appear. Posting puts the flush after the rest of handle creation.
+        // Post rather than drain here. ListView.OnHandleCreated raises this event before it
+        // pushes its Columns to the native control, so an item added from inside the handler is
+        // inserted into a control with no second column yet and renders its timestamp only.
+        PostDrain(list);
+    }
+
+    private void PostDrain(ListView list)
+    {
         try
         {
-            _flushPosted = true;
-            _messageWindow.lvErrorCollector.BeginInvoke((MethodInvoker)FlushPending);
+            list.BeginInvoke((MethodInvoker)Drain);
         }
         catch (InvalidOperationException)
         {
-            // Covers ObjectDisposedException too: the handle went away again between the event
-            // and this call. The items stay buffered and are dropped with the window.
+            // Covers ObjectDisposedException too: the handle went away between the check and
+            // this call. Give up the drain so the next message queued schedules a fresh one.
+            _queue.ReleaseDrain();
         }
     }
 
-    private void FlushPending()
+    /// <summary>
+    /// Renders everything queued. Runs on the UI thread.
+    /// </summary>
+    /// <remarks>
+    /// Oldest first, because the panel inserts each entry at the top, so draining in enqueue
+    /// order leaves the newest message at the top and matches what the timestamps say.
+    /// </remarks>
+    private void Drain()
     {
-        if (_pendingItems == null) return;
-        var items = _pendingItems;
-        _pendingItems = null; // switch to direct mode permanently
-        _flushPosted = false;
+        while (true)
+        {
+            if (_messageWindow.lvErrorCollector.IsDisposed)
+            {
+                _queue.Clear();
+                return;
+            }
 
-        // Oldest first: AddMessage inserts at the top, so replaying in collection order leaves
-        // the newest message at the top, matching live delivery.
-        foreach (var pending in items)
-            _messageWindow.AddMessage(pending);
+            IMessage? message = _queue.Dequeue();
+            if (message is null)
+                return;
+
+            _messageWindow.AddMessage(new NotificationMessageListViewItem(message));
+        }
     }
 }

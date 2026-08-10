@@ -99,16 +99,16 @@ public class FileDataProvider : IDataProvider<string>
                     else
                         File.Move(tempPath, FilePath);
 
-                    // Verify saved file is non-empty (catch catastrophic zero-byte corruption)
+                    // Verify saved file is non-empty (catch catastrophic zero-byte corruption).
+                    // InvalidOperationException on purpose: an IOException here would be caught
+                    // by the retry filters below and re-attempted, and the replace has already
+                    // happened. This is a failed save, so it leaves through HandleSaveException.
                     if (content.Length > 0)
                     {
                         var savedInfo = new FileInfo(FilePath);
                         if (savedInfo.Length == 0)
-                        {
-                            Runtime.MessageCollector.AddExceptionStackTrace(
-                                $"Save verification failed: {FilePath} is empty after save",
-                                new IOException("File is 0 bytes after successful replace"));
-                        }
+                            throw new InvalidOperationException(
+                                $"Save verification failed: {FilePath} is 0 bytes after a successful replace");
                     }
                     return;
                 }
@@ -124,13 +124,24 @@ public class FileDataProvider : IDataProvider<string>
         }
         catch (Exception ex)
         {
-            Runtime.MessageCollector.AddExceptionStackTrace($"Failed to save file {FilePath}", ex);
+            HandleSaveException(ex);
         }
         finally
         {
             // Clean up temp file if it still exists after a failed save.
             try { if (File.Exists(tempPath)) File.Delete(tempPath); } catch { /* best effort */ }
         }
+    }
+
+    /// <summary>
+    /// Called when <see cref="Save"/> could not write the file. Logs by default, so that a
+    /// failed settings or export write does not become an unhandled exception in a caller
+    /// that has never had to handle one. Override to propagate where the caller can tell the
+    /// user, as <see cref="FileDataProviderWithRollingBackup"/> does for the connection file.
+    /// </summary>
+    protected virtual void HandleSaveException(Exception ex)
+    {
+        Runtime.MessageCollector.AddExceptionStackTrace($"Failed to save file {FilePath}", ex);
     }
 
     public virtual void MoveTo(string newPath)

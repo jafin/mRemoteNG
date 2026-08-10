@@ -8410,6 +8410,240 @@ namespace mRemoteNG.Resources.Language {
                 return ResourceManager.GetString("OpenSsh", resourceCulture);
             }
         }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to SSH (native terminal).
+        /// </summary>
+        internal static string SshNative {
+            get {
+                return ResourceManager.GetString("SshNative", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The native SSH terminal needs the Microsoft Edge WebView2 Runtime, which is not installed..
+        /// </summary>
+        internal static string SshNativeWebView2Missing {
+            get {
+                return ResourceManager.GetString("SshNativeWebView2Missing", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The native SSH terminal could not start its terminal host..
+        /// </summary>
+        internal static string SshNativeTerminalHostFailed {
+            get {
+                return ResourceManager.GetString("SshNativeTerminalHostFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The native SSH terminal could not connect..
+        /// </summary>
+        internal static string SshNativeConnectFailed {
+            get {
+                return ResourceManager.GetString("SshNativeConnectFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The clipboard could not be accessed..
+        /// </summary>
+        internal static string SshNativeClipboardFailed {
+            get {
+                return ResourceManager.GetString("SshNativeClipboardFailed", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to SSH host key.
+        /// </summary>
+        internal static string SshNativeHostKeyTitle {
+            get {
+                return ResourceManager.GetString("SshNativeHostKeyTitle", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to A password was sent as user "{0}" to {1}, and that server refused it.
+        /// </summary>
+        internal static string SshNativeAuthRefusedPassword {
+            get {
+                return ResourceManager.GetString("SshNativeAuthRefusedPassword", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to A key and a password were both sent as user "{0}" to {1}, and that server refused both.
+        /// </summary>
+        internal static string SshNativeAuthRefusedKeyAndPassword {
+            get {
+                return ResourceManager.GetString("SshNativeAuthRefusedKeyAndPassword", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to No key and no password were available to send as user "{0}" to {1}, so the server had nothing to accept.
+        /// </summary>
+        internal static string SshNativeAuthNothingToSend {
+            get {
+                return ResourceManager.GetString("SshNativeAuthNothingToSend", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Connecting to {0}:{1} as {2}.
+        /// </summary>
+        internal static string SshNativeConnecting {
+            get {
+                return ResourceManager.GetString("SshNativeConnecting", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The key {0} was sent and the server refused it.
+        /// </summary>
+        internal static string SshNativeAuthKeyRefused {
+            get {
+                return ResourceManager.GetString("SshNativeAuthKeyRefused", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to A key was sent and the server refused it.
+        /// </summary>
+        internal static string SshNativeAuthKeyRefusedNoPath {
+            get {
+                return ResourceManager.GetString("SshNativeAuthKeyRefusedNoPath", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The server asked for something mRemoteNG cannot answer: {0}.
+        /// </summary>
+        internal static string SshNativeAuthUnansweredPrompt {
+            get {
+                return ResourceManager.GetString("SshNativeAuthUnansweredPrompt", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Terminal.
+        /// </summary>
+        internal static string SshNativeTerminalOptions {
+            get {
+                return ResourceManager.GetString("SshNativeTerminalOptions", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to These settings apply to connections using the native SSH terminal, and take effect on the next connection.
+        /// </summary>
+        internal static string SshNativeOptionsIntro {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsIntro", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Font.
+        /// </summary>
+        internal static string SshNativeOptionsFont {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsFont", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Font size.
+        /// </summary>
+        internal static string SshNativeOptionsFontSize {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsFontSize", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Colour scheme.
+        /// </summary>
+        internal static string SshNativeOptionsColorScheme {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsColorScheme", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Scrollback lines.
+        /// </summary>
+        internal static string SshNativeOptionsScrollback {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsScrollback", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Follow the application theme.
+        /// </summary>
+        internal static string SshNativeOptionsSchemeFollow {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsSchemeFollow", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Dark.
+        /// </summary>
+        internal static string SshNativeOptionsSchemeDark {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsSchemeDark", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Light.
+        /// </summary>
+        internal static string SshNativeOptionsSchemeLight {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsSchemeLight", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Ctrl+V pastes into the terminal.
+        /// </summary>
+        internal static string SshNativeOptionsCtrlVPastes {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsCtrlVPastes", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to Windows behaviour, on by default.
+        /// </summary>
+        internal static string SshNativeOptionsCtrlVNote {
+            get {
+                return ResourceManager.GetString("SshNativeOptionsCtrlVNote", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to The server at {0} is not known..
+        /// </summary>
+        internal static string SshNativeHostKeyUnknown {
+            get {
+                return ResourceManager.GetString("SshNativeHostKeyUnknown", resourceCulture);
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized string similar to WARNING: the host key for {0} has changed..
+        /// </summary>
+        internal static string SshNativeHostKeyChanged {
+            get {
+                return ResourceManager.GetString("SshNativeHostKeyChanged", resourceCulture);
+            }
+        }
 
         /// <summary>
         ///   Looks up a localized string similar to WSL.
