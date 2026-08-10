@@ -5,6 +5,7 @@ using mRemoteNG.App;
 using mRemoteNG.Config.Putty;
 using mRemoteNG.Connection;
 using mRemoteNG.Messages;
+using mRemoteNG.Tools;
 using mRemoteNGTests.Properties;
 using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
@@ -21,7 +22,7 @@ public class ConnectionSaveDurabilityTests
 {
     private ConnectionsService _connectionsService = null!;
     private string _filePath = null!;
-    private IDisposable _tempFile = null!;
+    private DisposableAction _tempFile = null!;
     private int _savesPerformed;
 
     [SetUp]
