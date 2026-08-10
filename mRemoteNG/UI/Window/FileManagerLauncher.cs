@@ -5,6 +5,7 @@ using mRemoteNG.App;
 using mRemoteNG.Connection;
 using mRemoteNG.Connection.Sftp;
 using mRemoteNG.Messages;
+using mRemoteNG.UI.Panels;
 using WeifenLuo.WinFormsUI.Docking;
 
 namespace mRemoteNG.UI.Window;
@@ -27,11 +28,11 @@ public static class FileManagerLauncher
                 return existing;
             }
 
-            ConnectionWindow? host = Runtime.WindowList?.OfType<ConnectionWindow>().FirstOrDefault();
+            ConnectionWindow? host = FindHostPanel(connectionInfo) ?? CreateHostPanel(connectionInfo);
             if (host is null)
             {
                 Runtime.MessageCollector?.AddMessage(MessageClass.WarningMsg,
-                    "Open a connection panel before opening the file manager.");
+                    "Could not open a connection panel to host the file manager.");
                 return null;
             }
 
@@ -51,6 +52,29 @@ public static class FileManagerLauncher
             return null;
         }
     }
+
+    /// <summary>
+    /// The panel the connection would open into, if it is already open. Falls back to any open
+    /// panel so the file manager does not create a second one beside a perfectly good host.
+    /// </summary>
+    private static ConnectionWindow? FindHostPanel(ConnectionInfo connectionInfo)
+    {
+        if (Runtime.WindowList is null)
+            return null;
+
+        return (Runtime.WindowList.FromString(PanelNameFor(connectionInfo)) as ConnectionWindow)
+               ?? Runtime.WindowList.OfType<ConnectionWindow>().FirstOrDefault();
+    }
+
+    /// <summary>
+    /// The file manager is reachable from the connection tree before any session has been opened,
+    /// so it cannot assume a panel exists — it opens one the same way a connection does.
+    /// </summary>
+    private static ConnectionWindow? CreateHostPanel(ConnectionInfo connectionInfo) =>
+        PanelAdder.AddPanel(PanelNameFor(connectionInfo), showImmediately: true);
+
+    private static string PanelNameFor(ConnectionInfo connectionInfo) =>
+        string.IsNullOrEmpty(connectionInfo.Panel) ? "New Panel" : connectionInfo.Panel;
 
     private static FileManagerTab? FindOpenTab(ConnectionInfo connectionInfo)
     {

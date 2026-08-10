@@ -1,0 +1,29 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<!--
+  Served from disk under a virtual host name, so a real origin exists and script can be pinned to
+  'self' — no inline script can run at all. default-src 'none' means nothing loads unless named
+  here, and no network origin appears anywhere: the terminal displays output from a remote host
+  inside a browser engine, and any path from that output to the network or to markup would turn
+  terminal output into a code execution surface.
+
+  style-src must permit 'unsafe-inline'. xterm's DOM renderer builds its colour rules into <style>
+  elements it injects at runtime; blocking them breaks every colour silently, leaving unreadable
+  text and no diagnostic pointing at the cause. Inline style cannot execute code, so this is a far
+  narrower grant than inline script. See the change's design.md S1.3.
+-->
+<meta http-equiv="Content-Security-Policy"
+      content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; font-src 'self'; img-src 'self' data:; connect-src 'none'; base-uri 'none'; form-action 'none'">
+<link rel="stylesheet" href="./xterm.css">
+<link rel="stylesheet" href="./host.css">
+<title>mRemoteNG terminal</title>
+</head>
+<body>
+<div id="terminal"></div>
+<script src="./xterm.js"></script>
+<script src="./addon-fit.js"></script>
+<script src="./terminal.js"></script>
+</body>
+</html>

@@ -2928,6 +2928,101 @@ mRemoteNG will now quit and begin with the installation.</value>
   <data name="OpenSsh" xml:space="preserve">
     <value>OpenSSH</value>
   </data>
+  <data name="SshNative" xml:space="preserve">
+    <value>SSH (native terminal)</value>
+  </data>
+  <data name="SshNativeWebView2Missing" xml:space="preserve">
+    <value>The native SSH terminal needs the Microsoft Edge WebView2 Runtime, which is not installed. Install it from https://developer.microsoft.com/microsoft-edge/webview2/ and reconnect, or set this connection to SSH version 2 to use PuTTY instead.</value>
+  </data>
+  <data name="SshNativeTerminalHostFailed" xml:space="preserve">
+    <value>The native SSH terminal could not start its terminal host.</value>
+  </data>
+  <data name="SshNativeConnectFailed" xml:space="preserve">
+    <value>The native SSH terminal could not connect.</value>
+  </data>
+  <data name="SshNativeClipboardFailed" xml:space="preserve">
+    <value>The clipboard could not be accessed.</value>
+  </data>
+  <data name="SshNativeHostKeyTitle" xml:space="preserve">
+    <value>SSH host key</value>
+  </data>
+  <data name="SshNativeAuthRefusedPassword" xml:space="preserve">
+    <value>A password was sent as user &quot;{0}&quot; to {1}, and that server refused it. Check the username and the password, and that the server accepts password authentication for that account.</value>
+  </data>
+  <data name="SshNativeAuthRefusedKeyAndPassword" xml:space="preserve">
+    <value>A key and a password were both sent as user &quot;{0}&quot; to {1}, and that server refused both. Check the address, port and username first, since a wrong one of those refuses a correct key and a correct password alike.</value>
+  </data>
+  <data name="SshNativeAuthNothingToSend" xml:space="preserve">
+    <value>No key and no password were available to send as user &quot;{0}&quot; to {1}, so the server had nothing to accept. Set a password or a private key on this connection.</value>
+  </data>
+  <data name="SshNativeConnecting" xml:space="preserve">
+    <value>Connecting to {0}:{1} as “{2}”. Authentication methods offered: {3}. Key file: {4}</value>
+  </data>
+  <data name="SshNativeAuthKeyRefused" xml:space="preserve">
+    <value>The key {0} was sent as user &quot;{1}&quot; to {2}, and that server refused it. Check that the address, port and username are right, and that the key's public half is listed in ~/.ssh/authorized_keys for that user on that server.</value>
+  </data>
+  <data name="SshNativeAuthKeyRefusedNoPath" xml:space="preserve">
+    <value>A key was sent as user &quot;{0}&quot; to {1}, and that server refused it. Check that the address, port and username are right, and that the key's public half is listed in ~/.ssh/authorized_keys for that user on that server.</value>
+  </data>
+  <data name="SshNativeAuthUnansweredPrompt" xml:space="preserve">
+    <value>The server asked for something mRemoteNG cannot answer: {0}</value>
+  </data>
+  <data name="SshNativeTerminalOptions" xml:space="preserve">
+    <value>Terminal</value>
+  </data>
+  <data name="SshNativeOptionsIntro" xml:space="preserve">
+    <value>These settings apply to connections using the native SSH terminal, and take effect on the next connection.</value>
+  </data>
+  <data name="SshNativeOptionsFont" xml:space="preserve">
+    <value>Font</value>
+  </data>
+  <data name="SshNativeOptionsFontSize" xml:space="preserve">
+    <value>Font size</value>
+  </data>
+  <data name="SshNativeOptionsColorScheme" xml:space="preserve">
+    <value>Colour scheme</value>
+  </data>
+  <data name="SshNativeOptionsScrollback" xml:space="preserve">
+    <value>Scrollback lines</value>
+  </data>
+  <data name="SshNativeOptionsSchemeFollow" xml:space="preserve">
+    <value>Follow the application theme</value>
+  </data>
+  <data name="SshNativeOptionsSchemeDark" xml:space="preserve">
+    <value>Dark</value>
+  </data>
+  <data name="SshNativeOptionsSchemeLight" xml:space="preserve">
+    <value>Light</value>
+  </data>
+  <data name="SshNativeOptionsCtrlVPastes" xml:space="preserve">
+    <value>Ctrl+V pastes into the terminal</value>
+  </data>
+  <data name="SshNativeOptionsCtrlVNote" xml:space="preserve">
+    <value>Windows behaviour, on by default. Turning this off frees Ctrl+V for the shell, where it is the quoted-insert key used to type a literal control character; paste is then Shift+Insert or Ctrl+Shift+V, which always work either way.</value>
+  </data>
+  <data name="SshNativeHostKeyUnknown" xml:space="preserve">
+    <value>The server at {0} is not known.
+
+Key algorithm: {1}
+Fingerprint: {2}
+
+Check this fingerprint against one you obtained from the server another way. Accepting a key you cannot verify means you cannot tell this server apart from an impostor.
+
+Trust this host and continue connecting?</value>
+  </data>
+  <data name="SshNativeHostKeyChanged" xml:space="preserve">
+    <value>WARNING: the host key for {0} has changed.
+
+Key algorithm: {1}
+New fingerprint: {2}
+Previously accepted: {3}
+
+This happens when a server is rebuilt or its key is replaced — and it also happens when something is intercepting the connection. Nothing on this side can tell the two apart.
+
+Do not continue unless you know why the key changed.
+
+Accept the new key and continue connecting?</value>
+  </data>
   <data name="VaultOpenbaoSecretEngineSSHOTP" xml:space="preserve">
     <value>SSH engine OTP mode</value>
   </data>

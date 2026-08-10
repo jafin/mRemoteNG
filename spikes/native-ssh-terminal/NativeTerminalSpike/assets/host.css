@@ -1,0 +1,9 @@
+html, body { margin: 0; padding: 0; height: 100%; background: #1e1e1e; overflow: hidden; }
+#term { position: absolute; inset: 0; }
+
+/* Windows High Contrast repaints text and background from the system palette, which throws away
+   the terminal's own colours and can land black on dark. A terminal's colours carry meaning, so
+   opt out and keep what the remote asked for. */
+@media (forced-colors: active) {
+  html, body, #term, .xterm, .xterm-screen, .xterm-rows { forced-color-adjust: none; }
+}
