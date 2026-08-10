@@ -26,11 +26,17 @@ often to save periodically, not about whether the user's last action survives.
 - **WHEN** an edit is pending and `SaveConnectionsFrequency` is set to anything other than on-exit
 - **THEN** the pending edit is still written
 
-#### Scenario: The flush cannot hang shutdown
+#### Scenario: A save already running does not hold shutdown open indefinitely
 
-- **WHEN** the write cannot complete
+- **WHEN** the flush cannot take the save lock within its time limit, because another save is
+  still writing
 - **THEN** shutdown proceeds rather than waiting indefinitely
-- **AND** the failure is reported
+- **AND** the timeout is reported
+- **AND** no second save is started on top of the one still running
+
+This bounds waiting for *another* save, which is the contention the flush can resolve. It does not
+bound the write itself: a file or database write that blocks after the lock is taken still blocks,
+as it does on every other save path, and bounding that needs the save to become cancellable.
 
 #### Scenario: The periodic-save setting has never been chosen
 

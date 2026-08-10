@@ -37,6 +37,14 @@ namespace mRemoteNG.Connection;
 public class ConnectionsService(PuttySessionsManager puttySessionsManager)
 {
     private static readonly Lock SaveLock = new();
+
+    /// <summary>
+    /// Guards the batching depth and its deferred-save flags, which the debounce timer reads
+    /// from the thread pool while the UI thread changes them. Held only across field
+    /// assignments — never across a save, and never while a message is reported — so it
+    /// cannot be the lock someone is waiting on when a save needs the UI thread.
+    /// </summary>
+    private readonly Lock _batchLock = new();
     private static readonly CompositeFormat ConnectionFileAlreadyOpenFormat = CompositeFormat.Parse("Connection file '{0}' is already open.");
     private static readonly CompositeFormat ConnectionsNotSavedFormat = CompositeFormat.Parse("Your changes were not saved: {0}");
     private const string NothingLoadedReason = "no connection file is loaded.";
@@ -59,7 +67,25 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     /// </summary>
     public static readonly TimeSpan DefaultFlushTimeout = TimeSpan.FromSeconds(20);
 
-    private bool BatchingSaves => _saveBatchDepth > 0;
+    /// <summary>
+    /// Records a save request as deferred when a batch is open. Tested and recorded under one
+    /// lock: separately, a batch could open between the two and the request be dropped.
+    /// </summary>
+    private bool DeferredByBatching(bool async)
+    {
+        lock (_batchLock)
+        {
+            if (_saveBatchDepth == 0)
+                return false;
+
+            if (async)
+                _saveAsyncRequested = true;
+            else
+                _saveRequested = true;
+
+            return true;
+        }
+    }
     // Cached SQL custom encryption password — avoids re-prompting on every reload (#1646)
     private SecureString? _cachedSqlEncryptionPassword;
 
@@ -411,7 +437,8 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     /// </summary>
     public void BeginBatchingSaves()
     {
-        _saveBatchDepth++;
+        lock (_batchLock)
+            _saveBatchDepth++;
     }
 
     /// <summary>
@@ -421,22 +448,30 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     /// </summary>
     public void EndBatchingSaves()
     {
-        if (_saveBatchDepth > 0)
-            _saveBatchDepth--;
+        bool asyncRequested;
+        bool requested;
 
-        // A nested context ending does not end the outer one. Dispatching here would write
-        // early; worse, dropping the depth to zero would let the outer context's own edits
-        // through undeferred.
-        if (_saveBatchDepth > 0)
-            return;
+        lock (_batchLock)
+        {
+            if (_saveBatchDepth > 0)
+                _saveBatchDepth--;
 
-        // Take and clear the requests together. Left set, they made the *next* batch end with
-        // a save nobody asked for; left unread, they would drop the one that was asked for.
-        bool asyncRequested = _saveAsyncRequested;
-        bool requested = _saveRequested;
-        _saveAsyncRequested = false;
-        _saveRequested = false;
+            // A nested context ending does not end the outer one. Dispatching here would
+            // write early; worse, dropping the depth to zero would let the outer context's
+            // own edits through undeferred.
+            if (_saveBatchDepth > 0)
+                return;
 
+            // Take and clear the requests together. Left set, they made the *next* batch end
+            // with a save nobody asked for; left unread, they would drop the one that was
+            // asked for.
+            asyncRequested = _saveAsyncRequested;
+            requested = _saveRequested;
+            _saveAsyncRequested = false;
+            _saveRequested = false;
+        }
+
+        // Dispatched outside the lock: the save must not hold batch state while it writes.
         if (asyncRequested)
             SaveConnectionsAsync();
         else if (requested)
@@ -531,12 +566,21 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
         }
 
         // Not a failure: the request is deferred to EndBatchingSaves, which drains it.
-        if (BatchingSaves)
-        {
-            _saveRequested = true;
+        if (DeferredByBatching(async: false))
             return;
-        }
 
+        // One writer at a time. Two saves overlapping would race on the connection file and
+        // on the single ".tmp" path it is written through, and the debounce timer runs on the
+        // thread pool while explicit saves run on the UI thread. Reentrant, so callers that
+        // already hold it to settle pending state are unaffected.
+        lock (SaveLock)
+        {
+            SaveConnectionsUnderLock(connectionTreeModel, useDatabase, saveFilter, connectionFileName, propertyNameTrigger);
+        }
+    }
+
+    private void SaveConnectionsUnderLock(ConnectionTreeModel connectionTreeModel, bool useDatabase, SaveFilter saveFilter, string connectionFileName, string propertyNameTrigger)
+    {
         try
         {
             Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, "Saving connections...");
@@ -609,11 +653,8 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     /// </param>
     public void SaveConnectionsAsync(string propertyNameTrigger = "")
     {
-        if (BatchingSaves)
-        {
-            _saveAsyncRequested = true;
+        if (DeferredByBatching(async: true))
             return;
-        }
 
         // Debounce: reset the timer on each call so that rapid-fire PropertyChanged
         // events (e.g. from HostStatusMonitor or bulk edits) coalesce into a single
@@ -645,14 +686,15 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     /// <inheritdoc cref="FlushPendingSaves()"/>
     public bool FlushPendingSaves(TimeSpan timeout)
     {
-        if (!_savePending)
-            return true;
-
+        // Take the lock before reading the pending state, not after. Checking first and
+        // returning early let the flush finish in two situations where it had not: while a
+        // debounced save held the lock and was still writing, and just before a concurrent
+        // edit set the flag under it.
+        //
         // The write runs on the calling thread deliberately. Handing it to a worker and
         // waiting would leave the UI thread in a blocking wait while the worker marshals its
-        // progress messages to the notification panel — a Control.Invoke deadlock, and one
-        // that would happen on every exit rather than rarely. What can genuinely block here
-        // instead is a debounced save already in flight, so that is what is time-boxed.
+        // progress messages to the notification panel. What can genuinely block here instead
+        // is a save already in flight, so that is what is time-boxed.
         if (!SaveLock.TryEnter(timeout))
         {
             Runtime.MessageCollector?.AddMessage(MessageClass.WarningMsg, PendingSaveTimedOutMessage);

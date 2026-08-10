@@ -79,7 +79,12 @@ public static class Shutdown
         // Whatever the user already changed goes to disk first, unconditionally. The setting
         // below governs how often to save on a schedule; it was never meant to decide whether
         // an edit the user has already made survives being closed.
-        Runtime.ConnectionsService.FlushPendingSaves();
+        //
+        // A flush that times out means a save is still running. Starting the scheduled one on
+        // top of it would have two writers on the same file and the same ".tmp" path, so skip
+        // it: the in-flight save is already writing, and the timeout has been reported.
+        if (!Runtime.ConnectionsService.FlushPendingSaves())
+            return;
 
         int frequency = Properties.OptionsBackupPage.Default.SaveConnectionsFrequency;
 
