@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Threading;
 using System.Windows.Forms;
 using mRemoteNG.Connection;
@@ -193,9 +193,12 @@ public class ConnectionTreeExpansionTests
             model.AddRootNode(root);
             tree.ConnectionTreeModel = model;
 
-            // The single connection root is promoted (hidden); folder1/folder2 are the visible
-            // top-level nodes, so pre-filter expansion state is tracked on them.
+            // folder1/folder2 sit under the visible connection root; pre-filter expansion state is
+            // tracked on them.
             tree.CollapseAll();
+            // The connection root is a visible node, so CollapseAll closes it too; its children have
+            // to be reachable before their own expansion state means anything.
+            tree.Expand(root);
             tree.Expand(folder1);
             Application.DoEvents();
 
