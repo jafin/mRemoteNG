@@ -29,9 +29,23 @@ lands on the figure the iteration count was already chosen against.
   `CryptoProviderFactoryFromXml.cs:40`).
 - A file with no `KdfPrf` attribute is read as SHA-1. Every file written before this change opens
   unchanged, with no migration step and no user action.
-- New saves write `KdfPrf="SHA256"` and keep 600,000 iterations.
+- **`KdfPrf` is written only at the hardened format level** introduced by `add-storage-format-opt-in`.
+  A classic store keeps deriving with SHA-1 and stays readable by upstream mRemoteNG.
 - `Pkcs5S2KeyGenerator`'s `iterations` parameter loses its `= 1000` default, which no caller uses and
   which would silently produce a 1000-iteration key if one ever did.
+
+### Gated, not automatic
+
+An earlier draft applied the new PRF on the next save of any file. That was wrong for a fork.
+
+This fork writes `%APPDATA%\mRemoteNG\confCons.xml` — upstream mRemoteNG's own path and filename.
+Upstream ignores an unknown `KdfPrf` attribute, derives with SHA-1, fails to decrypt, and reports it
+as a wrong password. So an automatic write would mean that merely opening and saving in this fork
+locks a user out of the application they came from, silently and with no way back.
+
+Gating costs this change its best property — it was the cheapest of the set precisely because it
+needed no migration. That is accepted deliberately: see `add-storage-format-opt-in`, which owns the
+level, the single confirmation and the classic export.
 
 ## Capabilities
 

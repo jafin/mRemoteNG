@@ -25,25 +25,52 @@ Raised as H-1 in the upstream security audit ([mRemoteNG#3416](https://github.co
 
 ## What Changes
 
-- A connection file with no master password is protected with a random per-file key, wrapped by
-  Windows DPAPI at `CurrentUser` scope. The file becomes readable only by the account that wrote it.
-- The file states which of the three protections it uses, through the root sentinel it already writes
-  to distinguish "protected" from "not protected" (`XmlRootNodeSerializer.cs:41`). A third value is
+- A connection file is protected by a **random per-file key with two independent protectors**: a
+  DPAPI blob at `CurrentUser` scope, and a recovery password. Either unwraps the same key. This is
+  the model BitLocker and LUKS use, and it is what makes the rest of this list possible.
+- Daily use unwraps through DPAPI and prompts for nothing. The recovery password is typed when the
+  file is set up and when it is opened somewhere DPAPI cannot help — another machine, another
+  account, a rebuilt profile, a restored backup.
+- The file states which protection it uses, through the root sentinel it already writes to
+  distinguish "protected" from "not protected" (`XmlRootNodeSerializer.cs:41`). A third value is
   added; the two existing ones keep their meaning.
 - `mR3m` becomes **read-only**. Existing files open exactly as they do now. Nothing is ever written
   under it again.
-- Migration happens on save, once, with a notice explaining what changed and what it costs.
-- **The portable edition does not use DPAPI.** A key bound to one Windows account defeats a build
-  whose purpose is to run from a USB stick on someone else's machine. Portable is offered a master
-  password instead, and if the user declines, it keeps the legacy key with the weakness stated
-  plainly rather than silently.
+- Migration happens **only at the hardened format level** introduced by `add-storage-format-opt-in`,
+  and **requires a recovery password**. A file with only a DPAPI protector is one profile rebuild
+  away from being lost, and its backups go with it.
+- A classic store keeps the legacy default key and stays readable by upstream mRemoteNG, which reads
+  the same `%APPDATA%\mRemoteNG\confCons.xml` this fork writes. The migration prompt this proposal
+  originally owned is folded into the single confirmation that change defines — one decision about
+  the store, not one per cryptographic property.
+- **The portable edition uses the recovery password alone**, with no DPAPI protector. A key bound to
+  one Windows account defeats a build whose purpose is to run from a USB stick on someone else's
+  machine. Portable therefore produces files the installed edition can also open, and vice versa.
+
+### Why two protectors rather than DPAPI alone
+
+An earlier draft of this proposal wrapped the file key with DPAPI only, and offered a manual export
+as the escape route. Checking that against the backup feature showed it does not hold.
+
+`FileBackupCreator.CreateBackupFile` is a plain `File.Copy` of the encrypted file
+(`FileBackupCreator.cs:29`). Backups are byte-identical, wrapped key included, so a DPAPI-only file
+produces backups bound to the same account. Ten rolling backups would all die with the profile —
+where today every one of them is recoverable, precisely because the key is public. The change would
+have **reduced** recoverability while claiming to improve protection, and done it silently: the copy
+succeeds, the file looks normal, and only an attempted restore reveals the loss.
+
+`BackupLocation` makes it sharper. Users point it at a network share or a synced folder specifically
+so that backups outlive the machine, and DPAPI defeats that exact intent with no error.
+
+A second protector costs one prompt at migration and removes the whole class of problem.
 
 ## Capabilities
 
 Modifies `connection-file-encryption`, introduced by `harden-connection-file-kdf` and not yet
 archived. That change establishes that the file records its own cryptographic parameters and that
 absence keeps its historical meaning; this change adds a parameter of the same kind and depends on
-that rule already being in place.
+that rule already being in place. The recovery password is stretched with the KDF that change
+configures, so the two are ordered rather than independent.
 
 ## Impact
 
@@ -53,19 +80,27 @@ that rule already being in place.
 `mRemoteNG/Config/Serializers/ConnectionSerializers/Xml/XmlConnectionsDeserializer.cs`,
 `mRemoteNG/Config/Serializers/XmlConnectionsDecryptor.cs`,
 `mRemoteNG/Security/Factories/CryptoProviderFactoryFromXml.cs`,
-`mRemoteNG/Config/Connections/SqlConnectionsLoader.cs`.
+`mRemoteNG/Config/Connections/SqlConnectionsLoader.cs`,
+`mRemoteNG/Config/DataProviders/FileBackupCreator.cs`,
+`mRemoteNG/Config/Connections/XmlConnectionsLoader.cs`.
 
 This is the highest-severity finding and the one most able to lose a user's data, because it changes
-what the file is bound to. Three consequences have to be carried by the design rather than discovered
+what the file is bound to. Four consequences have to be carried by the design rather than discovered
 by users:
 
-- **A DPAPI-protected file does not survive a reinstall or a new machine.** Copying `confCons.xml`
-  to a rebuilt PC is something people do. Today it works; after this it does not, unless they export
-  first. The migration notice has to say so, and an export path has to exist before the migration is
-  offered.
+- **Backups are plain copies of the encrypted file.** `FileBackupCreator` is a `File.Copy`, so every
+  backup inherits whatever protects the original. The recovery-password protector is what keeps them
+  restorable; without it, a rolling set of ten backups is ten copies of the same unopenable file.
+  This is the reason the design has two protectors and not one.
+- **`XmlConnectionsLoader.TryRecoverFromBackup` will misreport a protector failure.** It walks every
+  backup on a load failure and logs a deserialization warning per file. After a profile rebuild all
+  of them fail for the same reason, so the user gets ten warnings about corrupt backups when the
+  file is intact and only the key is out of reach. It must distinguish "cannot unwrap" from "cannot
+  parse" and stop rather than iterate.
 - **Roaming profiles and folder redirection.** DPAPI `CurrentUser` follows the user's master key, not
   the file. Domain users with roaming profiles are usually fine; users whose profile is local but
-  whose documents are redirected to a share are not, and they will not know which they are.
+  whose documents are redirected to a share are not, and they will not know which they are. The
+  recovery password is what makes this survivable rather than something we must detect perfectly.
 - **`SqlConnectionsLoader` uses `DefaultPassword` as the no-master-password fallback** for a shared
   database. A per-user wrapped key is meaningless for a store several people read. The SQL backend
-  keeps the legacy default here and needs its own answer — out of scope, noted in design.md.
+  keeps the legacy default here; `require-sql-master-password` is where that is fixed.

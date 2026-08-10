@@ -34,6 +34,27 @@ audit assumed these were legacy read paths, and they are live write paths for si
 - One helper owns the choice, so a seventh secret added later cannot quietly pick the wrong provider —
   which is how these six accumulated.
 - `LegacyRijndaelCryptographyProvider` keeps its decrypt path and loses its settings write callers.
+- **Settings secrets stay machine-portable.** They keep deriving from `Runtime.EncryptionKey` and do
+  not gain the machine-bound protector `replace-default-connection-file-key` introduces for the
+  connection file. See below.
+
+### Settings secrets must not become machine-bound
+
+`replace-default-connection-file-key` protects the connection file with a per-file key wrapped by
+DPAPI. It would be a natural-looking next step to do the same here, and it would break the portable
+edition silently.
+
+The portable edition carries its settings on the stick. The SQL Server password
+(`SqlServerPage.cs:129,161`), the default credential password and the update proxy password all
+travel with it, and a DPAPI-wrapped protector cannot be unwrapped on the next machine. Unlike the
+connection file, there is nowhere natural to prompt for a recovery password — these values are read
+during startup and during a connection attempt, not at a point where a dialog belongs.
+
+So this change improves the cipher and the KDF and deliberately leaves the key where it is. That
+leaves `Runtime.EncryptionKey`, which is `mR3m`-derived unless a master password is set — a real
+remaining weakness, and a smaller one than an unsalted MD5. Fixing it properly means binding settings
+secrets to something the user supplies, which is a separate change with its own portability problem
+to solve.
 
 ## Capabilities
 

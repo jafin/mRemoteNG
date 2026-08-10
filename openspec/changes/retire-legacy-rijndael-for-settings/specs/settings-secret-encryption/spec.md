@@ -67,6 +67,27 @@ than today.
 - **THEN** it is left in its existing form
 - **AND** it continues to decrypt
 
+### Requirement: Settings secrets remain readable on any machine
+
+The system SHALL NOT protect a settings secret with a key bound to a machine or a user account.
+
+The portable edition carries its settings alongside the executable, and its stored SQL Server
+password, default credential password and update proxy password are read during startup and during a
+connection attempt — points where no recovery prompt belongs. A machine-bound protector would make a
+portable installation stop working on the second machine it was carried to, which is the only thing
+the edition is for.
+
+#### Scenario: Portable settings moved between machines
+
+- **WHEN** settings written by the portable edition on one machine are read on another
+- **THEN** every stored secret decrypts
+- **AND** no recovery prompt is required
+
+#### Scenario: A new settings secret is added
+
+- **WHEN** a settings secret is protected
+- **THEN** its key is not derived from per-user or per-machine data protection
+
 ### Requirement: One component decides which provider protects a settings secret
 
 The system SHALL resolve the cryptography provider for settings secrets through a single component,

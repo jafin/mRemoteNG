@@ -1,5 +1,9 @@
 # Tasks
 
+**This proposal is split across releases.** Section 1 ships a release ahead of the rest; sections 2
+onward wait for `add-storage-format-opt-in`. See
+[SECURITY-AUDIT-3416.md](../SECURITY-AUDIT-3416.md) for the full order.
+
 ## 1. Version refusal — ships first
 
 - [ ] 1.1 In `SqlDatabaseVersionVerifier`, treat a database version newer than the build as a refusal that names both versions, instead of proceeding to read rows.
@@ -22,10 +26,10 @@
 
 ## 4. Upgrade
 
-- [ ] 4.1 Settle the open question in design.md: options page, first-run prompt, or both.
+- [ ] 4.1 Put the upgrade in the SQL options page and **do not prompt for it** when a database is opened — decided, see design.md. Deliberately not the once-per-store offer `add-storage-format-opt-in` defines: that suits the connection file, where the person prompted is the person affected. Here the decision is team-wide and belongs to whoever administers the database.
 - [ ] 4.2 Authenticate the master password against the `Protected` metadata before touching a row.
 - [ ] 4.3 Read every secret column with the legacy provider, rewrite with AEAD, raise `ConfVersion`, all in one `DbTransaction`.
-- [ ] 4.4 Warn before proceeding, naming the consequence for clients on older builds, and require confirmation.
+- [ ] 4.4 Warn before proceeding and require confirmation. Name upstream mRemoteNG among the clients that will stop reading the database, and say that this decides for colleagues who never installed this fork — see `add-storage-format-opt-in`.
 - [ ] 4.5 Tests: a successful upgrade re-encrypts every secret and raises the version; a failure mid-way rolls back to a fully legacy database; a wrong password modifies nothing.
 
 ## 5. Serializers

@@ -28,6 +28,7 @@ Grouped so a partial landing still leaves each secret consistent between its rea
 
 - [ ] 4.1 Confirm no settings write path constructs `LegacyRijndaelCryptographyProvider` directly. A test asserting this is worth more than the review that finds it once.
 - [ ] 4.2 Leave the SQL backend's use alone — `encrypt-sql-backend-with-aead` owns it, and touching both from two changes is how one of them gets half done.
+- [ ] 4.3 Assert in a test that no settings secret is protected by `ProtectedData`. `replace-default-connection-file-key` introduces that protector for the connection file and extending it here would break the portable edition on the second machine it reached — silently, and in code paths with nowhere to prompt.
 
 ## 5. Verification
 

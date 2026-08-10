@@ -39,23 +39,34 @@ connections with no way to tell why.
 
 #### Scenario: A file with no recorded function is saved
 
-- **WHEN** such a file is opened and then saved
-- **THEN** it is rewritten with the current function recorded
-- **AND** it is no longer readable as SHA-1
+- **WHEN** such a file is opened and then saved at the classic level
+- **THEN** it is rewritten with no recorded function
+- **AND** it continues to derive with HMAC-SHA1
 
-### Requirement: New connection files are written with HMAC-SHA256
+### Requirement: Hardened connection files are written with HMAC-SHA256
 
-The system SHALL derive keys for newly written connection files using PBKDF2-HMAC-SHA256.
+The system SHALL derive keys using PBKDF2-HMAC-SHA256 for connection files at the hardened format
+level, and SHALL keep using HMAC-SHA1 for files at the classic level.
 
 The 600,000 iterations already configured is OWASP's guidance for HMAC-SHA256. Against HMAC-SHA1 the
 same count is roughly half the intended work factor, so pairing the count with the function it was
 chosen for costs nothing at runtime and closes the gap without doubling the time to open a file.
 
-#### Scenario: Deriving a key for a new file
+It is gated because upstream mRemoteNG reads the same file from the same path and ignores the
+attribute that records the function, so writing it would make the file unopenable there while
+reporting a wrong password.
 
-- **WHEN** a key is derived for a connection file being written
+#### Scenario: Deriving a key for a hardened file
+
+- **WHEN** a key is derived for a connection file at the hardened level
 - **THEN** the pseudo-random function is HMAC-SHA256
 - **AND** the iteration count is the configured value
+
+#### Scenario: Deriving a key for a classic file
+
+- **WHEN** a key is derived for a connection file at the classic level
+- **THEN** the pseudo-random function is HMAC-SHA1
+- **AND** no pseudo-random function is recorded in the file
 
 ### Requirement: The key derivation function is given its parameters explicitly
 

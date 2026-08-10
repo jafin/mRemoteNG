@@ -63,6 +63,12 @@ than a message. The upgrade must therefore be an explicit administrative action 
 names the consequence, never automatic, and `SqlDatabaseVersionVerifier` must refuse a database
 newer than the running build rather than reading it badly.
 
+**"Older clients" includes upstream mRemoteNG.** This is a fork, and a team's SQL database is
+routinely reached by people running the software this fork came from. The `ConfVersion` gate is the
+SQL store's format level in the sense `add-storage-format-opt-in` defines, and the warning must name
+upstream explicitly rather than saying "older clients" — the person confirming the upgrade is
+deciding for colleagues who never installed this fork and cannot undo it.
+
 Any client that must keep the old format keeps working as long as nobody upgrades. That is the
 property that makes a staged rollout possible, and it is why the change gates on `ConfVersion` rather
 than sniffing the ciphertext.

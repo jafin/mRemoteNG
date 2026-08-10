@@ -1,6 +1,6 @@
 # Tasks
 
-Schedule last of the six. See proposal.md — this shortens an exposure window, where the other
+Schedule last of the eight. See proposal.md — this shortens an exposure window, where the other
 changes decide whether the encryption is meaningful at all.
 
 ## 1. Lock in what is already correct

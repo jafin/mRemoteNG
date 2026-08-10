@@ -55,12 +55,30 @@ This is the one part of the change that has to ship **before** anyone upgrades a
 in a release that precedes the one offering the upgrade, or the protection is not there when it is
 first needed.
 
-### Upgrade is an explicit action
+### Upgrade lives in the SQL options page, and is never prompted
 
-Not the first save. A shared database changing format because one user happened to edit a connection
-is how a team loses an afternoon. The upgrade is a deliberate command that states what it will do,
-warns that older clients will stop reading the database, and requires the master password — which it
-needs anyway, to re-encrypt.
+Not the first save, and not a prompt when the database is opened. The upgrade is a deliberate command
+in the SQL options page that states what it will do, warns that older clients — upstream mRemoteNG
+included — will stop reading the database, and requires the master password, which it needs anyway
+to re-encrypt.
+
+A first-run prompt was considered and rejected. The objection is not only that it would fire on every
+client until somebody accepted, though it would. It is that **the decision is not the prompted user's
+to make.** Upgrading a shared database changes the format for a whole team, cannot be undone without
+restoring a backup, and locks out everyone who has not been upgraded and told the master password.
+Putting that in front of whoever happens to open the application first offers it to people with no
+authority to make it, and one accepting click costs their colleagues the afternoon.
+
+An options page reaches fewer people, and the people it reaches are the ones who configured the
+database in the first place. For a shared store that is the correct audience, not a limitation.
+
+This is the one place the SQL store deliberately diverges from the once-per-store offer
+`add-storage-format-opt-in` defines. That offer suits the connection file, where the person prompted
+is the person affected. Here they are not the same person.
+
+Discoverability is handled without a prompt: `require-sql-master-password` states in the same options
+page when a database is still using the built-in default key, so an administrator who opens those
+settings for any reason sees the problem and the remedy together.
 
 ### Re-encrypt in one transaction
 
@@ -76,10 +94,3 @@ exists. A failure rolls back to a database that is entirely legacy and entirely 
 | Upgrade interrupted | Single transaction; rollback leaves the old format intact |
 | Master password wrong at upgrade time | Authenticate against `Protected` before touching a row |
 | Users upgrade without warning others | The command states the consequence and requires confirmation |
-
-## Open Questions
-
-- Does the upgrade belong in the SQL options page, or as a first-run prompt when a legacy database is
-  opened by a build that supports AEAD? The prompt reaches people who would never look in options;
-  it also fires on every client until someone accepts, which is noise. Leaning towards the options
-  page with a status line elsewhere, but this is worth deciding before task 4.

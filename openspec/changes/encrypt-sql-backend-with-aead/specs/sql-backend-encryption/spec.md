@@ -71,12 +71,16 @@ previously worked, which reads to a user as data loss rather than as a version m
 
 ### Requirement: Upgrading a database is explicit and atomic
 
-The system SHALL upgrade a SQL database to authenticated encryption only when the user asks, SHALL
-state before proceeding that older clients will no longer read the database, and SHALL re-encrypt
-every stored secret and raise the version within a single transaction.
+The system SHALL upgrade a SQL database to authenticated encryption only when the user asks for it
+from the SQL configuration, SHALL NOT prompt for it when a database is opened, SHALL state before
+proceeding that older clients will no longer read the database, and SHALL re-encrypt every stored
+secret and raise the version within a single transaction.
 
-A SQL database is shared. Upgrading as a side effect of an ordinary save would change the format for
-a whole team because one person edited a connection. Splitting the re-encryption from the version
+A SQL database is shared, so the decision belongs to whoever administers it rather than to whoever
+opens the application first. Upgrading changes the format for a whole team, cannot be undone without
+restoring a backup, and locks out every client that has not been upgraded — so offering it to an
+arbitrary user is offering it to someone who may have no authority to accept. Upgrading as a side
+effect of an ordinary save would be worse still, and splitting the re-encryption from the version
 change would leave a store that is neither format if it were interrupted.
 
 #### Scenario: Upgrading
@@ -98,8 +102,22 @@ change would leave a store that is neither format if it were interrupted.
 - **THEN** the upgrade does not begin
 - **AND** no row is modified
 
+#### Scenario: Opening a legacy database does not offer the upgrade
+
+- **WHEN** a database at the legacy version is opened by a build that supports authenticated
+  encryption
+- **THEN** the upgrade is not prompted
+- **AND** the database opens and is usable
+
+#### Scenario: Where the upgrade is reachable
+
+- **WHEN** the user opens the SQL configuration
+- **THEN** the upgrade is available there
+
 #### Scenario: The user is warned first
 
 - **WHEN** the upgrade is offered
 - **THEN** the user is told that clients on older builds will stop reading the database
+- **AND** upstream mRemoteNG is named among them
+- **AND** the user is told the change affects colleagues who did not install this fork
 - **AND** the upgrade proceeds only on confirmation
