@@ -26,8 +26,17 @@
 - [x] 4.1 Full build; zero new analyzer warnings.
 - [x] 4.2 Full test suite; zero failures.
 - [x] 4.3 `openspec validate fix-notification-panel-delivery --strict`.
-- [ ] 4.4 Manual: start the application with the panel auto-hidden, let startup messages accumulate, then open the panel. Every message is there, newest at the top, timestamps ascending downwards.
-- [ ] 4.5 Manual: trigger a background report (a failing connection) at the same time as a UI one (an options change) and confirm the panel order matches the timestamps.
+- [x] 4.4 Manual: start the application with the panel auto-hidden, let startup messages accumulate, then open the panel. Every message is there, newest at the top, timestamps ascending downwards.
+- [x] 4.5 Manual: trigger a background report (a failing connection) at the same time as a UI one (an options change) and confirm the panel order matches the timestamps.
+
+Both confirmed on 2026-08-10, in the same isolated `Release Portable` sandbox used for
+[fix-connection-save-durability](../fix-connection-save-durability/tasks.md) — see the note there on
+why a real profile was not used.
+
+4.4 is the case the queue exists for and the one that could not be covered by a test: messages
+reported before the panel has a window to render into, held, and then drained in a single pass once
+it does. Every message present with the newest at the top means the drain ran in enqueue order
+rather than inserting the buffered ones above the live ones.
 
 ## Notes
 
