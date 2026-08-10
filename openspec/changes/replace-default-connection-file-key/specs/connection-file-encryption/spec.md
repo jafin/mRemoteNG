@@ -72,8 +72,15 @@ point every copy they hold is equally unopenable.
 #### Scenario: The user declines to set a recovery password
 
 - **WHEN** the user declines to supply a recovery password
-- **THEN** the store stays at the classic level under the legacy default key
+- **THEN** the store stays at the classic level with the protector it already had
+- **AND** a file under a user's master password keeps that password
+- **AND** a file under the legacy default key keeps that key
 - **AND** the level is not raised
+
+A classic file is not always under the legacy default key: it carries a master password whenever the
+user set one. Describing every declined migration as remaining under the default key would either
+misdescribe those files or, if implemented literally, take their master password off them — the
+opposite of what declining a security upgrade should do.
 
 ### Requirement: Backups of a protected file remain restorable
 

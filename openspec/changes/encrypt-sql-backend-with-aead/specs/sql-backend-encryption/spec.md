@@ -35,10 +35,20 @@ with no way to identify them.
 - **WHEN** a database records a version below the authenticated-encryption version
 - **THEN** its secrets are read with the legacy provider
 
-#### Scenario: A database at or above the new version
+#### Scenario: A database at the new version
 
 - **WHEN** a database records the authenticated-encryption version
 - **THEN** its secrets are read and written with authenticated encryption
+
+#### Scenario: A database above any version this build knows
+
+- **WHEN** a database records a version newer than this build supports
+- **THEN** no provider is selected and the database is refused
+
+Stated separately because "at or above" would have selected the authenticated-encryption provider for
+a database written by a build that knows more than this one. Its rows may be protected in a way this
+provider has no code for, and reading them with it yields plausible nonsense — which is the outcome
+refusing a newer database exists to prevent.
 
 ### Requirement: A database at the legacy version is not written
 
