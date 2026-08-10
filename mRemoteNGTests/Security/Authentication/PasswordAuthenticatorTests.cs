@@ -119,4 +119,60 @@ public class PasswordAuthenticatorTests
         authenticator.Authenticate(_wrongPassword);
         Assert.That(authAttempts == customMaxAttempts);
     }
+
+    [Test]
+    public void NoPlaintextValidatorAcceptsAnyDecryptionThatSucceeds()
+    {
+        var authenticator = new PasswordAuthenticator(_cryptographyProvider, _cipherText, () => Optional<SecureString>.Empty);
+        Assert.That(authenticator.PlaintextValidator, Is.Null, "the validator is opt-in");
+        Assert.That(authenticator.Authenticate(_correctPassword));
+    }
+
+    [Test]
+    public void PlaintextValidatorRejectingTheDecryptedValueFailsAuthentication()
+    {
+        var authenticator = new PasswordAuthenticator(_cryptographyProvider, _cipherText, () => Optional<SecureString>.Empty)
+        {
+            PlaintextValidator = _ => false
+        };
+
+        Assert.That(authenticator.Authenticate(_correctPassword), Is.False,
+            "the password decrypts, so only the plaintext check can reject it");
+        Assert.That(authenticator.LastAuthenticatedPassword, Is.Null);
+    }
+
+    [Test]
+    public void PlaintextValidatorAcceptingTheDecryptedValueAuthenticates()
+    {
+        string? seen = null;
+        var authenticator = new PasswordAuthenticator(_cryptographyProvider, _cipherText, () => Optional<SecureString>.Empty)
+        {
+            PlaintextValidator = plainText => { seen = plainText; return true; }
+        };
+
+        Assert.That(authenticator.Authenticate(_correctPassword));
+        Assert.That(seen, Is.Not.Null, "the validator receives the decrypted plaintext");
+    }
+
+    [Test]
+    public void RejectedPlaintextConsumesAnAttemptAndReprompts()
+    {
+        var authAttempts = 0;
+        Optional<SecureString> AuthenticationRequestor()
+        {
+            authAttempts++;
+            return _correctPassword;
+        }
+
+        // The password is right every time; only the plaintext check refuses. A rejection has to
+        // behave like a wrong password — re-prompt, then stop at MaxAttempts — or a store whose
+        // sentinel never matches would loop forever.
+        var authenticator = new PasswordAuthenticator(_cryptographyProvider, _cipherText, AuthenticationRequestor)
+        {
+            PlaintextValidator = _ => false
+        };
+
+        Assert.That(authenticator.Authenticate(_correctPassword), Is.False);
+        Assert.That(authAttempts, Is.EqualTo(authenticator.MaxAttempts));
+    }
 }

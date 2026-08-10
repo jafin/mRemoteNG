@@ -85,7 +85,15 @@ public class SqlConnectionsLoader : IConnectionsLoader
         if (string.IsNullOrEmpty(cipherText))
             return new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString();
 
-        PasswordAuthenticator authenticator = new(_cryptographyProvider, cipherText, () => AuthenticationRequestor(""));
+        // The sentinel is checked by its contents, not merely by decrypting without error. The
+        // legacy provider is AES-CBC with no authentication tag, so a wrong password yields valid
+        // padding often enough to matter and would otherwise be accepted — granting access to the
+        // hostnames, usernames and ports, which are not encrypted at all.
+        PasswordAuthenticator authenticator = new(_cryptographyProvider, cipherText, () => AuthenticationRequestor(""))
+        {
+            PlaintextValidator = ConnectionFileDefaults.IsKnownSentinel
+        };
+
         bool authenticated = authenticator.Authenticate(new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString());
 
         return authenticated && authenticator.LastAuthenticatedPassword is { } password

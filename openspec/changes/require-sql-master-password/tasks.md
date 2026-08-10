@@ -7,11 +7,15 @@ landed, since requiring a password is only worth doing once the key derived from
 
 ## 1. Verify the sentinel — ships independently
 
-- [ ] 1.1 In `SqlConnectionsLoader.GetDecryptionKey`, require the decrypted sentinel to be `ThisIsProtected` or `ThisIsNotProtected` rather than accepting any decryption that did not throw.
-- [ ] 1.2 Make the comparison at the SQL caller, not inside `PasswordAuthenticator`. The XML path already compares its own plaintext (`XmlConnectionsDecryptor.cs:145`) and must keep behaving exactly as it does.
-- [ ] 1.3 Confirm a rejected value still consumes an attempt and re-prompts, rather than failing outright — the retry loop is the existing behaviour and users rely on it for typos.
-- [ ] 1.4 Tests: the right password authenticates; a wrong password whose decryption happens not to throw is rejected; the attempt limit is unchanged; the XML path is unaffected.
-- [ ] 1.5 Test the specific case directly: construct ciphertext and a key that decrypt without throwing to something that is not a sentinel. This is the defect; a test that only exercises right-and-wrong passwords will pass without it.
+- [x] 1.1 In `SqlConnectionsLoader.GetDecryptionKey`, require the decrypted sentinel to be `ThisIsProtected` or `ThisIsNotProtected` rather than accepting any decryption that did not throw. — Sentinel values and the check moved to `ConnectionFileDefaults` as constants and `IsKnownSentinel`, replacing six scattered string literals so the writers and the reader cannot drift.
+- [x] 1.2 Make the comparison at the SQL caller, not inside `PasswordAuthenticator`. The XML path must keep behaving exactly as it does. — **Deviation:** the *hook* is on `PasswordAuthenticator` (an opt-in `PlaintextValidator`), because that is where the retry loop lives and 1.3 requires a rejection to re-prompt. The comparison itself is supplied by the SQL caller; with no validator set the class behaves exactly as before, so the XML path is untouched.
+- [x] 1.3 Confirm a rejected value still consumes an attempt and re-prompts, rather than failing outright — the retry loop is the existing behaviour and users rely on it for typos. — Decryption failure and plaintext rejection now funnel through one `IsAccepted` check, so they are indistinguishable to the loop.
+- [x] 1.4 Tests: the right password authenticates; a wrong password whose decryption happens not to throw is rejected; the attempt limit is unchanged; the XML path is unaffected. — `PasswordAuthenticatorTests` gains four cases; the existing `MaxAttempts` cases are unchanged and still pass.
+- [x] 1.5 Test the specific case directly: construct ciphertext and a key that decrypt without throwing to something that is not a sentinel. — `ConnectionFileDefaultsTests`. Deliberately does not brute-force a colliding key: that would test .NET's padding implementation, probabilistically. It reproduces the observable condition — decryption succeeds, plaintext is not a sentinel — which is what the caller decides on.
+
+**Found while implementing:** the XML path has the same defect in its master-password branch. See
+the correction in proposal.md. Left as found, because fixing it changes XML behaviour that 1.2 was
+written to protect; the validator added here is the mechanism a follow-up would use.
 
 ## 2. Require a password at the new version
 

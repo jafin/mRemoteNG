@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.Versioning;
 using System.Security;
 using System.Threading.Tasks;
@@ -142,7 +142,7 @@ public class XmlConnectionsDecryptor
         try
         {
             connectionsFileIsNotEncrypted =
-                string.Equals(_cryptographyProvider.Decrypt(protectedString, GetDecryptionKey()), "ThisIsNotProtected",
+                string.Equals(_cryptographyProvider.Decrypt(protectedString, GetDecryptionKey()), ConnectionFileDefaults.NotProtectedSentinel,
                     StringComparison.Ordinal);
         }
         catch (EncryptionException)

@@ -103,16 +103,16 @@ public class SqlDatabaseMetaDataRetriever : ISqlDatabaseMetaDataRetriever
             {
                 SecureString password = rootTreeNode.PasswordString.ConvertToSecureString();
 
-                strProtected = cryptographyProvider.Encrypt("ThisIsProtected", password);
+                strProtected = cryptographyProvider.Encrypt(ConnectionFileDefaults.ProtectedSentinel, password);
             }
             else
             {
-                strProtected = cryptographyProvider.Encrypt("ThisIsNotProtected", Runtime.EncryptionKey);
+                strProtected = cryptographyProvider.Encrypt(ConnectionFileDefaults.NotProtectedSentinel, Runtime.EncryptionKey);
             }
         }
         else
         {
-            strProtected = cryptographyProvider.Encrypt("ThisIsNotProtected", Runtime.EncryptionKey);
+            strProtected = cryptographyProvider.Encrypt(ConnectionFileDefaults.NotProtectedSentinel, Runtime.EncryptionKey);
         }
 
         bool mustDisposeTransaction = false;

@@ -31,13 +31,27 @@ The SQL path never checks what it decrypted. `PasswordAuthenticator.Authenticate
 success. Against AES-CBC with PKCS7 and no authentication tag, a wrong key produces valid padding
 roughly once in 256 attempts, and the method's own retry loop supplies the attempts.
 
-The XML path does not have this problem — `XmlConnectionsDecryptor.ConnectionsFileIsAuthentic`
-(`XmlConnectionsDecryptor.cs:145`) compares the plaintext to `"ThisIsNotProtected"`. The SQL path
-decrypts the same sentinel and discards it.
-
 The practical impact is modest: passing the check yields a wrong key, so passwords still fail to
 decrypt. It yields the rest — hostnames, usernames, ports, the shape of the estate — which are not
-encrypted at all. It is also a one-line fix and there is no reason to carry it.
+encrypted at all. It is also a small fix and there is no reason to carry it.
+
+**Correction, found while implementing.** This proposal originally said the XML path does not have
+the problem, because `XmlConnectionsDecryptor.ConnectionsFileIsAuthentic` (`XmlConnectionsDecryptor.cs:145`)
+compares the plaintext to `"ThisIsNotProtected"`. That is true only of its *unprotected* branch. When
+the file has a master password, the comparison fails and it falls through to
+`XmlConnectionsDecryptor.Authenticate` (`:156`), which uses the same `PasswordAuthenticator` and
+inherits the same weakness.
+
+XML is narrower in practice: modern files use `AeadCryptographyProvider`, where a wrong key fails the
+GCM tag deterministically. The gap is real only for legacy-provider files — those written before AEAD
+and still opened with a master password — which `CryptoProviderFactoryFromXml` still selects the
+legacy provider for.
+
+This change fixes the SQL caller, which is what it scoped. The XML master-password branch is left as
+found: correcting it changes behaviour on the XML path, which task 1.2 was written to protect, and
+that reversal is worth deciding rather than absorbing. The mechanism added here — an optional
+plaintext validator on `PasswordAuthenticator` — is what a follow-up would use, so nothing has to be
+rebuilt for it.
 
 ## What Changes
 

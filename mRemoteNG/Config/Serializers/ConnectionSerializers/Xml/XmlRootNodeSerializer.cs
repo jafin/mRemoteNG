@@ -38,7 +38,7 @@ public static class XmlRootNodeSerializer
     private static XAttribute CreateProtectedAttribute(RootNodeInfo rootNodeInfo, ICryptographyProvider cryptographyProvider)
     {
         XAttribute attribute = new(XName.Get("Protected"), "");
-        string plainText = (rootNodeInfo.PasswordString != rootNodeInfo.DefaultPassword) ? "ThisIsProtected" : "ThisIsNotProtected";
+        string plainText = (rootNodeInfo.PasswordString != rootNodeInfo.DefaultPassword) ? ConnectionFileDefaults.ProtectedSentinel : ConnectionFileDefaults.NotProtectedSentinel;
         using System.Security.SecureString encryptionPassword = rootNodeInfo.PasswordString.ConvertToSecureString();
         attribute.Value = cryptographyProvider.Encrypt(plainText, encryptionPassword);
         return attribute;
