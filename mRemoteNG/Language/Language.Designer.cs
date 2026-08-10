@@ -8715,5 +8715,23 @@ namespace mRemoteNG.Resources.Language {
                 return ResourceManager.GetString("DoNotRestoreOnRdpMinimize", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Export Uses the Classic Format.
+        /// </summary>
+        internal static string ExportClassicFormatTitle {
+            get {
+                return ResourceManager.GetString("ExportClassicFormatTitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to This connection store uses the hardened format. The exported copy will be written in the classic format instead, so that upstream mRemoteNG and earlier builds of this fork can open it.
+        /// </summary>
+        internal static string ExportClassicFormatContent {
+            get {
+                return ResourceManager.GetString("ExportClassicFormatContent", resourceCulture);
+            }
+        }
     }
 }

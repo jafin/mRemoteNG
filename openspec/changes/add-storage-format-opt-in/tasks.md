@@ -8,7 +8,7 @@ Full sequencing for all eight audit proposals: [SECURITY-AUDIT-3416.md](../SECUR
 ## 1. Classic export — first
 
 - [x] 1.1 Export a store to a classic-format file. — The export feature already existed (`Export.ExportToFile` → mRXML) and already wrote classic, because nothing else exists yet. What was missing is that it *inherited* the root's level: it now states classic explicitly through `StorageFormatOverride`, so hardening a store cannot silently take the escape route away with it.
-- [ ] 1.2 State on export that the copy has weaker protection than the store it came from.
+- [x] 1.2 State on export that the copy has weaker protection than the store it came from. — Said before the file is written, not after, and only when the store is actually hardened: a warning on every export is one users learn to dismiss before reading, and on a classic store it would be false. Scoped to the connection-file format; the interchange formats carry no protection at any level, so what they lose is not a property of the level. The decision lives in `Export.ExportWeakensProtection` rather than inside the dialog, so it can be tested without a message box.
 - [x] 1.3 Tests: an exported file opens as a classic store in this fork and is not re-hardened on load. — `AnOverrideProducesAClassicCopyFromAHardenedStore`, plus the serializer-level `AnOverrideWinsOverTheRootsOwnLevel`.
 - [ ] 1.4 Manual: open an exported file in an actual upstream mRemoteNG build. The compatibility claim is about another application; only that build can confirm it.
 - [ ] 1.5 First deliberately. A user who upgrades and wants out must not find the way back unimplemented — that is the lock-in this change exists to prevent, arriving a release late.

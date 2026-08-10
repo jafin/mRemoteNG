@@ -3098,4 +3098,14 @@ Accept the new key and continue connecting?</value>
   <data name="OriginalCredits" xml:space="preserve">
     <value>Original Credits</value>
   </data>
+  <data name="ExportClassicFormatTitle" xml:space="preserve">
+    <value>Export Uses the Classic Format</value>
+  </data>
+  <data name="ExportClassicFormatContent" xml:space="preserve">
+    <value>This connection store uses the hardened format. The exported copy will be written in the classic format instead, so that upstream mRemoteNG and earlier builds of this fork can open it.
+
+That copy is protected less strongly than the store it came from. Keep it somewhere you would be willing to keep the store itself.
+
+Export anyway?</value>
+  </data>
 </root>
