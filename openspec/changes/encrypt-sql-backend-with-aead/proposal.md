@@ -1,0 +1,68 @@
+## Why
+
+The SQL backend encrypts connection passwords with a key that is an unsalted MD5 of the master
+password, under AES-CBC with no authentication tag:
+
+```csharp
+byte[] key = MD5.HashData(Encoding.UTF8.GetBytes(encryptionKey.ConvertToUnsecureString()));
+```
+
+`LegacyRijndaelCryptographyProvider.cs:40` (and `:76` on the decrypt side)
+
+This is the **write** path, not a legacy read path. `SqlConnectionsSaver.UpdateConnectionsTable`
+constructs the provider (`SqlConnectionsSaver.cs:153`) and hands it to `DataTableSerializer`, which
+encrypts the `Password`, `RDGatewayPassword` and `VNCProxyPassword` columns with it
+(`DataTableSerializer.cs:673-675`). `ConnectionsService.cs:309` injects the same provider into the
+loader.
+
+So a team on the SQL backend has its connection passwords protected by a single MD5 with no salt and
+no iterations — recoverable at GPU speed — while the XML backend on the same build uses AES-256-GCM
+with PBKDF2 at 600,000 iterations. The two backends are not close to equivalent, and nothing in the
+UI says so.
+
+The missing authentication tag is the second defect. Anyone with write access to the connections
+table can flip ciphertext bits in a `Password` column and the client will decrypt whatever falls out
+without noticing, which for CBC is also the shape of a padding oracle.
+
+Raised as M-2 in the upstream security audit ([mRemoteNG#3416](https://github.com/mRemoteNG/mRemoteNG/issues/3416)).
+Applies to our fork exactly as written.
+
+## What Changes
+
+- The SQL backend encrypts with `AeadCryptographyProvider` — AES-256-GCM, PBKDF2, per-record salt and
+  nonce — the same provider the XML backend already uses.
+- Which provider is used follows the database's `ConfVersion`, the version marker the schema already
+  carries and `SqlDatabaseVersionVerifier` already enforces. Below the new version, legacy; at or
+  above it, AEAD.
+- A database at the old version is **read** with the legacy provider and is not written. The upgrade
+  is deliberate and explicit, not a side effect of the first save.
+- Upgrading re-encrypts every stored secret in one transaction and raises `ConfVersion`.
+- `LegacyRijndaelCryptographyProvider` keeps its decrypt path for the SQL backend and loses its
+  encrypt callers there.
+
+## Capabilities
+
+Adds `sql-backend-encryption`. The requirements are about which provider protects the database and
+how a shared database moves between the two, which is not a concern the XML capability has —
+`connection-file-encryption` describes a file one user owns, this describes a store several clients
+share.
+
+## Impact
+
+`mRemoteNG/Config/Connections/SqlConnectionsSaver.cs`,
+`mRemoteNG/Config/Connections/SqlConnectionsLoader.cs`,
+`mRemoteNG/Connection/ConnectionsService.cs`,
+`mRemoteNG/Config/Serializers/ConnectionSerializers/Sql/SqlDatabaseMetaDataRetriever.cs`,
+`mRemoteNG/Config/Serializers/ConnectionSerializers/Sql/DataTableSerializer.cs` and its deserializer,
+`mRemoteNG/Config/Connections/SqlDatabaseVersionVerifier.cs`.
+
+**The multi-client sequencing is the whole risk.** A SQL database is shared. The moment one client
+upgrades it, every client still on an older build reads ciphertext it cannot decrypt — and the older
+builds have no version check that would explain why, so users see empty or corrupt passwords rather
+than a message. The upgrade must therefore be an explicit administrative action with a warning that
+names the consequence, never automatic, and `SqlDatabaseVersionVerifier` must refuse a database
+newer than the running build rather than reading it badly.
+
+Any client that must keep the old format keeps working as long as nobody upgrades. That is the
+property that makes a staged rollout possible, and it is why the change gates on `ConfVersion` rather
+than sniffing the ciphertext.
