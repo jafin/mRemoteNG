@@ -3098,6 +3098,12 @@ Accept the new key and continue connecting?</value>
   <data name="OriginalCredits" xml:space="preserve">
     <value>Original Credits</value>
   </data>
+  <data name="StorageFormatAlreadyHardened" xml:space="preserve">
+    <value>This store already uses the hardened format. Use Export to File to produce a copy that upstream mRemoteNG can open.</value>
+  </data>
+  <data name="StorageFormatMenuItem" xml:space="preserve">
+    <value>Storage &amp;Format...</value>
+  </data>
   <data name="StorageFormatUpgradeTitle" xml:space="preserve">
     <value>Harden Storage Format</value>
   </data>

@@ -8717,6 +8717,24 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string similar to This store already uses the hardened format.
+        /// </summary>
+        internal static string StorageFormatAlreadyHardened {
+            get {
+                return ResourceManager.GetString("StorageFormatAlreadyHardened", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Storage &amp;Format....
+        /// </summary>
+        internal static string StorageFormatMenuItem {
+            get {
+                return ResourceManager.GetString("StorageFormatMenuItem", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Harden Storage Format.
         /// </summary>
         internal static string StorageFormatUpgradeTitle {
