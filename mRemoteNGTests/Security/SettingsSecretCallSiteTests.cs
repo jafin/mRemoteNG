@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -13,6 +13,13 @@ namespace mRemoteNGTests.Security;
 /// Six settings secrets ended up on an unsalted-MD5 provider because every call site constructed one
 /// inline and nothing said not to. A review found them once; this keeps them found. A new settings
 /// secret added the same way fails here rather than shipping.
+///
+/// These read the source tree, so they need the test assembly to sit inside the repository — which
+/// it does for the normal build and for CI. A build redirected elsewhere (for instance to a temp
+/// <c>BaseOutputPath</c>, which is how you build while mRemoteNG is running and holding <c>bin\</c>)
+/// fails them with "could not locate the repository root". That is deliberate: a guard that cannot
+/// run should say so rather than pass quietly, because a security check that silently skips is worse
+/// than one that does not exist.
 /// </remarks>
 [TestFixture]
 public class SettingsSecretCallSiteTests
