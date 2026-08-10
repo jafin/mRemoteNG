@@ -29,12 +29,14 @@ Full sequencing for all eight audit proposals: [SECURITY-AUDIT-3416.md](../SECUR
 
 ## 4. Confirmation
 
-- [ ] 4.1 One confirmation covering all hardening, not one per change.
-- [ ] 4.2 Word it around applications rather than algorithms: upstream mRemoteNG and earlier builds of this fork will no longer open the store. Cryptographic detail goes below that, for those who want it.
-- [ ] 4.3 State that existing backups stay readable and new ones will not.
-- [ ] 4.4 Offer the classic export from task 1 in the confirmation itself.
-- [ ] 4.5 For a SQL store, add that every client must be upgraded — the person confirming is not the only one affected.
-- [ ] 4.6 Tests: confirming raises the level; declining leaves the store byte-compatible with what upstream reads.
+- [x] 4.1 One confirmation covering all hardening, not one per change. — `StorageFormatUpgrade`, which every hardening change reaches through the level rather than by adding a prompt of its own.
+- [x] 4.2 Word it around applications rather than algorithms: upstream mRemoteNG and earlier builds of this fork will no longer open the store. Cryptographic detail goes below that, for those who want it. — The detail sits behind the task dialog's expander, which is what "below" means in practice: reachable, not competing. Tested as a separation rather than as wording — `TheCryptographyIsBelowThePartThatMatters` asserts PBKDF2 appears in the expanded text and **not** in the main content, so the two cannot be merged by a later edit without a test failing.
+- [x] 4.3 State that existing backups stay readable and new ones will not.
+- [x] 4.4 Offer the classic export from task 1 in the confirmation itself. — A named command button, not a Yes/No/Cancel position the user has to interpret. **Choosing it returns to the question rather than answering it**: the export is something to do *before* deciding, so treating it as an answer would leave a user who wanted both with only the copy and no signal that the store was never hardened.
+- [x] 4.5 For a SQL store, add that every client must be upgraded — the person confirming is not the only one affected.
+- [x] 4.6 Tests: confirming raises the level; declining leaves the store byte-compatible with what upstream reads. — `StorageFormatUpgradeTests`, eight cases. The byte-compatibility one serializes after declining and asserts neither `StorageFormat` nor `KdfPrf` reaches the file, because the claim is about the file rather than about a property. Taking the classic copy is covered alongside declining: it must not raise the level either.
+
+**Not yet reachable from the user interface.** Nothing calls `StorageFormatUpgradePrompt` — §5 owns where the offer appears, and choosing its placement here would have decided §5 by accident. Until then the level is still raised by hand, as in `harden-connection-file-kdf` task 5.5.
 
 ## 5. Visibility
 
