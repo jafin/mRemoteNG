@@ -196,6 +196,12 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
     {
         _rootNodeInfo.Name = connectionsRootElement.Attributes?["Name"]?.Value?.Trim() ?? string.Empty;
         _rootNodeInfo.AutoLockOnMinimize = connectionsRootElement.GetAttributeAsBool("AutoLockOnMinimize");
+
+        // Absent means classic, which is every file written before this existed and every file
+        // upstream mRemoteNG has ever written. Read from the file rather than from configuration so
+        // that opening a store in a newer build cannot change what it is.
+        _rootNodeInfo.StorageFormat = StorageFormat.Parse(
+            connectionsRootElement.Attributes?[StorageFormat.AttributeName]?.Value);
     }
 
     private void CreateDecryptor(RootNodeInfo rootNodeInfo, XmlElement? connectionsRootElement = null)

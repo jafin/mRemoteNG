@@ -32,6 +32,40 @@ public class XmlRootNodeSerializerTests
     }
 
     [Test]
+    public void AClassicRootWritesNoStorageFormatAttribute()
+    {
+        // The file upstream mRemoteNG reads must come out exactly as it does today. An attribute it
+        // has never seen would be the silent format change the level exists to prevent.
+        var element = XmlRootNodeSerializer.SerializeRootNodeInfo(_rootNodeInfo, _cryptographyProvider, _version);
+
+        Assert.That(element.Attribute(XName.Get(StorageFormat.AttributeName)), Is.Null);
+    }
+
+    [Test]
+    public void AHardenedRootRecordsItsLevel()
+    {
+        _rootNodeInfo.StorageFormat = StorageFormatLevel.Hardened;
+
+        var element = XmlRootNodeSerializer.SerializeRootNodeInfo(_rootNodeInfo, _cryptographyProvider, _version);
+        string? recorded = element.Attribute(XName.Get(StorageFormat.AttributeName))?.Value;
+
+        Assert.That(StorageFormat.Parse(recorded), Is.EqualTo(StorageFormatLevel.Hardened));
+    }
+
+    [Test]
+    public void AnOverrideWinsOverTheRootsOwnLevel()
+    {
+        // What an export relies on: the copy states its level rather than inheriting the store's, so
+        // hardening a store does not silently take the escape route away with it.
+        _rootNodeInfo.StorageFormat = StorageFormatLevel.Hardened;
+
+        var element = XmlRootNodeSerializer.SerializeRootNodeInfo(
+            _rootNodeInfo, _cryptographyProvider, _version, storageFormatOverride: StorageFormatLevel.Classic);
+
+        Assert.That(element.Attribute(XName.Get(StorageFormat.AttributeName)), Is.Null);
+    }
+
+    [Test]
     [SetUICulture("en-US")]
     public void RootNodeInfoNameSerialized()
     {

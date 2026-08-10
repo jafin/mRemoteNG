@@ -18,6 +18,9 @@ public class XmlConnectionsDocumentCompiler
     private SecureString? _encryptionKey;
     private readonly ISerializer<ConnectionInfo, XElement> _connectionNodeSerializer;
 
+    /// <summary>The level to record instead of the root's own. See the serializer's parameter.</summary>
+    public StorageFormatLevel? StorageFormatOverride { get; set; }
+
     public XmlConnectionsDocumentCompiler(ICryptographyProvider cryptographyProvider, ISerializer<ConnectionInfo, XElement> connectionNodeSerializer)
     {
         ArgumentNullException.ThrowIfNull(cryptographyProvider);
@@ -102,7 +105,7 @@ public class XmlConnectionsDocumentCompiler
 
     private XElement CompileRootNode(RootNodeInfo rootNodeInfo, bool fullFileEncryption)
     {
-        return XmlRootNodeSerializer.SerializeRootNodeInfo(rootNodeInfo, _cryptographyProvider, _connectionNodeSerializer.Version, fullFileEncryption);
+        return XmlRootNodeSerializer.SerializeRootNodeInfo(rootNodeInfo, _cryptographyProvider, _connectionNodeSerializer.Version, fullFileEncryption, StorageFormatOverride);
     }
 
     private XElement CompileConnectionInfoNode(ConnectionInfo connectionInfo)

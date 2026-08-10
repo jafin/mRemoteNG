@@ -116,7 +116,13 @@ public static class Export
                         saveFilter);
                     serializer = new XmlConnectionsSerializer(cryptographyProvider, connectionNodeSerializer)
                     {
-                        UseFullEncryption = isEncrypted
+                        UseFullEncryption = isEncrypted,
+
+                        // An export is the way back. It has to open in upstream mRemoteNG whatever
+                        // the store it came from is, so it states its level rather than inheriting
+                        // the store's — otherwise hardening the store would silently take the escape
+                        // route away with it.
+                        StorageFormatOverride = StorageFormatLevel.Classic
                     };
                     break;
                 case SaveFormat.mRCSV:

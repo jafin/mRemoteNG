@@ -73,6 +73,18 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
 
     [Browsable(false)] public string DefaultPassword { get; } = Security.ConnectionFileDefaults.LegacyEncryptionKey;
 
+    /// <summary>
+    /// How this store is written, and therefore what else can read it.
+    /// </summary>
+    /// <remarks>
+    /// A property of the store rather than of the application or a global setting, so that opening a
+    /// file in a newer build cannot decide it. Classic until the user asks otherwise, and a file that
+    /// records nothing is classic — which is every file written before this existed, and every file
+    /// upstream mRemoteNG has ever written.
+    /// </remarks>
+    [Browsable(false)]
+    public Security.StorageFormatLevel StorageFormat { get; set; } = Security.StorageFormatLevel.Classic;
+
     [Browsable(false)]
     public bool IsPasswordMatch(SecureString? providedPassword)
     {

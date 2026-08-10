@@ -10,7 +10,13 @@ namespace mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 [SupportedOSPlatform("windows")]
 public static class XmlRootNodeSerializer
 {
-    public static XElement SerializeRootNodeInfo(RootNodeInfo rootNodeInfo, ICryptographyProvider cryptographyProvider, Version version, bool fullFileEncryption = false)
+    /// <param name="storageFormatOverride">
+    /// The level to record instead of the root node's own. Supplied by callers writing a copy rather
+    /// than the store itself — an export has to stay readable by upstream mRemoteNG whatever the
+    /// store it came from is, and inheriting the level would make a hardened store produce exports
+    /// nothing else can open.
+    /// </param>
+    public static XElement SerializeRootNodeInfo(RootNodeInfo rootNodeInfo, ICryptographyProvider cryptographyProvider, Version version, bool fullFileEncryption = false, StorageFormatLevel? storageFormatOverride = null)
     {
         XNamespace xmlNamespace = "http://mremoteng.org";
         XElement element = new(xmlNamespace + "Connections");
@@ -32,6 +38,15 @@ public static class XmlRootNodeSerializer
         }
         element.Add(CreateProtectedAttribute(rootNodeInfo, cryptographyProvider));
         element.Add(new XAttribute(XName.Get("ConfVersion"), version.ToString(2)));
+
+        // Written only when hardened. A classic file has to come out byte-compatible with what
+        // upstream mRemoteNG writes, because it reads this same file from this same path — so
+        // absence is what means classic, and adding an attribute here unconditionally would be the
+        // silent format change the level exists to prevent.
+        string? storageFormat = StorageFormat.ToRecordedValue(storageFormatOverride ?? rootNodeInfo.StorageFormat);
+        if (storageFormat is not null)
+            element.Add(new XAttribute(XName.Get(StorageFormat.AttributeName), storageFormat));
+
         return element;
     }
 

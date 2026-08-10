@@ -1,4 +1,4 @@
-# Security audit mRemoteNG#3416 — implementation order
+﻿# Security audit mRemoteNG#3416 — implementation order
 
 Eight proposals answer the upstream audit
 ([mRemoteNG#3416](https://github.com/mRemoteNG/mRemoteNG/issues/3416)). They are not independent, and
@@ -24,7 +24,11 @@ that is already correct.
 
 ### R2 — the compatibility gate
 
-`add-storage-format-opt-in`, alone.
+`add-storage-format-opt-in`, alone — **except its confirmation and offer, which move to R3.**
+
+Nothing is gated on the level until the first hardening change, so a confirmation warning that
+upstream can no longer read the store would be false when R2 ships on its own. The gate lands here;
+the switch appears in R3, when there is something behind it. See that change's tasks.md.
 
 Nothing that changes a stored format may land before it. That is the entire purpose of the change:
 this fork writes `%APPDATA%\mRemoteNG\confCons.xml`, upstream's own path and filename, and shipping

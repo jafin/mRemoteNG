@@ -39,6 +39,71 @@ public class XmlSerializationLifeCycleTests
         _serializer = null;
     }
 
+    private RootNodeInfo OriginalRoot => _originalModel.RootNodes.OfType<RootNodeInfo>().First();
+
+    private static RootNodeInfo RootOf(ConnectionTreeModel model) =>
+        model.RootNodes.OfType<RootNodeInfo>().First();
+
+    [Test]
+    public void AStoreWithNoRecordedLevelStaysClassicAcrossARoundTrip()
+    {
+        // Every file written before the level existed, and every file upstream mRemoteNG has ever
+        // written, looks like this. Opening and saving must not change what it is.
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(serialized, Does.Not.Contain(StorageFormat.AttributeName),
+                "a classic store must come out byte-compatible with what upstream writes");
+            Assert.That(RootOf(_deserializer.Deserialize(serialized)).StorageFormat,
+                Is.EqualTo(StorageFormatLevel.Classic));
+        });
+    }
+
+    [Test]
+    public void AHardenedStoreStaysHardenedAcrossARoundTrip()
+    {
+        OriginalRoot.StorageFormat = StorageFormatLevel.Hardened;
+
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.That(RootOf(_deserializer.Deserialize(serialized)).StorageFormat,
+            Is.EqualTo(StorageFormatLevel.Hardened));
+    }
+
+    [Test]
+    public void SavingDoesNotRaiseTheLevelByItself()
+    {
+        // The level is a property of the store, never of the application version or a setting. A
+        // save is ordinary work and must not decide it — that is the whole guarantee.
+        string firstSave = _serializer.Serialize(_originalModel);
+        ConnectionTreeModel reloaded = _deserializer.Deserialize(firstSave);
+
+        Assert.That(RootOf(reloaded).StorageFormat, Is.EqualTo(StorageFormatLevel.Classic));
+
+        string secondSave = _serializer.Serialize(reloaded);
+
+        Assert.That(new XmlConnectionsDeserializer().Deserialize(secondSave), Is.Not.Null);
+        Assert.That(secondSave, Does.Not.Contain(StorageFormat.AttributeName));
+    }
+
+    [Test]
+    public void AnOverrideProducesAClassicCopyFromAHardenedStore()
+    {
+        // What Export relies on. The escape route has to survive the store being hardened.
+        OriginalRoot.StorageFormat = StorageFormatLevel.Hardened;
+        _serializer.StorageFormatOverride = StorageFormatLevel.Classic;
+
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(serialized, Does.Not.Contain(StorageFormat.AttributeName));
+            Assert.That(RootOf(_deserializer.Deserialize(serialized)).StorageFormat,
+                Is.EqualTo(StorageFormatLevel.Classic));
+        });
+    }
+
     [Test]
     public void SerializeThenDeserialize()
     {
