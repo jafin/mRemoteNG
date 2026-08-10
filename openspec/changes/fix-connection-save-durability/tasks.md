@@ -50,10 +50,27 @@ focuses it. Popups stay opt-in per the user's notification settings, so nothing 
 - [x] 4.1 Full build; zero new analyzer warnings.
 - [x] 4.2 Full test suite; zero failures, no `[Ignore]`. 7274 passed.
 - [x] 4.3 `openspec validate fix-connection-save-durability --strict`.
-- [ ] 4.4 Manual, the case that found this: set a master password, remove it, save, quit immediately, restart. The password is gone.
-- [ ] 4.5 Manual: rename a connection and quit within two seconds. The rename survives.
-- [ ] 4.6 Manual: make the connection file read-only, edit something, quit. The failure is visible without opening the log, and shutdown still completes.
-- [ ] 4.7 Manual: on a profile that has never opened Tools → Options → Connections, make an edit and quit. It survives.
+- [x] 4.4 Manual, the case that found this: set a master password, remove it, save, quit immediately, restart. The password is gone.
+- [x] 4.5 Manual: rename a connection and quit within two seconds. The rename survives.
+- [x] 4.6 Manual: make the connection file read-only, edit something, quit. The failure is visible without opening the log, and shutdown still completes.
+- [x] 4.7 Manual: on a profile that has never opened Tools → Options → Connections, make an edit and quit. It survives.
+
+All four passed on 2026-08-10, against a `Release Portable` build in an isolated sandbox rather than
+a real profile — settings and connections under the exe's own `Settings` folder, launched with
+`/cons:` so the connection-file picker could not reach the developer's live file. That isolation was
+verified before running anything: 24 files across `%LOCALAPPDATA%\mRemoteNG`, `%APPDATA%\mRemoteNG`
+and `mRemoteNG Connection Manager` were unchanged by a full launch and close.
+
+Two notes for whoever repeats this:
+
+- The master-password state can be read without knowing the password. The root's `Protected`
+  attribute is a fixed sentinel under 48 bytes of AEAD overhead, so a base64 length of 88 means
+  `ThisIsNotProtected` and 84 means `ThisIsProtected`. That is what makes 4.4 objective rather than a
+  judgement call.
+- Launching that sandbox on a virgin profile and closing it with no edits at all still rewrote the
+  connection file and rolled a backup. Under the previous code neither path existed — `Unassigned`
+  fell through `default: return`, and nothing flushed the debounce — so this exercises the
+  `FrmMain` closing → `Shutdown.Cleanup` → flush wiring that no unit test reaches.
 
 ## 5. Make the edit reach the save in the first place
 
