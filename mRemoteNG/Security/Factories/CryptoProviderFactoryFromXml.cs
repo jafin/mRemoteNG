@@ -4,6 +4,7 @@ using System.Runtime.Versioning;
 using System.Xml.Linq;
 using mRemoteNG.Security.AsymmetricEncryption;
 using mRemoteNG.Security.SymmetricEncryption;
+using mRemoteNG.Security.KeyDerivation;
 
 namespace mRemoteNG.Security.Factories;
 
@@ -39,6 +40,11 @@ public class CryptoProviderFactoryFromXml : ICryptoProviderFactory
 
             int keyDerivationIterations = int.Parse(_element?.Attribute("KdfIterations")?.Value ?? "", CultureInfo.InvariantCulture);
             cryptoProvider.KeyDerivationIterations = Math.Clamp(keyDerivationIterations, 1000, 10_000_000);
+
+            // Absent or unrecognised means SHA-1, which is what every file written before this was
+            // recorded used. Derived with what the file states, never with what is configured now.
+            cryptoProvider.KeyDerivationPrf =
+                KeyDerivationPrf.Parse(_element?.Attribute(KeyDerivationPrf.AttributeName)?.Value);
         }
         catch (Exception)
         {

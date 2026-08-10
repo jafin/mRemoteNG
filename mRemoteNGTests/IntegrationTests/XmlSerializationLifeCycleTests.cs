@@ -105,6 +105,56 @@ public class XmlSerializationLifeCycleTests
     }
 
     [Test]
+    public void AClassicStoreWritesNoKdfPrfAttribute()
+    {
+        // Upstream mRemoteNG reads this same file from this same path and ignores attributes it does
+        // not know — so it would derive with SHA-1 and fail to decrypt, reported to the user as a
+        // wrong password on a file they know the password to.
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.That(serialized, Does.Not.Contain(mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.AttributeName));
+    }
+
+    [Test]
+    public void AFileWithNoRecordedFunctionStillDecrypts()
+    {
+        // The regression that matters: every connection file in existence looks like this. If this
+        // breaks, users lose their connections and the message says "wrong password".
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.That(serialized, Does.Not.Contain(mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.AttributeName));
+
+        ConnectionTreeModel reloaded = _deserializer.Deserialize(serialized);
+
+        Assert.That(reloaded.GetRecursiveChildList().Select(node => node.Name),
+            Is.EquivalentTo(_originalModel.GetRecursiveChildList().Select(node => node.Name)));
+    }
+
+    [Test]
+    public void AHardenedProviderRecordsItsFunctionAndTheFileStillReadsBack()
+    {
+        var cryptoProvider = _cryptoFactory.Build();
+        cryptoProvider.KeyDerivationPrf = mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.Hardened;
+
+        var nodeSerializer = new XmlConnectionNodeSerializer28(
+            cryptoProvider,
+            OriginalRoot.PasswordString.ConvertToSecureString(),
+            new SaveFilter());
+        var serializer = new XmlConnectionsSerializer(cryptoProvider, nodeSerializer);
+
+        string serialized = serializer.Serialize(_originalModel);
+
+        Assert.That(serialized, Does.Contain(mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.AttributeName));
+
+        // Read back through a fresh deserializer, which has to pick the function up from the file
+        // rather than from anything it was configured with.
+        ConnectionTreeModel reloaded = new XmlConnectionsDeserializer().Deserialize(serialized);
+
+        Assert.That(reloaded.GetRecursiveChildList().Select(node => node.Name),
+            Is.EquivalentTo(_originalModel.GetRecursiveChildList().Select(node => node.Name)));
+    }
+
+    [Test]
     public void SerializeThenDeserialize()
     {
         var serializedContent = _serializer.Serialize(_originalModel);

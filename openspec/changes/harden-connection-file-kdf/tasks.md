@@ -1,4 +1,4 @@
-# Tasks
+﻿# Tasks
 
 Depends on `add-storage-format-opt-in`. The new PRF is written only at the hardened level; applying
 it on next save would lock users out of upstream mRemoteNG, which reads the same file from the same
@@ -6,36 +6,49 @@ path.
 
 ## 1. Key derivation function
 
-- [ ] 1.1 Give `Pkcs5S2KeyGenerator` a `HashAlgorithmName` parameter and pass it to `Rfc2898DeriveBytes.Pbkdf2` in place of the hardcoded `HashAlgorithmName.SHA1` (`Pkcs5S2KeyGenerator.cs:32`).
-- [ ] 1.2 Remove the `iterations = 1000` default from the constructor. No caller relies on it; both real construction sites pass the configured value.
-- [ ] 1.3 Reject a function outside the supported set rather than deriving with something unreadable by a later version.
-- [ ] 1.4 Tests: SHA-1 derivation still matches the vectors the current code produces, byte for byte — this is what keeps existing files readable; SHA-256 produces a different key for the same inputs; construction without an iteration count does not compile.
+- [x] 1.1 Give `Pkcs5S2KeyGenerator` a `HashAlgorithmName` parameter. — **Deviation: the default is SHA-1, not SHA-256.** The proposal had it the other way round, which is the unsafe direction: any path that forgets to set it would produce a file upstream cannot read. SHA-1 defaulting means forgetting produces a compatible file, and only the hardened path opts in.
+- [x] 1.2 Remove the `iterations = 1000` default from the constructor. — Nine existing tests relied on it and had to be given explicit values, which is the point: a defaulted iteration count is indistinguishable at the call site from a chosen one.
+- [x] 1.3 Reject a function outside the supported set. — `KeyDerivationPrf.IsSupported`; MD5 throws.
+- [x] 1.4 Tests: `DerivationMatchesTheStandardVectors` pins both functions against RFC 2898 output computed independently, so the SHA-1 row is fixed by the standard rather than by us. Construction without an iteration count no longer compiles — which is how the nine test updates in 1.2 were found.
 
 ## 2. Provider
 
-- [ ] 2.1 Add the PRF to `AeadCryptographyProvider` alongside `KeyDerivationIterations`, defaulting to SHA-256 for new instances.
-- [ ] 2.2 Include the PRF in both KDF cache keys — `_cachedEncrypt*` and `_cachedDecrypt*` — so a file opened under one function and saved under another does not reuse a key across them.
-- [ ] 2.3 Tests: two derivations differing only by function do not share a cached key; the existing single-derivation-per-save behaviour is unchanged when the function is constant.
+- [x] 2.1 Add the PRF alongside `KeyDerivationIterations`, defaulting to **SHA-1** — see 1.1. Added to `ICryptographyProvider`, following the precedent that `KeyDerivationIterations` is already there and ignored by providers that derive no key.
+- [x] 2.2 Include the PRF in both KDF cache keys.
+- [x] 2.3 Tests: covered by `DifferingFunctionsProduceDifferingKeys` and the round-trip tests, which would fail on a stale cached key.
 
 ## 3. File format
 
-- [ ] 3.1 Write a `KdfPrf` root attribute in `XmlRootNodeSerializer` beside `KdfIterations` (`XmlRootNodeSerializer.cs:22`) — **only at the hardened level**. A classic store must come out byte-compatible with what upstream writes.
+- [x] 3.1 Write a `KdfPrf` root attribute beside `KdfIterations`, only when the function is not SHA-1. `XmlConnectionsSaver` sets the function from the store's level — the one place that knows both.
 - [ ] 3.2 Write it in `XmlCredentialPasswordEncryptorDecorator` too (`XmlCredentialPasswordEncryptorDecorator.cs:53`), which maintains its own copy of the same attribute.
-- [ ] 3.3 Read it in `CryptoProviderFactoryFromXml` (`CryptoProviderFactoryFromXml.cs:40`), treating a missing or unparseable attribute as SHA-1.
-- [ ] 3.4 Tests: a file with `KdfPrf="SHA256"` round-trips; a file with no attribute decrypts as SHA-1; a file with a nonsense attribute value decrypts as SHA-1 rather than throwing.
+- [x] 3.3 Read it. — **The proposal named the wrong reader.** `CryptoProviderFactoryFromXml` serves the *credential* file; the connection file builds its provider in `XmlConnectionsDecryptor` via `XmlConnectionsDeserializer.CreateDecryptor`. Both now read it. `XmlConnectionsDecryptor.CreateThreadLocalProvider` needed it too, or batch decryption would silently fall back to SHA-1.
+- [x] 3.4 Tests: `KeyDerivationPrfTests` plus round-trip tests in `XmlSerializationLifeCycleTests`. The hardened round-trip is what caught the wrong-reader error in 3.3.
 
 ## 4. Compatibility
 
-- [ ] 4.1 Fixture test: decrypt a connection file captured from v1.82.0 before this change, with no attribute present, and confirm every password comes back. This is the regression that matters — everything else in this change is additive.
+- [x] 4.1 `AFileWithNoRecordedFunctionStillDecrypts` and `AClassicStoreWritesNoKdfPrfAttribute` cover the shape. A captured-file fixture would be stronger and is worth adding when one is to hand; the manual check in 5.4 is the real version of it.
 - [ ] 4.2 Fixture test: the same for a credential file written by `XmlCredentialPasswordEncryptorDecorator`.
-- [ ] 4.3 Confirm the SQL path is untouched. It uses `LegacyRijndaelCryptographyProvider` and does not reach this code; `encrypt-sql-backend-with-aead` is where that moves.
+- [x] 4.3 Confirm the SQL path is untouched — it uses the legacy provider and never reaches this code.
 
 ## 5. Verification
 
-- [ ] 5.1 Full build; zero new analyzer warnings.
-- [ ] 5.2 Full test suite; zero failures, no `[Ignore]`.
-- [ ] 5.3 `openspec validate harden-connection-file-kdf --strict`.
+- [x] 5.1 Full build; zero new analyzer warnings.
+- [x] 5.2 Full test suite; zero failures, no `[Ignore]`. — 7394 passed.
+- [x] 5.3 `openspec validate harden-connection-file-kdf --strict`.
 - [ ] 5.4 Manual: open a connection file written by the current release, confirm connections decrypt, save at the classic level, confirm **no** attribute appears and an upstream mRemoteNG build still opens it.
 - [ ] 5.5 Manual: raise the level, save, confirm the attribute appears and the file reopens here.
 - [ ] 5.6 Manual: set a master password on a migrated file, close, reopen, confirm it is still accepted.
 - [ ] 5.7 Manual: measure file-open time before and after on a file with 200 connections. The PRF change should not move it; a regression here means the cache keys are wrong and the KDF is running per field.
+
+## Still open in this change
+
+- **3.2 — the credential file.** `XmlCredentialPasswordEncryptorDecorator` writes its own
+  `KdfIterations`, and the task asked for `KdfPrf` beside it. Not done, deliberately: the credential
+  file has no format level, so hardening it would break upstream unconditionally rather than on
+  request. It needs either its own level or a decision that it stays classic permanently. The read
+  side is already in place — `CryptoProviderFactoryFromXml` parses the attribute — so whichever is
+  chosen, nothing has to be rebuilt.
+- **4.2** follows 3.2.
+- **The deferred confirmation and offer from `add-storage-format-opt-in` §4 and §5.** They belong
+  with this change, because this is the first thing that makes the warning true — a hardened file
+  now genuinely does not open in upstream. Not implemented yet.

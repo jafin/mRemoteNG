@@ -8,6 +8,7 @@ using mRemoteNG.Security.Factories;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree.Root;
+using System.Security.Cryptography;
 
 namespace mRemoteNG.Config.Serializers;
 
@@ -26,6 +27,20 @@ public class XmlConnectionsDecryptor
     {
         get => _cryptographyProvider.KeyDerivationIterations;
         set => _cryptographyProvider.KeyDerivationIterations = value;
+    }
+
+    /// <summary>
+    /// The PBKDF2 function the file states it was written with.
+    /// </summary>
+    /// <remarks>
+    /// Carried alongside the iteration count for the same reason: both have to come from the file
+    /// rather than from what this build happens to be configured with, or a file written under one
+    /// set of parameters cannot be opened under another.
+    /// </remarks>
+    public HashAlgorithmName KeyDerivationPrf
+    {
+        get => _cryptographyProvider.KeyDerivationPrf;
+        set => _cryptographyProvider.KeyDerivationPrf = value;
     }
 
 
@@ -95,6 +110,10 @@ public class XmlConnectionsDecryptor
 
         ICryptographyProvider provider = new CryptoProviderFactory(_cipherEngine.Value, _cipherMode!.Value).Build();
         provider.KeyDerivationIterations = KeyDerivationIterations;
+
+        // The per-thread copies derive their own keys, so they need every parameter the file
+        // recorded. Omitting this would make batch decryption silently fall back to SHA-1.
+        provider.KeyDerivationPrf = KeyDerivationPrf;
         return provider;
     }
 

@@ -4,6 +4,7 @@ using System.Xml.Linq;
 using mRemoteNG.Security;
 using mRemoteNG.Security.AsymmetricEncryption;
 using mRemoteNG.Tree.Root;
+using mRemoteNG.Security.KeyDerivation;
 
 namespace mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 
@@ -26,6 +27,13 @@ public static class XmlRootNodeSerializer
         element.Add(new XAttribute(XName.Get("EncryptionEngine"), cryptographyProvider.CipherEngine));
         element.Add(new XAttribute(XName.Get("BlockCipherMode"), cryptographyProvider.CipherMode));
         element.Add(new XAttribute(XName.Get("KdfIterations"), cryptographyProvider.KeyDerivationIterations));
+
+        // Beside the iteration count, for the same reason it is recorded: a file outlives the build
+        // that wrote it. Written only when it is not SHA-1, so a classic file stays byte-compatible
+        // with what upstream mRemoteNG writes and reads.
+        string? kdfPrf = KeyDerivationPrf.ToRecordedValue(cryptographyProvider.KeyDerivationPrf);
+        if (kdfPrf is not null)
+            element.Add(new XAttribute(XName.Get(KeyDerivationPrf.AttributeName), kdfPrf));
         if (cryptographyProvider is CertificateCryptographyProvider certProvider)
             element.Add(new XAttribute(XName.Get("CertificateThumbprint"), certProvider.Thumbprint));
         element.Add(new XAttribute(XName.Get("FullFileEncryption"), fullFileEncryption.ToString().ToLowerInvariant()));

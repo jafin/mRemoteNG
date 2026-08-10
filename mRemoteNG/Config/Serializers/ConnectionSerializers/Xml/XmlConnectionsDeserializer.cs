@@ -21,6 +21,7 @@ using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
 using mRemoteNG.UI.Forms;
 using mRemoteNG.UI.TaskDialog;
+using mRemoteNG.Security.KeyDerivation;
 
 namespace mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 
@@ -215,7 +216,12 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
             _decryptor = new XmlConnectionsDecryptor(_cipherEngine, _cipherMode, rootNodeInfo)
             {
                 AuthenticationRequestor = AuthenticationRequestor,
-                KeyDerivationIterations = _kdfIterations
+                KeyDerivationIterations = _kdfIterations,
+
+                // Absent or unrecognised means SHA-1, which is what every file written before the
+                // format recorded it used. Taken from the file, never from what is configured now.
+                KeyDerivationPrf = KeyDerivationPrf.Parse(
+                    connectionsRootElement.Attributes?[KeyDerivationPrf.AttributeName]?.Value)
             };
         }
         else
