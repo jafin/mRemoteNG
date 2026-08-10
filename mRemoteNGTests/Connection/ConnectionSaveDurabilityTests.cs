@@ -34,6 +34,12 @@ public class ConnectionSaveDurabilityTests
         _connectionsService = new ConnectionsService(PuttySessionsManager.Instance);
         _connectionsService.LoadConnections(useDatabase: false, import: false, connectionFileName: _filePath);
 
+        // Long enough that the debounce cannot elapse mid-test. These tests assert that a save
+        // is still pending, which against the real two-second window is a bet on the scheduler
+        // rather than an assertion — and one that would fail only occasionally, under load.
+        // What is under test is that a pending save is flushed, not the interval's value.
+        _connectionsService.SaveDebounceMs = (int)TimeSpan.FromMinutes(5).TotalMilliseconds;
+
         _savesPerformed = 0;
         _connectionsService.ConnectionsSaved += (_, _) => _savesPerformed++;
 
@@ -45,7 +51,15 @@ public class ConnectionSaveDurabilityTests
     {
         // Leave nothing armed: the debounce timer outlives the test otherwise and fires
         // against the deleted temp file while a later test is running.
-        _connectionsService.FlushPendingSaves();
+        //
+        // A flush that times out means a save is still writing. Deleting the directory under it
+        // would produce a confusing failure in whichever test ran next, so leave the files in
+        // place — a leaked temp directory is a cheaper diagnostic than that.
+        if (!_connectionsService.FlushPendingSaves())
+        {
+            Assert.Fail("A save was still running at teardown; temp files left in place at " + _filePath);
+            return;
+        }
 
         // The read-only tests leave the file unwritable, and File.Copy carries that onto every
         // rolling backup taken from it, so clearing just the original is not enough to let the
@@ -94,8 +108,8 @@ public class ConnectionSaveDurabilityTests
     {
         _connectionsService.SaveConnectionsAsync();
 
-        _connectionsService.FlushPendingSaves();
-        _connectionsService.FlushPendingSaves();
+        Assert.That(_connectionsService.FlushPendingSaves(), Is.True);
+        Assert.That(_connectionsService.FlushPendingSaves(), Is.True);
 
         Assert.That(_savesPerformed, Is.EqualTo(1));
     }
@@ -112,7 +126,7 @@ public class ConnectionSaveDurabilityTests
         for (int i = 0; i < 25; i++)
             _connectionsService.SaveConnectionsAsync($"Property{i}");
 
-        _connectionsService.FlushPendingSaves();
+        Assert.That(_connectionsService.FlushPendingSaves(), Is.True);
 
         Assert.That(_savesPerformed, Is.EqualTo(1));
     }
@@ -126,7 +140,7 @@ public class ConnectionSaveDurabilityTests
         Assert.That(_savesPerformed, Is.EqualTo(1));
 
         // The superseded debounce must not fire a second, redundant write.
-        _connectionsService.FlushPendingSaves();
+        Assert.That(_connectionsService.FlushPendingSaves(), Is.True);
         Assert.That(_savesPerformed, Is.EqualTo(1));
     }
 

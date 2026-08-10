@@ -60,7 +60,16 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     private System.Threading.Timer? _saveDebounceTimer;
     private volatile bool _savePending;
     private string _pendingPropertyNameTrigger = "";
-    private const int SaveDebounceMs = 2000;
+    private const int DefaultSaveDebounceMs = 2000;
+
+    /// <summary>
+    /// How long a debounced save waits before writing.
+    /// </summary>
+    /// <remarks>
+    /// Settable for tests, which need "the debounce has not elapsed yet" to be a fact rather
+    /// than a two-second bet against the scheduler. Nothing in the product changes it.
+    /// </remarks>
+    internal int SaveDebounceMs { get; set; } = DefaultSaveDebounceMs;
 
     /// <summary>
     /// How long <see cref="FlushPendingSaves()"/> waits for a save that is already running.
