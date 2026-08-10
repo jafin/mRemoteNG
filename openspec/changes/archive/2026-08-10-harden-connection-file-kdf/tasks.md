@@ -40,11 +40,17 @@ path.
 - [x] 5.6 Manual: set a master password on a migrated file, close, reopen, confirm it is still accepted. — Passed.
 - [x] 5.7 Manual: measure file-open time before and after on a file with 200 connections. The PRF change should not move it; a regression here means the cache keys are wrong and the KDF is running per field. — Passed; no movement, so the derived key is cached once as intended.
 
-## Still open in this change
+## Carried in with this change — done
 
 **The deferred confirmation and offer from `add-storage-format-opt-in` §4 and §5.** They belong here,
 because this is the first change that makes the warning true — a hardened file now genuinely does not
-open in upstream mRemoteNG. Not implemented yet.
+open in upstream mRemoteNG.
+
+Both shipped on this branch and are recorded against §4 and §5 of that change: one confirmation for
+all hardening, worded around applications rather than algorithms; the upgrade offered once per
+classic connection file and kept reachable afterwards from File ▸ Storage Format. The claim the
+confirmation rests on was checked against a real upstream build — see that change's task 6.7, where
+upstream asks for the password again and refuses the correct one, exactly as the wording says.
 
 ## Decided during implementation
 

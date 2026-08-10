@@ -11,7 +11,7 @@ Full sequencing for all eight audit proposals: [SECURITY-AUDIT-3416.md](../SECUR
 - [x] 1.2 State on export that the copy has weaker protection than the store it came from. — Said before the file is written, not after, and only when the store is actually hardened: a warning on every export is one users learn to dismiss before reading, and on a classic store it would be false. Scoped to the connection-file format; the interchange formats carry no protection at any level, so what they lose is not a property of the level. The decision lives in `Export.ExportWeakensProtection` rather than inside the dialog, so it can be tested without a message box.
 - [x] 1.3 Tests: an exported file opens as a classic store in this fork and is not re-hardened on load. — `AnOverrideProducesAClassicCopyFromAHardenedStore`, plus the serializer-level `AnOverrideWinsOverTheRootsOwnLevel`.
 - [x] 1.4 Manual: open an exported file in an actual upstream mRemoteNG build. The compatibility claim is about another application; only that build can confirm it. — Passed, exported from a hardened store, both with and without full-file encryption. The file was also read directly: the root element carries neither `StorageFormat` nor `KdfPrf`, so the override is doing the work rather than the store happening to be classic. Upstream `v1.78.2-dev` reads `KdfIterations` (`XmlConnectionsDeserializer.cs:131`), so the 600,000 count this fork raised to in v1.80.0 is honoured and not silently replaced with upstream's own — the escape route survives the iteration count as well as the level.
-- [ ] 1.5 First deliberately. A user who upgrades and wants out must not find the way back unimplemented — that is the lock-in this change exists to prevent, arriving a release late.
+- [x] 1.5 First deliberately. A user who upgrades and wants out must not find the way back unimplemented — that is the lock-in this change exists to prevent, arriving a release late. — Held. The export landed and was verified against a real upstream build (1.4) before the confirmation existed to offer it, and before anything could raise a level. The ordering is visible in the commit sequence rather than only asserted here: the export, then the warning on it, then the confirmation, then the offer.
 
 ## 2. The level
 
@@ -36,7 +36,7 @@ Full sequencing for all eight audit proposals: [SECURITY-AUDIT-3416.md](../SECUR
 - [x] 4.5 For a SQL store, add that every client must be upgraded — the person confirming is not the only one affected.
 - [x] 4.6 Tests: confirming raises the level; declining leaves the store byte-compatible with what upstream reads. — `StorageFormatUpgradeTests`, eight cases. The byte-compatibility one serializes after declining and asserts neither `StorageFormat` nor `KdfPrf` reaches the file, because the claim is about the file rather than about a property. Taking the classic copy is covered alongside declining: it must not raise the level either.
 
-**Not yet reachable from the user interface.** Nothing calls `StorageFormatUpgradePrompt` — §5 owns where the offer appears, and choosing its placement here would have decided §5 by accident. Until then the level is still raised by hand, as in `harden-connection-file-kdf` task 5.5.
+**Rendering confirmed manually.** Three buttons each with their second line, body text and expanded detail inside the frame. Getting there took three fixes to the emulated task dialog, all pre-existing and all affecting every dialog in the application that sets content: `lbContent` and `lbExpandedInfo` were anchored `Top|Right|Right` with `Left` mistyped as `Right`, so their text slid off the left edge on any resize; label heights were measured with GDI+ `MeasureString` while a `Label` draws through GDI, which measures wider, so the last line or two fell outside the panel; and command buttons were sized from `Width` rather than `ClientSize.Width`, so each was built wider than the area it draws into. None of this was reachable by a test — the dialog had to be looked at.
 
 ## 5. Visibility
 
@@ -53,12 +53,21 @@ Full sequencing for all eight audit proposals: [SECURITY-AUDIT-3416.md](../SECUR
 - [x] 6.1 Full build; zero new analyzer warnings.
 - [x] 6.2 Full test suite; zero failures, no `[Ignore]`. — 7356 passed.
 - [x] 6.3 `openspec validate add-storage-format-opt-in --strict`.
-- [ ] 6.4 Manual, with a real upstream mRemoteNG build installed alongside: create a store in this fork, use it, save it, then open it in upstream. It must work. This is the whole claim.
-- [ ] 6.5 Manual: raise the level, confirm upstream now fails, export in classic format, confirm upstream opens the export.
-- [ ] 6.6 Manual: confirm the rolling backups of a classic store are readable by upstream, and that this is what the confirmation said would change.
-- [ ] 6.7 Record what upstream actually does with a hardened file — the design predicts a wrong-password prompt for the unknown KDF attribute. If it behaves differently, the confirmation wording needs to change to match.
+- [x] 6.4 Manual, with a real upstream mRemoteNG build installed alongside: create a store in this fork, use it, save it, then open it in upstream. It must work. This is the whole claim. — Passed against upstream v1.78.2-dev.
+- [x] 6.5 Manual: raise the level, confirm upstream now fails, export in classic format, confirm upstream opens the export. — Passed, and the first run of the whole path through the user interface rather than by hand: File ▸ Storage Format ▸ Harden, upstream then refuses the store, export, upstream opens the export.
+- [x] 6.6 Manual: confirm the rolling backups of a classic store are readable by upstream, and that this is what the confirmation said would change. — Both halves. A rolling backup of a classic store opens in upstream; a backup taken after hardening does not, and fails the same way the store itself does. That is the confirmation's sentence about backups demonstrated in both directions rather than only the alarming one.
+- [x] 6.7 Record what upstream actually does with a hardened file — the design predicts a wrong-password prompt for the unknown KDF attribute. If it behaves differently, the confirmation wording needs to change to match. — **The prediction holds.** Upstream prompts for the password and refuses the correct one, with nothing said about the format. No wording change needed: the confirmation already says "They will not tell you why. They ask for the password again, and refuse the one you give them, on a file you know the password to."
 
-## Sections 4 and 5 deferred to land with `harden-connection-file-kdf`
+## Sections 4 and 5 deferred to land with `harden-connection-file-kdf` — done
+
+**Landed, on the `security/harden-connection-file-kdf` branch, as planned below.** The condition the
+deferral was waiting on is met: that change is complete, so a hardened store now genuinely does not
+open in upstream mRemoteNG and the confirmation's central sentence is true when it is shown. Tasks
+1.2 and 1.4 moved with them and are done.
+
+The reasoning is kept because it is the argument for the ordering, not a note about work outstanding.
+
+---
 
 The confirmation and the once-per-file offer are written but **not shipped in this change**, for a
 reason that only became visible while implementing.

@@ -57,6 +57,23 @@ public class DiagnosticTextSanitizerTests
         });
     }
 
+    /// <summary>
+    /// A connection string in a debug report carries both halves of a credential in one token.
+    /// </summary>
+    [TestCase("ssh://admin:hunter2@server.example.com", "admin", "hunter2")]
+    [TestCase("https://svcacct:p@ssw0rd!@intranet.example.com/path", "svcacct", "p@ssw0rd!")]
+    [TestCase("rdp://CORPUSER:Tr0ub4dor&3@10.1.2.3:3389", "CORPUSER", "Tr0ub4dor&3")]
+    public void RedactRemovesBothHalvesOfUriUserinfo(string value, string user, string password)
+    {
+        string sanitized = DiagnosticTextSanitizer.Redact(value);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(sanitized, Does.Not.Contain(password), "the password must not survive");
+            Assert.That(sanitized, Does.Not.Contain(user), "the username must not survive");
+        });
+    }
+
     [Test]
     public void RedactAlsoReplacesTheProfileDirectory()
     {

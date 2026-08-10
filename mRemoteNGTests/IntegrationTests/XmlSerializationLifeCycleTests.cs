@@ -88,6 +88,47 @@ public class XmlSerializationLifeCycleTests
     }
 
     [Test]
+    public void AClassicFileIsNeverWrittenWithAHardenedFunction()
+    {
+        // The level and the function are set from different places, so nothing but this stops a
+        // caller producing a file that claims to be classic and is not. Upstream would ignore the
+        // KdfPrf attribute, derive with SHA-1, and report it to the user as a wrong password.
+        var hardenedProvider = _cryptoFactory.Build();
+        hardenedProvider.KeyDerivationPrf = mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.Hardened;
+
+        // Asserted against the root serializer rather than XmlConnectionsSerializer, which catches
+        // everything and returns an empty string — the save still fails, but the reason only
+        // reaches the message collector. The invariant belongs where it is enforced.
+        Assert.That(
+            () => XmlRootNodeSerializer.SerializeRootNodeInfo(
+                OriginalRoot, hardenedProvider, new Version(2, 8), false, StorageFormatLevel.Classic),
+            Throws.InstanceOf<InvalidOperationException>());
+
+        // Also when the store's own level is classic and no override is supplied at all.
+        Assert.That(
+            () => XmlRootNodeSerializer.SerializeRootNodeInfo(
+                OriginalRoot, hardenedProvider, new Version(2, 8)),
+            Throws.InstanceOf<InvalidOperationException>());
+    }
+
+    [Test]
+    public void AHardenedMarkerWithoutAHardenedFunctionIsAllowed()
+    {
+        // The opposite pairing is safe and stays allowed: upstream ignores the marker it does not
+        // know, and absence of KdfPrf already means SHA-1, so the file opens everywhere.
+        OriginalRoot.StorageFormat = StorageFormatLevel.Hardened;
+
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(serialized, Does.Contain(StorageFormat.AttributeName));
+            Assert.That(serialized,
+                Does.Not.Contain(mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.AttributeName));
+        });
+    }
+
+    [Test]
     public void AnOverrideProducesAClassicCopyFromAHardenedStore()
     {
         // What Export relies on. The escape route has to survive the store being hardened.
@@ -135,6 +176,10 @@ public class XmlSerializationLifeCycleTests
     {
         var cryptoProvider = _cryptoFactory.Build();
         cryptoProvider.KeyDerivationPrf = mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.Hardened;
+
+        // The store is raised to match. A hardened function on a classic store is refused now — it
+        // would put an attribute upstream cannot read into a file that claims upstream can read it.
+        OriginalRoot.StorageFormat = StorageFormatLevel.Hardened;
 
         var nodeSerializer = new XmlConnectionNodeSerializer28(
             cryptoProvider,

@@ -64,11 +64,24 @@ password can pass the check and expose the hostnames, usernames and ports, which
 - **THEN** authentication fails
 - **AND** the user is prompted again within the existing attempt limit
 
-#### Scenario: A database with no stored sentinel
+#### Scenario: A database with no stored sentinel, at the authenticated-encryption version
 
-- **WHEN** the database holds no sentinel value
+- **WHEN** the database records the authenticated-encryption version or later
+- **AND** it holds no sentinel value
 - **THEN** the database is treated as not yet initialised
 - **AND** no key is returned without the sentinel having been verified
+
+#### Scenario: A database with no stored sentinel, below that version
+
+- **WHEN** the database records a version below the authenticated-encryption version
+- **AND** it holds no sentinel value
+- **THEN** the existing legacy key resolution is used unchanged
+
+Scoped to the version, because an empty sentinel means two different things. At the
+authenticated-encryption version it means the database was never initialised and there is nothing to
+verify a password against. Below it, it means the database has no master password — which is how
+every SQL store in existence today is configured, and refusing those would lock out installations
+that work.
 
 ### Requirement: A SQL database is reachable from any machine and any edition
 

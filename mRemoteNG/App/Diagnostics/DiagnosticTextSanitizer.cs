@@ -26,6 +26,23 @@ public static class DiagnosticTextSanitizer
         @"\b(password|passphrase|pwd|token|secret|api[-_ ]?key|private[-_ ]?key|username|user|login|hostname|host|server|domain)\b\s*[:=]\s*([^\s,;]+)",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
+    /// <summary>
+    /// The userinfo of a URI — <c>scheme://user:password@host</c> — both halves at once.
+    /// </summary>
+    /// <remarks>
+    /// Run before the account and hostname matchers, because it is the only one that can see where
+    /// the credential ends. <see cref="UserAtHostRegex"/> catches the password in the easy case, by
+    /// mistaking it for the local part of an address, but it stops at the first character outside
+    /// <c>[\w.-]</c> — so a password with punctuation in it survived, and the username always did.
+    /// <para>
+    /// The <c>@</c> is matched greedily so a password containing one is consumed rather than
+    /// treated as the separator.
+    /// </para>
+    /// </remarks>
+    private static readonly Regex UriUserInfoRegex = new(
+        @"([a-zA-Z][a-zA-Z0-9+.\-]*://)[^/\s]*@",
+        RegexOptions.CultureInvariant | RegexOptions.Compiled);
+
     private static readonly Regex Ipv4AddressRegex = new(
         @"\b(?:\d{1,3}\.){3}\d{1,3}\b",
         RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -73,6 +90,7 @@ public static class DiagnosticTextSanitizer
         string sanitized = RedactUserPaths(value);
 
         sanitized = CredentialPairRegex.Replace(sanitized, match => $"{match.Groups[1].Value}={RedactedValue}");
+        sanitized = UriUserInfoRegex.Replace(sanitized, $"$1{RedactedValue}@");
         sanitized = DomainUserRegex.Replace(sanitized, RedactedValue);
         sanitized = UserAtHostRegex.Replace(sanitized, RedactedValue);
         sanitized = Ipv4AddressRegex.Replace(sanitized, RedactedValue);

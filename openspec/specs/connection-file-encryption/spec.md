@@ -1,10 +1,16 @@
-## ADDED Requirements
+# connection-file-encryption Specification
 
+## Purpose
+TBD - created by archiving change harden-connection-file-kdf. Update Purpose after archive.
+## Requirements
 ### Requirement: The connection file states the key derivation parameters it was written with
 
-The connection file SHALL record the PBKDF2 pseudo-random function used to derive its key, alongside
-the iteration count it already records, and the reader SHALL derive using the parameters the file
-states rather than the parameters currently configured.
+A connection file at the hardened level SHALL record the PBKDF2 pseudo-random function used to derive
+its key, alongside the iteration count it already records, and the reader SHALL derive using the
+parameters the file states rather than the parameters currently configured.
+
+A classic file records no function, and absence is what means HMAC-SHA1 — recording it there would
+put an attribute upstream mRemoteNG has never seen into a file it is required to be able to read.
 
 A file outlives the build that wrote it. Parameters that are read from configuration at open time
 cannot be changed without making every existing file unreadable, which is why the iteration count is
@@ -12,7 +18,7 @@ already stored in the file; the PRF is the other half of the same pair and was l
 
 #### Scenario: A file written by this version
 
-- **WHEN** the connection file is saved
+- **WHEN** a connection file at the hardened level is saved
 - **THEN** the root element carries the pseudo-random function alongside the iteration count
 - **AND** the recorded function is the one used to derive the key
 
@@ -70,17 +76,30 @@ reporting a wrong password.
 
 ### Requirement: The key derivation function is given its parameters explicitly
 
-`Pkcs5S2KeyGenerator` SHALL require an iteration count and a pseudo-random function from its caller,
-and SHALL NOT supply a default for either.
+`Pkcs5S2KeyGenerator` SHALL require an iteration count from its caller and SHALL NOT supply a default
+for it. The pseudo-random function SHALL default to HMAC-SHA1 when not supplied.
 
 A defaulted iteration count is indistinguishable at the call site from a chosen one. The existing
 default of 1000 is three orders of magnitude below the configured value and would silently produce a
 weak key from a `new()` that merely forgot an argument.
 
+The pseudo-random function is defaulted rather than required, and defaulted to the *weaker* function,
+because the two arguments fail in opposite directions. A forgotten iteration count produces a weak
+key and nothing else notices; a forgotten function must produce a file upstream mRemoteNG can still
+open, because the alternative is a caller that forgets and locks the user out of the application they
+came from. Requiring both would be stronger still and is the better end state, but it is not what
+shipped — see the deviation recorded against task 1.1 of `harden-connection-file-kdf`.
+
 #### Scenario: Constructing without an iteration count
 
-- **WHEN** the key derivation function is constructed
-- **THEN** an iteration count and a pseudo-random function must both be supplied
+- **WHEN** the key derivation function is constructed without an iteration count
+- **THEN** it does not compile
+
+#### Scenario: Constructing without a pseudo-random function
+
+- **WHEN** the key derivation function is constructed without a pseudo-random function
+- **THEN** the key is derived with HMAC-SHA1
+- **AND** the resulting file is readable by upstream mRemoteNG
 
 ### Requirement: Derived key caching accounts for the pseudo-random function
 
@@ -96,3 +115,4 @@ only in the function, so a cache that ignores it would encrypt one file with the
 - **AND** the pseudo-random function differs
 - **THEN** the cached key is not reused
 - **AND** the key is derived again with the requested function
+

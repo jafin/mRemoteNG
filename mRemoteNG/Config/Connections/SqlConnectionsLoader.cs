@@ -61,10 +61,6 @@ public class SqlConnectionsLoader : IConnectionsLoader
     public ConnectionTreeModel Load()
     {
         SqlConnectionListMetaData metaData = _sqlMetaDataRetriever.GetDatabaseMetaData(_databaseConnector) ?? HandleFirstRun(_sqlMetaDataRetriever, _databaseConnector);
-        Optional<SecureString> decryptionKey = GetDecryptionKey(metaData);
-
-        if (!decryptionKey.Any())
-            throw new InvalidOperationException("Could not load SQL connections");
 
         bool versionSupported = _sqlDatabaseVersionVerifier.VerifyDatabaseVersion(metaData.ConfVersion);
 
@@ -73,9 +69,19 @@ public class SqlConnectionsLoader : IConnectionsLoader
         // nonsense — connections with blank passwords — which a user reads as data loss rather than
         // as a version mismatch. The verifier has already said so on the message channel.
         //
+        // Checked before the key, so a database this build cannot read does not first ask for a
+        // master password. Its sentinel may not even be in a shape this build recognises, in which
+        // case authentication fails first and a version mismatch reaches the user as a rejected
+        // password on a database they have the password to.
+        //
         // A database that is merely too old to upgrade is left as it was: still attempted, because
         // refusing it would lock out installations that work today.
         if (!versionSupported && _sqlDatabaseVersionVerifier.IsNewerThanSupported(metaData.ConfVersion))
+            throw new InvalidOperationException("Could not load SQL connections");
+
+        Optional<SecureString> decryptionKey = GetDecryptionKey(metaData);
+
+        if (!decryptionKey.Any())
             throw new InvalidOperationException("Could not load SQL connections");
 
         System.Data.DataTable dataTable = _sqlDataProvider.Load();

@@ -28,10 +28,27 @@ public static class XmlRootNodeSerializer
         element.Add(new XAttribute(XName.Get("BlockCipherMode"), cryptographyProvider.CipherMode));
         element.Add(new XAttribute(XName.Get("KdfIterations"), cryptographyProvider.KeyDerivationIterations));
 
+        StorageFormatLevel effectiveLevel = storageFormatOverride ?? rootNodeInfo.StorageFormat;
+
         // Beside the iteration count, for the same reason it is recorded: a file outlives the build
         // that wrote it. Written only when it is not SHA-1, so a classic file stays byte-compatible
         // with what upstream mRemoteNG writes and reads.
         string? kdfPrf = KeyDerivationPrf.ToRecordedValue(cryptographyProvider.KeyDerivationPrf);
+
+        // A classic file carrying a hardened function is the one combination that breaks the
+        // guarantee: upstream mRemoteNG ignores the attribute it does not know, derives with SHA-1,
+        // and reports the failure as a wrong password on a file the user has the password to. The
+        // level and the function come from different places — the level from the store or an
+        // override, the function from the provider — so nothing but this stops them diverging.
+        //
+        // The opposite pairing is left alone deliberately. A hardened marker with SHA-1 derivation
+        // still opens everywhere, because upstream ignores the marker too and absence of the
+        // function already means SHA-1.
+        if (kdfPrf is not null && effectiveLevel != StorageFormatLevel.Hardened)
+            throw new InvalidOperationException(
+                $"Refusing to write a {StorageFormat.Describe(effectiveLevel)} store with a hardened key derivation function " +
+                $"({kdfPrf}). Upstream mRemoteNG would not be able to open it.");
+
         if (kdfPrf is not null)
             element.Add(new XAttribute(XName.Get(KeyDerivationPrf.AttributeName), kdfPrf));
         if (cryptographyProvider is CertificateCryptographyProvider certProvider)
@@ -51,7 +68,7 @@ public static class XmlRootNodeSerializer
         // upstream mRemoteNG writes, because it reads this same file from this same path — so
         // absence is what means classic, and adding an attribute here unconditionally would be the
         // silent format change the level exists to prevent.
-        string? storageFormat = StorageFormat.ToRecordedValue(storageFormatOverride ?? rootNodeInfo.StorageFormat);
+        string? storageFormat = StorageFormat.ToRecordedValue(effectiveLevel);
         if (storageFormat is not null)
             element.Add(new XAttribute(XName.Get(StorageFormat.AttributeName), storageFormat));
 
