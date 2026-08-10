@@ -43,11 +43,6 @@ public partial class ConnectionTree : TreeListView, IConnectionTree
     private ConnectionTreeModel? _connectionTreeModel;
     private List<ConnectionInfo> _clipboardNodes = [];
 
-    // When the model has exactly one connection root ("Connections"), that root is hidden and its
-    // children are shown at the top level — the pane heading already says "Connections", so the
-    // node is redundant and costs every entry an extra indent level. Null when not promoting
-    // (e.g. multiple connection roots). The root stays in the model; only the view is re-rooted.
-
     public ConnectionInfo SelectedNode => (ConnectionInfo)SelectedObject;
 
     public NodeSearcher? NodeSearcher { get; private set; }
