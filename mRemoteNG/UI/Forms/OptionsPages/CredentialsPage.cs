@@ -4,6 +4,7 @@ using mRemoteNG.App;
 using mRemoteNG.Config.Settings.Registry;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Security.SymmetricEncryption;
+using mRemoteNG.Security;
 
 namespace mRemoteNG.UI.Forms.OptionsPages;
 
@@ -55,8 +56,7 @@ public sealed partial class CredentialsPage : OptionsPage
         }
 
         txtCredentialsUsername.Text = Properties.OptionsCredentialsPage.Default.DefaultUsername;
-        LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-        txtCredentialsPassword.Text = cryptographyProvider.Decrypt(Properties.OptionsCredentialsPage.Default.DefaultPassword, Runtime.EncryptionKey);
+        txtCredentialsPassword.Text = SettingsSecretProtector.Default.Unprotect(Properties.OptionsCredentialsPage.Default.DefaultPassword, Runtime.EncryptionKey);
         txtCredentialsDomain.Text = Properties.OptionsCredentialsPage.Default.DefaultDomain;
         txtCredentialsUserViaAPI.Text = Properties.OptionsCredentialsPage.Default.UserViaAPIDefault;
         chkUseSshAgent.Checked = Properties.OptionsCredentialsPage.Default.UseSshAgent;
@@ -78,8 +78,7 @@ public sealed partial class CredentialsPage : OptionsPage
         }
 
         Properties.OptionsCredentialsPage.Default.DefaultUsername = txtCredentialsUsername.Text;
-        LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-        Properties.OptionsCredentialsPage.Default.DefaultPassword = cryptographyProvider.Encrypt(txtCredentialsPassword.Text, Runtime.EncryptionKey);
+        Properties.OptionsCredentialsPage.Default.DefaultPassword = SettingsSecretProtector.Default.Protect(txtCredentialsPassword.Text, Runtime.EncryptionKey);
         Properties.OptionsCredentialsPage.Default.DefaultDomain = txtCredentialsDomain.Text;
         Properties.OptionsCredentialsPage.Default.UserViaAPIDefault = txtCredentialsUserViaAPI.Text;
         Properties.OptionsCredentialsPage.Default.UseSshAgent = chkUseSshAgent.Checked;

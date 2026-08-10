@@ -93,6 +93,35 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
 
     [Browsable(false)] public string DefaultPassword { get; } = Security.ConnectionFileDefaults.LegacyEncryptionKey;
 
+    /// <summary>
+    /// How this store is written, and therefore what else can read it.
+    /// </summary>
+    /// <remarks>
+    /// A property of the store rather than of the application or a global setting, so that opening a
+    /// file in a newer build cannot decide it. Classic until the user asks otherwise, and a file that
+    /// records nothing is classic — which is every file written before this existed, and every file
+    /// upstream mRemoteNG has ever written.
+    /// </remarks>
+    [Browsable(false)]
+    public Security.StorageFormatLevel StorageFormat { get; set; } = Security.StorageFormatLevel.Classic;
+
+    /// <summary>
+    /// The level, shown where the store's other security settings already are.
+    /// </summary>
+    /// <remarks>
+    /// On the root node rather than in the options dialog, because the level is a property of this
+    /// store and the options dialog is a property of the application — and because a user who has
+    /// to go looking in options to find out whether their file is readable by anything else will
+    /// not go looking. Read-only: raising it is a decision with a confirmation attached, not a
+    /// dropdown.
+    /// </remarks>
+    [LocalizedAttributes.LocalizedCategory(nameof(Language.Miscellaneous)),
+     Browsable(true),
+     ReadOnly(true),
+     DisplayName("Storage Format"),
+     Description("Classic stores can be opened by upstream mRemoteNG. Hardened stores cannot.")]
+    public string StorageFormatDisplay => Security.StorageFormat.Describe(StorageFormat);
+
     [Browsable(false)]
     public bool IsPasswordMatch(SecureString? providedPassword)
     {

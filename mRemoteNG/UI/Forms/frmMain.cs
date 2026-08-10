@@ -521,6 +521,10 @@ public partial class FrmMain : IMessageFilter
         UpdateWindowTitle();
         UI.Taskbar.JumpListManager.Initialize();
         StartRestApiIfConfigured();
+
+        // Posted rather than called: this runs inside the load, and a modal dialog opened here would
+        // hold up whatever else is still subscribed to the same event.
+        BeginInvoke(() => StorageFormatCoordinator.OfferIfDue(this));
     }
 
     private static void StartRestApiIfConfigured()

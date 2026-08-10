@@ -6,6 +6,7 @@ using mRemoteNG.App;
 using mRemoteNG.Connection;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tools.Cmdline;
+using mRemoteNG.Security;
 
 namespace mRemoteNG.Tools;
 
@@ -216,7 +217,7 @@ public class ExternalToolArgumentParser(ConnectionInfo connectionInfo, ExternalT
                 //replacement = _connectionInfo.Password.ConvertToUnsecureString();
                 replacement = _connectionInfo.Password;
                 if (string.IsNullOrEmpty(replacement) && string.Equals(Properties.OptionsCredentialsPage.Default.EmptyCredentials, "custom", StringComparison.Ordinal))
-                    replacement = new LegacyRijndaelCryptographyProvider().Decrypt(Convert.ToString(Properties.OptionsCredentialsPage.Default.DefaultPassword), Runtime.EncryptionKey);
+                    replacement = SettingsSecretProtector.Default.Unprotect(Convert.ToString(Properties.OptionsCredentialsPage.Default.DefaultPassword), Runtime.EncryptionKey);
                 break;
             case "domain":
                 replacement = _connectionInfo.Domain;

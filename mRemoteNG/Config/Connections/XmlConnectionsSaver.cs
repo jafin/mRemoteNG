@@ -8,6 +8,7 @@ using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
+using mRemoteNG.Security.KeyDerivation;
 
 namespace mRemoteNG.Config.Connections;
 
@@ -30,11 +31,19 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
         try
         {
             ICryptographyProvider cryptographyProvider = new CryptoProviderFactoryFromSettings().Build();
-            Serializers.ISerializer<Connection.ConnectionInfo, string> xmlConnectionsSerializer = XmlConnectionSerializerFactory.Build(cryptographyProvider, connectionTreeModel, _saveFilter, Properties.OptionsSecurityPage.Default.EncryptCompleteConnectionsFile);
 
             RootNodeInfo? rootNode = connectionTreeModel.RootNodes.OfType<RootNodeInfo>().FirstOrDefault();
             if (rootNode == null)
                 throw new InvalidOperationException("Connection tree has no root node");
+
+            // The only place that knows both the provider and the store's format level. A classic
+            // store keeps deriving with SHA-1 so upstream mRemoteNG, which reads this same file from
+            // this same path, can still open it; the stronger function is what being hardened buys.
+            cryptographyProvider.KeyDerivationPrf = rootNode.StorageFormat == StorageFormatLevel.Hardened
+                ? KeyDerivationPrf.Hardened
+                : KeyDerivationPrf.Default;
+
+            Serializers.ISerializer<Connection.ConnectionInfo, string> xmlConnectionsSerializer = XmlConnectionSerializerFactory.Build(cryptographyProvider, connectionTreeModel, _saveFilter, Properties.OptionsSecurityPage.Default.EncryptCompleteConnectionsFile);
             string xml = xmlConnectionsSerializer.Serialize(rootNode);
 
             if (string.IsNullOrEmpty(xml))

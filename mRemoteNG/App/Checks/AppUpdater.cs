@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.Versioning;
@@ -6,6 +6,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using mRemoteNG.App.Info;
 using mRemoteNG.Security.SymmetricEncryption;
+using mRemoteNG.Security;
 
 // ReSharper disable ArrangeAccessorOwnerBody
 
@@ -49,8 +50,7 @@ public class AppUpdater
         int port = Properties.OptionsUpdatesPage.Default.UpdateProxyPort;
         bool useAuthentication = Properties.OptionsUpdatesPage.Default.UpdateProxyUseAuthentication;
         string username = Properties.OptionsUpdatesPage.Default.UpdateProxyAuthUser;
-        LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-        string password = cryptographyProvider.Decrypt(Properties.OptionsUpdatesPage.Default.UpdateProxyAuthPass,
+        string password = SettingsSecretProtector.Default.Unprotect(Properties.OptionsUpdatesPage.Default.UpdateProxyAuthPass,
             Runtime.EncryptionKey);
 
         SetProxySettings(shouldWeUseProxy, proxyAddress, port, useAuthentication, username, password);

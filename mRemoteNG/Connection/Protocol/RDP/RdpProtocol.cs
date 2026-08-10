@@ -18,6 +18,7 @@ using mRemoteNG.Tools;
 using mRemoteNG.UI.Forms;
 using mRemoteNG.UI.Tabs;
 using MSTSCLib;
+using mRemoteNG.Security;
 
 namespace mRemoteNG.Connection.Protocol.RDP;
 
@@ -1141,8 +1142,7 @@ public class RdpProtocol : ProtocolBase, ISupportsViewOnly, IMessageFilter
                     {
                         if (!string.IsNullOrEmpty(Properties.OptionsCredentialsPage.Default.DefaultPassword))
                         {
-                            LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-                            _rdpClient.AdvancedSettings2.ClearTextPassword = cryptographyProvider.Decrypt(Properties.OptionsCredentialsPage.Default.DefaultPassword, Runtime.EncryptionKey);
+                            _rdpClient.AdvancedSettings2.ClearTextPassword = SettingsSecretProtector.Default.Unprotect(Properties.OptionsCredentialsPage.Default.DefaultPassword, Runtime.EncryptionKey);
                         }
                     }
                 }

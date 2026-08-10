@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data;
 using System.Linq;
@@ -301,6 +301,53 @@ public class SqlConnectionsLoaderIntegrationTests
 
         // Assert
         _versionVerifierMock.Received(1).VerifyDatabaseVersion(metaData.ConfVersion);
+    }
+
+    [Test]
+    public void Load_WhenDatabaseIsNewerThanSupported_RefusesRatherThanReadingRows()
+    {
+        var masterPassword = new SecureString();
+        "sqlpass".ToCharArray().ToList().ForEach(masterPassword.AppendChar);
+        masterPassword.MakeReadOnly();
+
+        var metaData = CreateMetaData(masterPassword);
+        _metaDataRetrieverMock.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>()).Returns(metaData);
+
+        // What an un-upgraded client sees once someone else has upgraded the shared database.
+        _versionVerifierMock.VerifyDatabaseVersion(Arg.Any<Version>()).Returns(false);
+        _versionVerifierMock.IsNewerThanSupported(Arg.Any<Version>()).Returns(true);
+
+        var loader = CreateLoader(authRequestor: (filename) => new Optional<SecureString>(masterPassword));
+
+        Assert.Throws<InvalidOperationException>(() => loader.Load());
+
+        // The point of refusing: the rows are never read, so nothing is decrypted with the wrong
+        // assumptions and shown to the user as blank passwords.
+        _sqlDataProviderMock.DidNotReceive().Load();
+    }
+
+    [Test]
+    public void Load_WhenDatabaseIsOlderAndUnverifiable_StillAttemptsTheLoad()
+    {
+        var masterPassword = new SecureString();
+        "sqlpass".ToCharArray().ToList().ForEach(masterPassword.AppendChar);
+        masterPassword.MakeReadOnly();
+
+        var metaData = CreateMetaData(masterPassword);
+        _metaDataRetrieverMock.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>()).Returns(metaData);
+
+        var connectionInfo = new ConnectionInfoAlias { Name = "Test", Protocol = mRemoteNG.Connection.Protocol.ProtocolType.RDP };
+        _sqlDataProviderMock.Load().Returns(CreateEncryptedConnectionsDataTable(masterPassword, connectionInfo));
+
+        // Verification fails, but the database is not newer. Refusing here would lock out
+        // installations that work today, so behaviour is deliberately unchanged.
+        _versionVerifierMock.VerifyDatabaseVersion(Arg.Any<Version>()).Returns(false);
+        _versionVerifierMock.IsNewerThanSupported(Arg.Any<Version>()).Returns(false);
+
+        var loader = CreateLoader(authRequestor: (filename) => new Optional<SecureString>(masterPassword));
+
+        Assert.DoesNotThrow(() => loader.Load());
+        _sqlDataProviderMock.Received(1).Load();
     }
 
     [Test]

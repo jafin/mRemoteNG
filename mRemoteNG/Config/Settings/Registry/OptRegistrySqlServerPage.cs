@@ -141,6 +141,11 @@ public sealed partial class OptRegistrySqlServerPage
             // Prevents potential issues when using SQLPass later.
             try
             {
+                // Deliberately the legacy provider, not SettingsSecretProtector. An administrator
+                // produces this value with the password generator on the Security options page,
+                // which writes the legacy format — so this is a documented external contract, not
+                // an oversight. The value is stored still encrypted and every reader goes through
+                // SettingsSecretProtector, which decrypts unmarked values with the same provider.
                 LegacyRijndaelCryptographyProvider cryptographyProvider = new();
                 string decryptedPassword;
                 string sqlPassword = SQLPassword.Value;

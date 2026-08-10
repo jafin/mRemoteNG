@@ -39,6 +39,166 @@ public class XmlSerializationLifeCycleTests
         _serializer = null;
     }
 
+    private RootNodeInfo OriginalRoot => _originalModel.RootNodes.OfType<RootNodeInfo>().First();
+
+    private static RootNodeInfo RootOf(ConnectionTreeModel model) =>
+        model.RootNodes.OfType<RootNodeInfo>().First();
+
+    [Test]
+    public void AStoreWithNoRecordedLevelStaysClassicAcrossARoundTrip()
+    {
+        // Every file written before the level existed, and every file upstream mRemoteNG has ever
+        // written, looks like this. Opening and saving must not change what it is.
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(serialized, Does.Not.Contain(StorageFormat.AttributeName),
+                "a classic store must come out byte-compatible with what upstream writes");
+            Assert.That(RootOf(_deserializer.Deserialize(serialized)).StorageFormat,
+                Is.EqualTo(StorageFormatLevel.Classic));
+        });
+    }
+
+    [Test]
+    public void AHardenedStoreStaysHardenedAcrossARoundTrip()
+    {
+        OriginalRoot.StorageFormat = StorageFormatLevel.Hardened;
+
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.That(RootOf(_deserializer.Deserialize(serialized)).StorageFormat,
+            Is.EqualTo(StorageFormatLevel.Hardened));
+    }
+
+    [Test]
+    public void SavingDoesNotRaiseTheLevelByItself()
+    {
+        // The level is a property of the store, never of the application version or a setting. A
+        // save is ordinary work and must not decide it — that is the whole guarantee.
+        string firstSave = _serializer.Serialize(_originalModel);
+        ConnectionTreeModel reloaded = _deserializer.Deserialize(firstSave);
+
+        Assert.That(RootOf(reloaded).StorageFormat, Is.EqualTo(StorageFormatLevel.Classic));
+
+        string secondSave = _serializer.Serialize(reloaded);
+
+        Assert.That(new XmlConnectionsDeserializer().Deserialize(secondSave), Is.Not.Null);
+        Assert.That(secondSave, Does.Not.Contain(StorageFormat.AttributeName));
+    }
+
+    [Test]
+    public void AClassicFileIsNeverWrittenWithAHardenedFunction()
+    {
+        // The level and the function are set from different places, so nothing but this stops a
+        // caller producing a file that claims to be classic and is not. Upstream would ignore the
+        // KdfPrf attribute, derive with SHA-1, and report it to the user as a wrong password.
+        var hardenedProvider = _cryptoFactory.Build();
+        hardenedProvider.KeyDerivationPrf = mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.Hardened;
+
+        // Asserted against the root serializer rather than XmlConnectionsSerializer, which catches
+        // everything and returns an empty string — the save still fails, but the reason only
+        // reaches the message collector. The invariant belongs where it is enforced.
+        Assert.That(
+            () => XmlRootNodeSerializer.SerializeRootNodeInfo(
+                OriginalRoot, hardenedProvider, new Version(2, 8), false, StorageFormatLevel.Classic),
+            Throws.InstanceOf<InvalidOperationException>());
+
+        // Also when the store's own level is classic and no override is supplied at all.
+        Assert.That(
+            () => XmlRootNodeSerializer.SerializeRootNodeInfo(
+                OriginalRoot, hardenedProvider, new Version(2, 8)),
+            Throws.InstanceOf<InvalidOperationException>());
+    }
+
+    [Test]
+    public void AHardenedMarkerWithoutAHardenedFunctionIsAllowed()
+    {
+        // The opposite pairing is safe and stays allowed: upstream ignores the marker it does not
+        // know, and absence of KdfPrf already means SHA-1, so the file opens everywhere.
+        OriginalRoot.StorageFormat = StorageFormatLevel.Hardened;
+
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(serialized, Does.Contain(StorageFormat.AttributeName));
+            Assert.That(serialized,
+                Does.Not.Contain(mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.AttributeName));
+        });
+    }
+
+    [Test]
+    public void AnOverrideProducesAClassicCopyFromAHardenedStore()
+    {
+        // What Export relies on. The escape route has to survive the store being hardened.
+        OriginalRoot.StorageFormat = StorageFormatLevel.Hardened;
+        _serializer.StorageFormatOverride = StorageFormatLevel.Classic;
+
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(serialized, Does.Not.Contain(StorageFormat.AttributeName));
+            Assert.That(RootOf(_deserializer.Deserialize(serialized)).StorageFormat,
+                Is.EqualTo(StorageFormatLevel.Classic));
+        });
+    }
+
+    [Test]
+    public void AClassicStoreWritesNoKdfPrfAttribute()
+    {
+        // Upstream mRemoteNG reads this same file from this same path and ignores attributes it does
+        // not know — so it would derive with SHA-1 and fail to decrypt, reported to the user as a
+        // wrong password on a file they know the password to.
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.That(serialized, Does.Not.Contain(mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.AttributeName));
+    }
+
+    [Test]
+    public void AFileWithNoRecordedFunctionStillDecrypts()
+    {
+        // The regression that matters: every connection file in existence looks like this. If this
+        // breaks, users lose their connections and the message says "wrong password".
+        string serialized = _serializer.Serialize(_originalModel);
+
+        Assert.That(serialized, Does.Not.Contain(mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.AttributeName));
+
+        ConnectionTreeModel reloaded = _deserializer.Deserialize(serialized);
+
+        Assert.That(reloaded.GetRecursiveChildList().Select(node => node.Name),
+            Is.EquivalentTo(_originalModel.GetRecursiveChildList().Select(node => node.Name)));
+    }
+
+    [Test]
+    public void AHardenedProviderRecordsItsFunctionAndTheFileStillReadsBack()
+    {
+        var cryptoProvider = _cryptoFactory.Build();
+        cryptoProvider.KeyDerivationPrf = mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.Hardened;
+
+        // The store is raised to match. A hardened function on a classic store is refused now — it
+        // would put an attribute upstream cannot read into a file that claims upstream can read it.
+        OriginalRoot.StorageFormat = StorageFormatLevel.Hardened;
+
+        var nodeSerializer = new XmlConnectionNodeSerializer28(
+            cryptoProvider,
+            OriginalRoot.PasswordString.ConvertToSecureString(),
+            new SaveFilter());
+        var serializer = new XmlConnectionsSerializer(cryptoProvider, nodeSerializer);
+
+        string serialized = serializer.Serialize(_originalModel);
+
+        Assert.That(serialized, Does.Contain(mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.AttributeName));
+
+        // Read back through a fresh deserializer, which has to pick the function up from the file
+        // rather than from anything it was configured with.
+        ConnectionTreeModel reloaded = new XmlConnectionsDeserializer().Deserialize(serialized);
+
+        Assert.That(reloaded.GetRecursiveChildList().Select(node => node.Name),
+            Is.EquivalentTo(_originalModel.GetRecursiveChildList().Select(node => node.Name)));
+    }
+
     [Test]
     public void SerializeThenDeserialize()
     {

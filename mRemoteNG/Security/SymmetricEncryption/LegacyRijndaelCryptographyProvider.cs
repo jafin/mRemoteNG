@@ -22,6 +22,10 @@ public class LegacyRijndaelCryptographyProvider : ICryptographyProvider
     public BlockCipherModes CipherMode { get; }
     public int KeyDerivationIterations { get; set; }
 
+    /// <summary>Ignored: this provider derives its key as an unsalted MD5, with no PBKDF2 at all.</summary>
+    public System.Security.Cryptography.HashAlgorithmName KeyDerivationPrf { get; set; } =
+        KeyDerivation.KeyDerivationPrf.Default;
+
     public LegacyRijndaelCryptographyProvider()
     {
         BlockSizeInBytes = 16;

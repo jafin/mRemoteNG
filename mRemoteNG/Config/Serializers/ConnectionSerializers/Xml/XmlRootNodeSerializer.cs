@@ -4,13 +4,20 @@ using System.Xml.Linq;
 using mRemoteNG.Security;
 using mRemoteNG.Security.AsymmetricEncryption;
 using mRemoteNG.Tree.Root;
+using mRemoteNG.Security.KeyDerivation;
 
 namespace mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 
 [SupportedOSPlatform("windows")]
 public static class XmlRootNodeSerializer
 {
-    public static XElement SerializeRootNodeInfo(RootNodeInfo rootNodeInfo, ICryptographyProvider cryptographyProvider, Version version, bool fullFileEncryption = false)
+    /// <param name="storageFormatOverride">
+    /// The level to record instead of the root node's own. Supplied by callers writing a copy rather
+    /// than the store itself — an export has to stay readable by upstream mRemoteNG whatever the
+    /// store it came from is, and inheriting the level would make a hardened store produce exports
+    /// nothing else can open.
+    /// </param>
+    public static XElement SerializeRootNodeInfo(RootNodeInfo rootNodeInfo, ICryptographyProvider cryptographyProvider, Version version, bool fullFileEncryption = false, StorageFormatLevel? storageFormatOverride = null)
     {
         XNamespace xmlNamespace = "http://mremoteng.org";
         XElement element = new(xmlNamespace + "Connections");
@@ -20,6 +27,30 @@ public static class XmlRootNodeSerializer
         element.Add(new XAttribute(XName.Get("EncryptionEngine"), cryptographyProvider.CipherEngine));
         element.Add(new XAttribute(XName.Get("BlockCipherMode"), cryptographyProvider.CipherMode));
         element.Add(new XAttribute(XName.Get("KdfIterations"), cryptographyProvider.KeyDerivationIterations));
+
+        StorageFormatLevel effectiveLevel = storageFormatOverride ?? rootNodeInfo.StorageFormat;
+
+        // Beside the iteration count, for the same reason it is recorded: a file outlives the build
+        // that wrote it. Written only when it is not SHA-1, so a classic file stays byte-compatible
+        // with what upstream mRemoteNG writes and reads.
+        string? kdfPrf = KeyDerivationPrf.ToRecordedValue(cryptographyProvider.KeyDerivationPrf);
+
+        // A classic file carrying a hardened function is the one combination that breaks the
+        // guarantee: upstream mRemoteNG ignores the attribute it does not know, derives with SHA-1,
+        // and reports the failure as a wrong password on a file the user has the password to. The
+        // level and the function come from different places — the level from the store or an
+        // override, the function from the provider — so nothing but this stops them diverging.
+        //
+        // The opposite pairing is left alone deliberately. A hardened marker with SHA-1 derivation
+        // still opens everywhere, because upstream ignores the marker too and absence of the
+        // function already means SHA-1.
+        if (kdfPrf is not null && effectiveLevel != StorageFormatLevel.Hardened)
+            throw new InvalidOperationException(
+                $"Refusing to write a {StorageFormat.Describe(effectiveLevel)} store with a hardened key derivation function " +
+                $"({kdfPrf}). Upstream mRemoteNG would not be able to open it.");
+
+        if (kdfPrf is not null)
+            element.Add(new XAttribute(XName.Get(KeyDerivationPrf.AttributeName), kdfPrf));
         if (cryptographyProvider is CertificateCryptographyProvider certProvider)
             element.Add(new XAttribute(XName.Get("CertificateThumbprint"), certProvider.Thumbprint));
         element.Add(new XAttribute(XName.Get("FullFileEncryption"), fullFileEncryption.ToString().ToLowerInvariant()));
@@ -32,13 +63,22 @@ public static class XmlRootNodeSerializer
         }
         element.Add(CreateProtectedAttribute(rootNodeInfo, cryptographyProvider));
         element.Add(new XAttribute(XName.Get("ConfVersion"), version.ToString(2)));
+
+        // Written only when hardened. A classic file has to come out byte-compatible with what
+        // upstream mRemoteNG writes, because it reads this same file from this same path — so
+        // absence is what means classic, and adding an attribute here unconditionally would be the
+        // silent format change the level exists to prevent.
+        string? storageFormat = StorageFormat.ToRecordedValue(effectiveLevel);
+        if (storageFormat is not null)
+            element.Add(new XAttribute(XName.Get(StorageFormat.AttributeName), storageFormat));
+
         return element;
     }
 
     private static XAttribute CreateProtectedAttribute(RootNodeInfo rootNodeInfo, ICryptographyProvider cryptographyProvider)
     {
         XAttribute attribute = new(XName.Get("Protected"), "");
-        string plainText = (rootNodeInfo.PasswordString != rootNodeInfo.DefaultPassword) ? "ThisIsProtected" : "ThisIsNotProtected";
+        string plainText = (rootNodeInfo.PasswordString != rootNodeInfo.DefaultPassword) ? ConnectionFileDefaults.ProtectedSentinel : ConnectionFileDefaults.NotProtectedSentinel;
         using System.Security.SecureString encryptionPassword = rootNodeInfo.PasswordString.ConvertToSecureString();
         attribute.Value = cryptographyProvider.Encrypt(plainText, encryptionPassword);
         return attribute;

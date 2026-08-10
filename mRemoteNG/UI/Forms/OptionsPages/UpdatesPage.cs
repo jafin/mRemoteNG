@@ -9,6 +9,7 @@ using mRemoteNG.Resources.Language;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tools;
 using mRemoteNG.UI.TaskDialog;
+using mRemoteNG.Security;
 
 namespace mRemoteNG.UI.Forms.OptionsPages;
 
@@ -77,9 +78,8 @@ public sealed partial class UpdatesPage
         chkUseProxyAuthentication.Checked = Properties.OptionsUpdatesPage.Default.UpdateProxyUseAuthentication;
         tblProxyAuthentication.Enabled = Properties.OptionsUpdatesPage.Default.UpdateProxyUseAuthentication;
         txtProxyUsername.Text = Properties.OptionsUpdatesPage.Default.UpdateProxyAuthUser;
-        LegacyRijndaelCryptographyProvider cryptographyProvider = new();
         txtProxyPassword.Text =
-            cryptographyProvider.Decrypt(Properties.OptionsUpdatesPage.Default.UpdateProxyAuthPass, Runtime.EncryptionKey);
+            SettingsSecretProtector.Default.Unprotect(Properties.OptionsUpdatesPage.Default.UpdateProxyAuthPass, Runtime.EncryptionKey);
 
         btnTestProxy.Enabled = Properties.OptionsUpdatesPage.Default.UpdateUseProxy;
     }
@@ -118,8 +118,7 @@ public sealed partial class UpdatesPage
 
         Properties.OptionsUpdatesPage.Default.UpdateProxyUseAuthentication = chkUseProxyAuthentication.Checked;
         Properties.OptionsUpdatesPage.Default.UpdateProxyAuthUser = txtProxyUsername.Text;
-        LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-        Properties.OptionsUpdatesPage.Default.UpdateProxyAuthPass = cryptographyProvider.Encrypt(txtProxyPassword.Text, Runtime.EncryptionKey);
+        Properties.OptionsUpdatesPage.Default.UpdateProxyAuthPass = SettingsSecretProtector.Default.Protect(txtProxyPassword.Text, Runtime.EncryptionKey);
 
         // Mark that the user has explicitly configured their update preference so the
         // first-run preference prompt does not appear again.

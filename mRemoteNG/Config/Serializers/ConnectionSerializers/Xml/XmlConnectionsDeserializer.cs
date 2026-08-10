@@ -21,6 +21,7 @@ using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
 using mRemoteNG.UI.Forms;
 using mRemoteNG.UI.TaskDialog;
+using mRemoteNG.Security.KeyDerivation;
 
 namespace mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 
@@ -196,6 +197,12 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
     {
         _rootNodeInfo.Name = connectionsRootElement.Attributes?["Name"]?.Value?.Trim() ?? string.Empty;
         _rootNodeInfo.AutoLockOnMinimize = connectionsRootElement.GetAttributeAsBool("AutoLockOnMinimize");
+
+        // Absent means classic, which is every file written before this existed and every file
+        // upstream mRemoteNG has ever written. Read from the file rather than from configuration so
+        // that opening a store in a newer build cannot change what it is.
+        _rootNodeInfo.StorageFormat = StorageFormat.Parse(
+            connectionsRootElement.Attributes?[StorageFormat.AttributeName]?.Value);
     }
 
     private void CreateDecryptor(RootNodeInfo rootNodeInfo, XmlElement? connectionsRootElement = null)
@@ -209,7 +216,12 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
             _decryptor = new XmlConnectionsDecryptor(_cipherEngine, _cipherMode, rootNodeInfo)
             {
                 AuthenticationRequestor = AuthenticationRequestor,
-                KeyDerivationIterations = _kdfIterations
+                KeyDerivationIterations = _kdfIterations,
+
+                // Absent or unrecognised means SHA-1, which is what every file written before the
+                // format recorded it used. Taken from the file, never from what is configured now.
+                KeyDerivationPrf = KeyDerivationPrf.Parse(
+                    connectionsRootElement.Attributes?[KeyDerivationPrf.AttributeName]?.Value)
             };
         }
         else

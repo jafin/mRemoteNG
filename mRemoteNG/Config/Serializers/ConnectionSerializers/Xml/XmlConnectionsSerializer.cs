@@ -24,6 +24,15 @@ public class XmlConnectionsSerializer(ICryptographyProvider cryptographyProvider
     public Version Version => _connectionNodeSerializer.Version;
     public bool UseFullEncryption { get; set; }
 
+    /// <summary>
+    /// The storage format level to write, instead of the one the root node carries.
+    /// </summary>
+    /// <remarks>
+    /// Set by callers producing a copy rather than the store itself. An export must stay readable by
+    /// upstream mRemoteNG whatever the store it came from is.
+    /// </remarks>
+    public StorageFormatLevel? StorageFormatOverride { get; set; }
+
     public string Serialize(ConnectionTreeModel connectionTreeModel)
     {
         RootNodeInfo rootNode = (RootNodeInfo)connectionTreeModel.RootNodes.First(node => node is RootNodeInfo);
@@ -41,7 +50,10 @@ public class XmlConnectionsSerializer(ICryptographyProvider cryptographyProvider
         try
         {
             XmlConnectionsDocumentCompiler documentCompiler =
-                new(_cryptographyProvider, _connectionNodeSerializer);
+                new(_cryptographyProvider, _connectionNodeSerializer)
+                {
+                    StorageFormatOverride = StorageFormatOverride
+                };
             XDocument xmlDocument = documentCompiler.CompileDocument(serializationTarget, UseFullEncryption);
             xml = WriteXmlToString(xmlDocument);
         }

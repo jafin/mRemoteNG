@@ -14,6 +14,7 @@ using mRemoteNG.Config.Settings.Registry;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.UI.Controls;
+using mRemoteNG.Security;
 
 namespace mRemoteNG.UI.Forms.OptionsPages;
 
@@ -126,8 +127,7 @@ public sealed partial class SqlServerPage
             txtSQLServer.Text = Properties.OptionsDBsPage.Default.SQLHost;
             txtSQLDatabaseName.Text = Properties.OptionsDBsPage.Default.SQLDatabaseName;
             txtSQLUsername.Text = Properties.OptionsDBsPage.Default.SQLUser;
-            LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-            txtSQLPassword.Text = cryptographyProvider.Decrypt(Properties.OptionsDBsPage.Default.SQLPass, Runtime.EncryptionKey);
+            txtSQLPassword.Text = SettingsSecretProtector.Default.Unprotect(Properties.OptionsDBsPage.Default.SQLPass, Runtime.EncryptionKey);
             chkSQLReadOnly.Checked = Properties.OptionsDBsPage.Default.SQLReadOnly;
             chkShowDatabasePickerOnStartup.Checked = Properties.OptionsDBsPage.Default.ShowDatabasePickerOnStartup;
 
@@ -158,8 +158,7 @@ public sealed partial class SqlServerPage
         Properties.OptionsDBsPage.Default.SQLHost = txtSQLServer.Text;
         Properties.OptionsDBsPage.Default.SQLDatabaseName = txtSQLDatabaseName.Text;
         Properties.OptionsDBsPage.Default.SQLUser = txtSQLUsername.Text;
-        LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-        Properties.OptionsDBsPage.Default.SQLPass = cryptographyProvider.Encrypt(txtSQLPassword.Text, Runtime.EncryptionKey);
+        Properties.OptionsDBsPage.Default.SQLPass = SettingsSecretProtector.Default.Protect(txtSQLPassword.Text, Runtime.EncryptionKey);
         Properties.OptionsDBsPage.Default.SQLReadOnly = chkSQLReadOnly.Checked;
         Properties.OptionsDBsPage.Default.ShowDatabasePickerOnStartup = chkShowDatabasePickerOnStartup.Checked;
         Properties.OptionsDBsPage.Default.SQLAuthType = txtSQLAuthType.SelectedItem?.ToString() ?? "Windows Authentication";
@@ -236,8 +235,7 @@ public sealed partial class SqlServerPage
         string server = Properties.OptionsDBsPage.Default.SQLHost;
         string database = Properties.OptionsDBsPage.Default.SQLDatabaseName;
         string username = Properties.OptionsDBsPage.Default.SQLUser;
-        LegacyRijndaelCryptographyProvider crypto = new();
-        string password = crypto.Decrypt(Properties.OptionsDBsPage.Default.SQLPass, Runtime.EncryptionKey);
+        string password = SettingsSecretProtector.Default.Unprotect(Properties.OptionsDBsPage.Default.SQLPass, Runtime.EncryptionKey);
         string authType = Properties.OptionsDBsPage.Default.SQLAuthType;
 
         var testResult = await DatabaseConnectionTester.TestConnectivity(type, server, database, username, password, authType);
@@ -776,7 +774,6 @@ public sealed partial class SqlServerPage
         // Actually, the requirement is "Pick database on logon".
         // So saving a profile should probably just save the current configuration on screen.
 
-        LegacyRijndaelCryptographyProvider cryptographyProvider = new();
         var profile = new DatabaseProfile
         {
             Name = profileName,
@@ -784,7 +781,7 @@ public sealed partial class SqlServerPage
             Host = txtSQLServer.Text,
             DatabaseName = txtSQLDatabaseName.Text,
             Username = txtSQLUsername.Text,
-            EncryptedPassword = cryptographyProvider.Encrypt(txtSQLPassword.Text, Runtime.EncryptionKey),
+            EncryptedPassword = SettingsSecretProtector.Default.Protect(txtSQLPassword.Text, Runtime.EncryptionKey),
             ReadOnly = chkSQLReadOnly.Checked,
             AuthType = txtSQLAuthType.SelectedItem?.ToString() ?? "Windows Authentication"
         };

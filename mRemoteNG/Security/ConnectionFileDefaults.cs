@@ -24,4 +24,27 @@ public static class ConnectionFileDefaults
     /// The legacy default encryption key used when no master password is set.
     /// </summary>
     public const string LegacyEncryptionKey = "mR3m";
+
+    /// <summary>
+    /// Sentinel written when the store is protected by a user-chosen password.
+    /// </summary>
+    public const string ProtectedSentinel = "ThisIsProtected";
+
+    /// <summary>
+    /// Sentinel written when the store uses <see cref="LegacyEncryptionKey"/>.
+    /// </summary>
+    public const string NotProtectedSentinel = "ThisIsNotProtected";
+
+    /// <summary>
+    /// Whether decrypting the stored sentinel produced one of the values the format defines.
+    /// </summary>
+    /// <remarks>
+    /// The legacy provider is AES-CBC with PKCS7 and no authentication tag, so decrypting with the
+    /// wrong key yields valid padding often enough to matter — roughly one attempt in 256 — and
+    /// returns arbitrary bytes rather than failing. A decryption that merely completed is therefore
+    /// not evidence of the key; only the plaintext is.
+    /// </remarks>
+    public static bool IsKnownSentinel(string? plainText) =>
+        string.Equals(plainText, ProtectedSentinel, System.StringComparison.Ordinal) ||
+        string.Equals(plainText, NotProtectedSentinel, System.StringComparison.Ordinal);
 }

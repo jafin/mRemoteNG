@@ -11,6 +11,7 @@ using mRemoteNG.Config.Serializers.ConnectionSerializers.Rdp;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 using mRemoteNG.Connection;
 using mRemoteNG.Container;
+using mRemoteNG.Resources.Language;
 using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
 using mRemoteNG.Tree;
@@ -23,6 +24,22 @@ namespace mRemoteNG.App;
 [SupportedOSPlatform("windows")]
 public static class Export
 {
+    /// <summary>
+    /// Whether an export of this store, in this format, produces a copy protected more weakly than
+    /// the store itself — and so has to say so before it is written.
+    /// </summary>
+    /// <remarks>
+    /// Only a hardened store has anything to lose. Exporting a classic store produces a copy with
+    /// exactly the store's own protection, and warning about that would be untrue as well as noise.
+    /// <para>
+    /// Limited to the connection-file format, which is the one an export is written in to be opened
+    /// again as a store. The other formats are interchange formats that carry no protection at any
+    /// level, so what they lose is not a property of the level and is not this message to make.
+    /// </para>
+    /// </remarks>
+    public static bool ExportWeakensProtection(StorageFormatLevel storeLevel, SaveFormat saveFormat) =>
+        storeLevel == StorageFormatLevel.Hardened && saveFormat == SaveFormat.mRXML;
+
     public static void ExportToFile(ConnectionInfo? selectedNode, ConnectionTreeModel connectionTreeModel)
     {
         try
@@ -43,6 +60,17 @@ public static class Export
                 return;
 
             ConnectionInfo defaultTarget = connectionTreeModel.RootNodes.First(node => node is RootNodeInfo);
+
+            // Said before the file is written, not after: the point of the export is that it is a
+            // way back out of the hardened format, and a way back the user did not understand they
+            // were weakening is not one they consented to.
+            if (defaultTarget is RootNodeInfo storeRoot &&
+                ExportWeakensProtection(storeRoot.StorageFormat, exportForm.SaveFormat) &&
+                MessageBox.Show(FrmMain.Default, Language.ExportClassicFormatContent,
+                    Language.ExportClassicFormatTitle, MessageBoxButtons.YesNo,
+                    MessageBoxIcon.Warning) != DialogResult.Yes)
+                return;
+
             var exportTarget = exportForm.Scope switch
             {
                 FrmExport.ExportScope.SelectedFolder => exportForm.SelectedFolder ?? defaultTarget,
@@ -116,7 +144,13 @@ public static class Export
                         saveFilter);
                     serializer = new XmlConnectionsSerializer(cryptographyProvider, connectionNodeSerializer)
                     {
-                        UseFullEncryption = isEncrypted
+                        UseFullEncryption = isEncrypted,
+
+                        // An export is the way back. It has to open in upstream mRemoteNG whatever
+                        // the store it came from is, so it states its level rather than inheriting
+                        // the store's — otherwise hardening the store would silently take the escape
+                        // route away with it.
+                        StorageFormatOverride = StorageFormatLevel.Classic
                     };
                     break;
                 case SaveFormat.mRCSV:

@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.Versioning;
 using System.Security;
 using System.Security.Cryptography;
@@ -44,6 +44,13 @@ public class CertificateCryptographyProvider : ICryptographyProvider
     public BlockCipherEngines CipherEngine => BlockCipherEngines.AES;
     public BlockCipherModes CipherMode => BlockCipherModes.GCM;
     public int KeyDerivationIterations { get => 0; set { } }
+
+    /// <summary>Ignored: the key is wrapped with a certificate, not derived from a password.</summary>
+    public System.Security.Cryptography.HashAlgorithmName KeyDerivationPrf
+    {
+        get => KeyDerivation.KeyDerivationPrf.Default;
+        set { }
+    }
 
     public CertificateCryptographyProvider(string thumbprint)
     {

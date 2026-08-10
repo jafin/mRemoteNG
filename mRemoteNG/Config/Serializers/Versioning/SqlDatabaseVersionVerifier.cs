@@ -22,6 +22,9 @@ public class SqlDatabaseVersionVerifier : ISqlDatabaseVersionVerifier
         _databaseConnector = databaseConnector;
     }
 
+    public bool IsNewerThanSupported(Version dbVersion) =>
+        dbVersion is not null && dbVersion.CompareTo(_currentSupportedVersion) > 0;
+
     public bool VerifyDatabaseVersion(Version dbVersion)
     {
         try
@@ -31,6 +34,18 @@ public class SqlDatabaseVersionVerifier : ISqlDatabaseVersionVerifier
             if (databaseVersion.Equals(_currentSupportedVersion))
             {
                 return true;
+            }
+
+            // Reported before the upgraders are consulted, and separately from the generic
+            // incompatibility warning below. None of them can downgrade a database, so running
+            // them would be pointless, and the two cases need opposite handling by the caller —
+            // an old database may be attempted, a newer one may not.
+            if (IsNewerThanSupported(databaseVersion))
+            {
+                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg,
+                    string.Format(CultureInfo.InvariantCulture, Language.ErrorDatabaseVersionNewerThanClient,
+                        databaseVersion, GeneralAppInfo.ProductName, _currentSupportedVersion));
+                return false;
             }
 
             IVersionUpgrader[] dbUpgraders = new IVersionUpgrader[]

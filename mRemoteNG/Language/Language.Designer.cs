@@ -2184,6 +2184,15 @@ namespace mRemoteNG.Resources.Language {
                 return ResourceManager.GetString("ErrorConnectionListSaveFailed", resourceCulture);
             }
         }
+
+        /// <summary>
+        ///   Looks up a localized string similar to The database is at version {0}, which is newer than this copy of {1} supports (up to version {2}). No connections were loaded. Upgrade {1} on this computer to open it..
+        /// </summary>
+        internal static string ErrorDatabaseVersionNewerThanClient {
+            get {
+                return ResourceManager.GetString("ErrorDatabaseVersionNewerThanClient", resourceCulture);
+            }
+        }
         
         /// <summary>
         ///   Looks up a localized string similar to PuTTY could not be launched..
@@ -8704,6 +8713,123 @@ namespace mRemoteNG.Resources.Language {
         internal static string DoNotRestoreOnRdpMinimize {
             get {
                 return ResourceManager.GetString("DoNotRestoreOnRdpMinimize", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to This store already uses the hardened format.
+        /// </summary>
+        internal static string StorageFormatAlreadyHardened {
+            get {
+                return ResourceManager.GetString("StorageFormatAlreadyHardened", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Storage &amp;Format....
+        /// </summary>
+        internal static string StorageFormatMenuItem {
+            get {
+                return ResourceManager.GetString("StorageFormatMenuItem", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Harden Storage Format.
+        /// </summary>
+        internal static string StorageFormatUpgradeTitle {
+            get {
+                return ResourceManager.GetString("StorageFormatUpgradeTitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Harden this connection file?.
+        /// </summary>
+        internal static string StorageFormatUpgradeInstructionFile {
+            get {
+                return ResourceManager.GetString("StorageFormatUpgradeInstructionFile", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Harden this SQL database?.
+        /// </summary>
+        internal static string StorageFormatUpgradeInstructionSql {
+            get {
+                return ResourceManager.GetString("StorageFormatUpgradeInstructionSql", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Upstream mRemoteNG and earlier builds of this fork will no longer be able to open this store.
+        /// </summary>
+        internal static string StorageFormatUpgradeApplications {
+            get {
+                return ResourceManager.GetString("StorageFormatUpgradeApplications", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Backups taken before now stay readable by those applications. Backups taken afterwards will not be.
+        /// </summary>
+        internal static string StorageFormatUpgradeBackups {
+            get {
+                return ResourceManager.GetString("StorageFormatUpgradeBackups", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Every client connecting to this database must be upgraded to a build that understands the hardened format.
+        /// </summary>
+        internal static string StorageFormatUpgradeSqlClients {
+            get {
+                return ResourceManager.GetString("StorageFormatUpgradeSqlClients", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to The store&apos;s key is derived with PBKDF2-HMAC-SHA256 rather than PBKDF2-HMAC-SHA1.
+        /// </summary>
+        internal static string StorageFormatUpgradeCryptography {
+            get {
+                return ResourceManager.GetString("StorageFormatUpgradeCryptography", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Harden the store.
+        /// </summary>
+        internal static string StorageFormatUpgradeHarden {
+            get {
+                return ResourceManager.GetString("StorageFormatUpgradeHarden", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Export a classic copy first, without hardening.
+        /// </summary>
+        internal static string StorageFormatUpgradeExportFirst {
+            get {
+                return ResourceManager.GetString("StorageFormatUpgradeExportFirst", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Export Uses the Classic Format.
+        /// </summary>
+        internal static string ExportClassicFormatTitle {
+            get {
+                return ResourceManager.GetString("ExportClassicFormatTitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to This connection store uses the hardened format. The exported copy will be written in the classic format instead, so that upstream mRemoteNG and earlier builds of this fork can open it.
+        /// </summary>
+        internal static string ExportClassicFormatContent {
+            get {
+                return ResourceManager.GetString("ExportClassicFormatContent", resourceCulture);
             }
         }
     }

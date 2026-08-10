@@ -46,6 +46,7 @@ public class AeadCryptographyProvider : ICryptographyProvider
     private byte[]? _cachedEncryptKey;
     private string? _cachedEncryptPassword;
     private int _cachedEncryptIterations;
+    private HashAlgorithmName _cachedEncryptPrf;
 
     // Decryption-side KDF cache: files written with the shared-salt encryption
     // above carry the same salt on every field, so the derived key can be reused
@@ -55,6 +56,7 @@ public class AeadCryptographyProvider : ICryptographyProvider
     private byte[]? _cachedDecryptKey;
     private string? _cachedDecryptPassword;
     private int _cachedDecryptIterations;
+    private HashAlgorithmName _cachedDecryptPrf;
 
     //Preconfigured Encryption Parameters
     protected virtual int NonceBitSize { get; set; } = 128;
@@ -64,6 +66,17 @@ public class AeadCryptographyProvider : ICryptographyProvider
     //Preconfigured Password Key Derivation Parameters
     protected virtual int SaltBitSize { get; set; } = 128;
     public virtual int KeyDerivationIterations { get; set; } = 600_000;
+
+    /// <summary>
+    /// The PBKDF2 pseudo-random function.
+    /// </summary>
+    /// <remarks>
+    /// SHA-1 by default, because that is what every file written before the format recorded it used
+    /// and this file is also read by upstream mRemoteNG, which ignores the attribute and derives with
+    /// SHA-1 regardless. The hardened path opts into SHA-256, where the 600,000 iterations above is
+    /// OWASP's figure for that function rather than roughly half of what SHA-1 asks for.
+    /// </remarks>
+    public virtual HashAlgorithmName KeyDerivationPrf { get; set; } = KeyDerivation.KeyDerivationPrf.Default;
     protected virtual int MinPasswordLength { get; set; } = 1;
 
 
@@ -152,6 +165,7 @@ public class AeadCryptographyProvider : ICryptographyProvider
 
         if (_cachedEncryptKey == null ||
             _cachedEncryptIterations != KeyDerivationIterations ||
+            _cachedEncryptPrf != KeyDerivationPrf ||
             !string.Equals(_cachedEncryptPassword, password, StringComparison.Ordinal))
         {
             if (_cachedEncryptKey != null)
@@ -161,11 +175,12 @@ public class AeadCryptographyProvider : ICryptographyProvider
             byte[] newSalt = GenerateSalt();
 
             //Generate Key
-            Pkcs5S2KeyGenerator keyDerivationFunction = new(KeyBitSize, KeyDerivationIterations);
+            Pkcs5S2KeyGenerator keyDerivationFunction = new(KeyBitSize, KeyDerivationIterations, KeyDerivationPrf);
             _cachedEncryptKey = keyDerivationFunction.DeriveKey(password, newSalt);
             _cachedEncryptSalt = newSalt;
             _cachedEncryptPassword = password;
             _cachedEncryptIterations = KeyDerivationIterations;
+            _cachedEncryptPrf = KeyDerivationPrf;
         }
 
         byte[] salt = _cachedEncryptSalt!;
@@ -256,6 +271,7 @@ public class AeadCryptographyProvider : ICryptographyProvider
 
         if (_cachedDecryptKey == null ||
             _cachedDecryptIterations != KeyDerivationIterations ||
+            _cachedDecryptPrf != KeyDerivationPrf ||
             !string.Equals(_cachedDecryptPassword, password, StringComparison.Ordinal) ||
             _cachedDecryptSalt == null ||
             !salt.AsSpan().SequenceEqual(_cachedDecryptSalt))
@@ -264,11 +280,12 @@ public class AeadCryptographyProvider : ICryptographyProvider
                 CryptographicOperations.ZeroMemory(_cachedDecryptKey);
 
             //Generate Key
-            Pkcs5S2KeyGenerator keyDerivationFunction = new(KeyBitSize, KeyDerivationIterations);
+            Pkcs5S2KeyGenerator keyDerivationFunction = new(KeyBitSize, KeyDerivationIterations, KeyDerivationPrf);
             _cachedDecryptKey = keyDerivationFunction.DeriveKey(password, salt);
             _cachedDecryptSalt = salt;
             _cachedDecryptPassword = password;
             _cachedDecryptIterations = KeyDerivationIterations;
+            _cachedDecryptPrf = KeyDerivationPrf;
         }
 
         return SimpleDecrypt(encryptedMessage, _cachedDecryptKey, salt.Length + nonSecretPayloadLength);

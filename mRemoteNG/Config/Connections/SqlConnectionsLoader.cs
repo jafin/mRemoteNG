@@ -61,12 +61,29 @@ public class SqlConnectionsLoader : IConnectionsLoader
     public ConnectionTreeModel Load()
     {
         SqlConnectionListMetaData metaData = _sqlMetaDataRetriever.GetDatabaseMetaData(_databaseConnector) ?? HandleFirstRun(_sqlMetaDataRetriever, _databaseConnector);
+
+        bool versionSupported = _sqlDatabaseVersionVerifier.VerifyDatabaseVersion(metaData.ConfVersion);
+
+        // A database newer than this build is refused rather than read. Its rows may be encrypted
+        // or shaped in ways this client has no code for, and reading them anyway yields plausible
+        // nonsense — connections with blank passwords — which a user reads as data loss rather than
+        // as a version mismatch. The verifier has already said so on the message channel.
+        //
+        // Checked before the key, so a database this build cannot read does not first ask for a
+        // master password. Its sentinel may not even be in a shape this build recognises, in which
+        // case authentication fails first and a version mismatch reaches the user as a rejected
+        // password on a database they have the password to.
+        //
+        // A database that is merely too old to upgrade is left as it was: still attempted, because
+        // refusing it would lock out installations that work today.
+        if (!versionSupported && _sqlDatabaseVersionVerifier.IsNewerThanSupported(metaData.ConfVersion))
+            throw new InvalidOperationException("Could not load SQL connections");
+
         Optional<SecureString> decryptionKey = GetDecryptionKey(metaData);
 
         if (!decryptionKey.Any())
             throw new InvalidOperationException("Could not load SQL connections");
 
-        _sqlDatabaseVersionVerifier.VerifyDatabaseVersion(metaData.ConfVersion);
         System.Data.DataTable dataTable = _sqlDataProvider.Load();
         DataTableDeserializer deserializer = new(_cryptographyProvider, decryptionKey.First());
         ConnectionTreeModel connectionTree = deserializer.Deserialize(dataTable);
@@ -85,7 +102,15 @@ public class SqlConnectionsLoader : IConnectionsLoader
         if (string.IsNullOrEmpty(cipherText))
             return new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString();
 
-        PasswordAuthenticator authenticator = new(_cryptographyProvider, cipherText, () => AuthenticationRequestor(""));
+        // The sentinel is checked by its contents, not merely by decrypting without error. The
+        // legacy provider is AES-CBC with no authentication tag, so a wrong password yields valid
+        // padding often enough to matter and would otherwise be accepted — granting access to the
+        // hostnames, usernames and ports, which are not encrypted at all.
+        PasswordAuthenticator authenticator = new(_cryptographyProvider, cipherText, () => AuthenticationRequestor(""))
+        {
+            PlaintextValidator = ConnectionFileDefaults.IsKnownSentinel
+        };
+
         bool authenticated = authenticator.Authenticate(new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString());
 
         return authenticated && authenticator.LastAuthenticatedPassword is { } password
