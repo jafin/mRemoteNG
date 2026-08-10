@@ -239,7 +239,10 @@ public partial class frmTaskDialog : Form
                     Parent = pnlCommandButtons, Location = new Point(50, t)
                 };
                 btn.Text = arr[i];
-                btn.Size = new Size(Width - btn.Left - 15, btn.GetBestHeight());
+
+                // Client width, not Width: the latter includes the window border, so the button was
+                // built wider than the area it is drawn in and its text ran off the right edge.
+                btn.Size = new Size(ClientSize.Width - btn.Left - 15, btn.GetBestHeight());
                 t += btn.Height;
                 pnlHeight += btn.Height;
                 btn.Tag = i;
@@ -510,17 +513,30 @@ public partial class frmTaskDialog : Form
 
     //--------------------------------------------------------------------------------
     // utility function for setting a Label's height
-    private static void AdjustLabelHeight(Control lb)
+    /// <summary>
+    /// Sizes a label to the text it will actually draw.
+    /// </summary>
+    /// <remarks>
+    /// Measured with <see cref="TextRenderer"/> rather than <see cref="Graphics.MeasureString"/>.
+    /// A <see cref="Label"/> draws through GDI, and GDI+ measures the same string narrower — so the
+    /// old measurement predicted fewer lines than were drawn and the last one or two were cut off
+    /// the bottom of the panel.
+    /// <para>
+    /// The width is taken from the form rather than from whatever the designer left on the label,
+    /// so the measurement is against the width the text is wrapped to.
+    /// </para>
+    /// </remarks>
+    private void AdjustLabelHeight(Control lb)
     {
-        string text = lb.Text;
-        Font textFont = lb.Font;
-        SizeF layoutSize = new(lb.ClientSize.Width, 5000.0F);
+        lb.Width = Math.Max(50, ClientSize.Width - lb.Left - 15);
 
-        using (Graphics g = Graphics.FromHwnd(lb.Handle))
-        {
-            SizeF stringSize = g.MeasureString(text, textFont, layoutSize);
-            lb.Height = (int)stringSize.Height + 4;
-        }
+        Size measured = TextRenderer.MeasureText(
+            lb.Text,
+            lb.Font,
+            new Size(lb.ClientSize.Width, int.MaxValue),
+            TextFormatFlags.WordBreak);
+
+        lb.Height = measured.Height + 4;
     }
 
     #endregion
