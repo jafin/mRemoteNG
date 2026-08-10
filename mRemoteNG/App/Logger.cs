@@ -5,6 +5,8 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Windows.Forms;
 using Serilog;
+using Serilog.Core;
+using Serilog.Events;
 
 namespace mRemoteNG.App;
 
@@ -18,6 +20,17 @@ public class Logger
     public static readonly Logger Instance = new();
 
     private readonly Lock _rebuildLock = new();
+
+    /// <summary>
+    /// Controls how much reaches the log, live.
+    /// </summary>
+    /// <remarks>
+    /// A switch rather than a fixed <c>MinimumLevel</c> for two reasons: changing it takes effect
+    /// without rebuilding the logger, and it survives the rebuild <see cref="SetLogPath"/> performs
+    /// when the path changes — a fixed level would be re-read from configuration there and quietly
+    /// revert whatever the user had selected.
+    /// </remarks>
+    private readonly LoggingLevelSwitch _levelSwitch = new(LogEventLevel.Information);
 
     public ILogger? Log { get; private set; }
 
@@ -35,7 +48,35 @@ public class Logger
             Properties.OptionsNotificationsPage.Default.LogFilePath = BuildLogFilePath();
         }
 
+        ApplyConfiguredLevel();
         SetLogPath(Properties.OptionsNotificationsPage.Default.LogToApplicationDirectory ? DefaultLogPath : Properties.OptionsNotificationsPage.Default.LogFilePath);
+    }
+
+    /// <summary>
+    /// Applies the verbosity the user configured, and takes effect immediately.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Driven by the existing "write debug messages to the log" option rather than a setting of its
+    /// own. That checkbox already says what this controls, and it previously only decided whether
+    /// the message collector forwarded debug messages — the thirty-odd direct <c>Log.Debug</c> calls
+    /// elsewhere ignored it, because the minimum level was hardcoded to Verbose and nothing was ever
+    /// filtered. Reading it here makes the option mean the same thing everywhere.
+    /// </para>
+    /// <para>
+    /// It also means the default falls out of the setting's own default of false, so the log stops
+    /// carrying every debug message from every subsystem on every run for every user, while staying
+    /// one checkbox away for anyone diagnosing a fault.
+    /// </para>
+    /// </remarks>
+    public void ApplyConfiguredLevel() =>
+        WriteDebugMessages = Properties.OptionsNotificationsPage.Default.TextLogMessageWriterWriteDebugMsgs;
+
+    /// <summary>Whether messages below information are written.</summary>
+    public bool WriteDebugMessages
+    {
+        get => _levelSwitch.MinimumLevel <= LogEventLevel.Debug;
+        set => _levelSwitch.MinimumLevel = value ? LogEventLevel.Debug : LogEventLevel.Information;
     }
 
     public void SetLogPath(string path)
@@ -45,7 +86,7 @@ public class Logger
             ILogger? previous = Log;
 
             Log = new LoggerConfiguration()
-                .MinimumLevel.Verbose()
+                .MinimumLevel.ControlledBy(_levelSwitch)
                 .Enrich.WithThreadId()
                 .WriteTo.File(
                     path,

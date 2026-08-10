@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections;
 using System.Collections.Generic;
 using System.Configuration;
@@ -9,7 +9,7 @@ using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
 using System.Text;
-using System.Text.RegularExpressions;
+
 using mRemoteNG.App.Info;
 using mRemoteNG.Messages;
 
@@ -18,7 +18,7 @@ namespace mRemoteNG.App.Diagnostics;
 [SupportedOSPlatform("windows")]
 public static class DebugReportBuilder
 {
-    private const string RedactedValue = "<redacted>";
+    private const string RedactedValue = DiagnosticTextSanitizer.RedactedValue;
     private static readonly string[] SensitiveSettingNameTokens =
     [
         "password",
@@ -39,26 +39,6 @@ public static class DebugReportBuilder
         "credential",
         "connectionstring"
     ];
-
-    private static readonly Regex CredentialPairRegex = new(
-        @"\b(password|passphrase|pwd|token|secret|api[-_ ]?key|private[-_ ]?key|username|user|login|hostname|host|server|domain)\b\s*[:=]\s*([^\s,;]+)",
-        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
-
-    private static readonly Regex Ipv4AddressRegex = new(
-        @"\b(?:\d{1,3}\.){3}\d{1,3}\b",
-        RegexOptions.CultureInvariant | RegexOptions.Compiled);
-
-    private static readonly Regex DomainUserRegex = new(
-        @"\b[\w.-]+\[\w.-]+\b",
-        RegexOptions.CultureInvariant | RegexOptions.Compiled);
-
-    private static readonly Regex UserAtHostRegex = new(
-        @"\b[\w.-]+@[\w.-]+\b",
-        RegexOptions.CultureInvariant | RegexOptions.Compiled);
-
-    private static readonly Regex HostnameRegex = new(
-        @"\b(?:[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[A-Za-z]{2,63}\b",
-        RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     public static string BuildReport(int maxLogLines = 250)
     {
@@ -284,29 +264,7 @@ public static class DebugReportBuilder
             settingName.Contains(token, StringComparison.OrdinalIgnoreCase));
     }
 
-    private static string SanitizeText(string value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return value;
-        }
-
-        string sanitized = value;
-
-        string userProfilePath = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
-        if (!string.IsNullOrWhiteSpace(userProfilePath))
-        {
-            sanitized = sanitized.Replace(userProfilePath, "%USERPROFILE%", StringComparison.OrdinalIgnoreCase);
-        }
-
-        sanitized = CredentialPairRegex.Replace(sanitized, match => $"{match.Groups[1].Value}={RedactedValue}");
-        sanitized = DomainUserRegex.Replace(sanitized, RedactedValue);
-        sanitized = UserAtHostRegex.Replace(sanitized, RedactedValue);
-        sanitized = Ipv4AddressRegex.Replace(sanitized, RedactedValue);
-        sanitized = HostnameRegex.Replace(sanitized, RedactedValue);
-
-        return sanitized;
-    }
+    private static string SanitizeText(string value) => DiagnosticTextSanitizer.Redact(value);
 
     private static string GetLogFilePath()
     {

@@ -6,6 +6,7 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Windows.Forms;
 using mRemoteNG.App.Info;
+using mRemoteNG.App.Diagnostics;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 
@@ -129,8 +130,12 @@ public class StartupDataLogger(MessageCollector messageCollector)
 
     private void LogCmdLineArgs()
     {
-        string data = $"Command Line: {string.Join(" ", Environment.GetCommandLineArgs())}";
-        _messageCollector.AddMessage(MessageClass.InformationMsg, data, true);
+        // Path-redacted only, deliberately. The full redaction DebugReportBuilder applies also
+        // removes hostnames, and a log whose hostnames are stripped from one line while every
+        // connection message below still carries them is theatre that costs the log its use. The
+        // profile path is different: it carries the Windows account name and nothing here needs it.
+        string commandLine = DiagnosticTextSanitizer.RedactUserPaths(string.Join(" ", Environment.GetCommandLineArgs()));
+        _messageCollector.AddMessage(MessageClass.InformationMsg, $"Command Line: {commandLine}", true);
     }
 
     private void LogClrData()

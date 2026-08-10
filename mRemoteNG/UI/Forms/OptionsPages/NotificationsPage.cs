@@ -134,6 +134,10 @@ public sealed partial class NotificationsPage
         Properties.OptionsNotificationsPage.Default.TextLogMessageWriterWriteInfoMsgs = chkLogInfoMsgs.Checked;
         Properties.OptionsNotificationsPage.Default.TextLogMessageWriterWriteWarningMsgs = chkLogWarningMsgs.Checked;
         Properties.OptionsNotificationsPage.Default.TextLogMessageWriterWriteErrorMsgs = chkLogErrorMsgs.Checked;
+
+        // The debug checkbox also sets the log's minimum level, so applying it here is what makes
+        // the change take effect without a restart.
+        Logger.Instance.ApplyConfiguredLevel();
     }
 
     private void SavePopupSettings()
