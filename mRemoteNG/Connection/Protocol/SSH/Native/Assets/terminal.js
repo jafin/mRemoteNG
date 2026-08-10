@@ -41,6 +41,13 @@
 
     function post(msg) { host.postMessage(msg); }
 
+    // A truthiness test would read a configured 0 as "not set". Scrollback 0 is a real choice —
+    // it is what disabling scrollback means, and the host clamps to 0..200000 rather than
+    // rejecting it — so the numbers are tested for being numbers.
+    function number(value, fallback) {
+        return typeof value === 'number' && isFinite(value) ? value : fallback;
+    }
+
     function start(options) {
         ctrlVPastes = options.ctrlVPastes !== false;
 
@@ -48,9 +55,9 @@
             allowProposedApi: true,
             convertEol: false,
             cursorBlink: true,
-            scrollback: options.scrollback || 5000,
+            scrollback: number(options.scrollback, 5000),
             fontFamily: options.fontFamily || 'Cascadia Mono, Consolas, monospace',
-            fontSize: options.fontSize || 14,
+            fontSize: number(options.fontSize, 14),
             theme: THEMES[options.theme] || THEMES.dark
         });
 

@@ -41,7 +41,7 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
 
     private SshClient? _client;
     private ShellStream? _shell;
-    private bool _disconnectRaised;
+    private int _disconnectRaised;
     private bool _disposed;
 
     public event Action<string>? OutputReceived;
@@ -164,6 +164,19 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
 
         _client = client;
 
+        // Dispose can run while the await above is outstanding — closing the tab mid-connect does
+        // exactly that. It saw a null _client and tore everything else down, so this client is
+        // unowned: close it here rather than leave a live SSH connection for the life of the
+        // process, and do not touch the already-disposed _teardown below.
+        if (_disposed)
+        {
+            client.ErrorOccurred -= OnTransportError;
+            client.HostKeyReceived -= OnHostKeyReceived;
+            _client = null;
+            SafeDispose(client);
+            return;
+        }
+
         // Zero pixel dimensions tell the server to size from the character cell counts, which is
         // what the emulator reports and the only thing it can report accurately.
         _shell = client.CreateShellStream("xterm-256color", columns, rows, 0, 0, 64 * 1024);
@@ -172,9 +185,13 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
         pump.TextReceived += text => OutputReceived?.Invoke(text);
         pump.Closed += RaiseDisconnected;
 
+        // Read before the task starts: Dispose can win the race to dispose the source, and reading
+        // Token from inside the delegate would then throw where nothing observes it.
+        CancellationToken teardownToken = _teardown.Token;
+
         // Fire and forget by design: the pump owns its own lifetime and reports its end through
         // Closed. Awaiting it here would mean never returning from Connect.
-        _ = Task.Run(() => pump.PumpAsync(_teardown.Token), CancellationToken.None);
+        _ = Task.Run(() => pump.PumpAsync(teardownToken), CancellationToken.None);
     }
 
     public void Send(string data)
@@ -187,8 +204,17 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
             return;
 
         byte[] bytes = Encoding.UTF8.GetBytes(data);
-        shell.Write(bytes, 0, bytes.Length);
-        shell.Flush();
+
+        try
+        {
+            shell.Write(bytes, 0, bytes.Length);
+            shell.Flush();
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or SshException or System.IO.IOException)
+        {
+            // Same race as Resize: the shell ended between the null check and the write. The
+            // disconnect is reported on its own; a lost keystroke on a dead session is not.
+        }
     }
 
     public void Resize(uint columns, uint rows)
@@ -223,11 +249,11 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
     private void RaiseDisconnected(string reason)
     {
         // The shell exiting and the transport failing can both land here, and a failing transport
-        // usually produces both. The terminal should be told once.
-        if (_disconnectRaised)
+        // usually produces both. They arrive on different threads — SSH.NET's and the pump's — so
+        // the claim has to be atomic for the terminal to be told exactly once.
+        if (Interlocked.Exchange(ref _disconnectRaised, 1) != 0)
             return;
 
-        _disconnectRaised = true;
         Disconnected?.Invoke(reason);
     }
 

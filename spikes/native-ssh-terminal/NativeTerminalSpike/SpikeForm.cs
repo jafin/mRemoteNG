@@ -383,7 +383,7 @@ public sealed class SpikeForm : Form
         try
         {
             Clipboard.SetText(text);
-            Log($"copied {text.Length} chars to the clipboard: \"{Preview(text)}\"");
+            Log($"copied {text.Length} chars to the clipboard");
         }
         catch (ExternalException ex)
         {
@@ -395,9 +395,6 @@ public sealed class SpikeForm : Form
         // point is to distinguish "the handler never fired" from "the clipboard call failed".
         FlushLog();
     }
-
-    private static string Preview(string text) =>
-        text.Length <= 40 ? text.ReplaceLineEndings("\\n") : text[..40].ReplaceLineEndings("\\n") + "...";
 
     private void PasteFromClipboard()
     {
@@ -427,7 +424,7 @@ public sealed class SpikeForm : Form
         // straight to the shell and losing it.
         JsonObject paste = new() { ["t"] = "paste", ["d"] = text };
         _web.CoreWebView2.PostWebMessageAsJson(paste.ToJsonString());
-        Log($"pasted {text.Length} chars into the terminal: \"{Preview(text)}\"");
+        Log($"pasted {text.Length} chars into the terminal");
         FlushLog();
     }
 

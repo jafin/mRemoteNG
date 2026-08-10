@@ -91,6 +91,30 @@ public class ProtocolNativeSsh : ProtocolBase
 
             _environment = await CoreWebView2Environment.CreateAsync(null, _userDataFolder);
             await _webView.EnsureCoreWebView2Async(_environment);
+
+            // Inside the try with the rest: nothing awaits this method, so an exception escaping
+            // here would fault a discarded task and leave the tab blank with nothing said. Every
+            // failure on this path has to reach Event_Disconnected to be visible at all.
+            CoreWebView2 core = _webView.CoreWebView2;
+            CoreWebView2Settings settings = core.Settings;
+            settings.AreDevToolsEnabled = false;
+            settings.AreDefaultContextMenusEnabled = false;
+            settings.IsStatusBarEnabled = false;
+            settings.AreHostObjectsAllowed = false;   // design.md D2: the message channel only
+            settings.IsWebMessageEnabled = true;
+            settings.IsPasswordAutosaveEnabled = false;
+            settings.IsGeneralAutofillEnabled = false;
+
+            core.WebMessageReceived += OnWebMessageReceived;
+
+            // Deny grants the page nothing beyond the mapped folder; the assets are served from disk
+            // under a real origin so the CSP can pin script to 'self'. See design.md S1.3.
+            core.SetVirtualHostNameToFolderMapping(
+                VirtualHostName,
+                Path.Combine(AppContext.BaseDirectory, "TerminalAssets"),
+                CoreWebView2HostResourceAccessKind.Deny);
+
+            core.Navigate($"https://{VirtualHostName}/index.html");
         }
         catch (WebView2RuntimeNotFoundException)
         {
@@ -101,35 +125,12 @@ public class ProtocolNativeSsh : ProtocolBase
                 Language.SshNativeWebView2Missing, true);
             Event_ErrorOccured(this, Language.SshNativeWebView2Missing, null);
             Event_Disconnected(this, Language.SshNativeWebView2Missing, null);
-            return;
         }
         catch (Exception ex)
         {
             Runtime.MessageCollector.AddExceptionStackTrace(Language.SshNativeTerminalHostFailed, ex);
             Event_Disconnected(this, ex.Message, null);
-            return;
         }
-
-        CoreWebView2 core = _webView.CoreWebView2;
-        CoreWebView2Settings settings = core.Settings;
-        settings.AreDevToolsEnabled = false;
-        settings.AreDefaultContextMenusEnabled = false;
-        settings.IsStatusBarEnabled = false;
-        settings.AreHostObjectsAllowed = false;   // design.md D2: the message channel only
-        settings.IsWebMessageEnabled = true;
-        settings.IsPasswordAutosaveEnabled = false;
-        settings.IsGeneralAutofillEnabled = false;
-
-        core.WebMessageReceived += OnWebMessageReceived;
-
-        // Deny grants the page nothing beyond the mapped folder; the assets are served from disk
-        // under a real origin so the CSP can pin script to 'self'. See design.md S1.3.
-        core.SetVirtualHostNameToFolderMapping(
-            VirtualHostName,
-            Path.Combine(AppContext.BaseDirectory, "TerminalAssets"),
-            CoreWebView2HostResourceAccessKind.Deny);
-
-        core.Navigate($"https://{VirtualHostName}/index.html");
     }
 
     private void OnWebMessageReceived(object? sender, CoreWebView2WebMessageReceivedEventArgs e)
@@ -144,37 +145,40 @@ public class ProtocolNativeSsh : ProtocolBase
             return;
         }
 
-        if (node is null)
+        // Shape-checked rather than assumed. A message that is not an object, or a field of the
+        // wrong type, would otherwise throw out of an event handler on the UI thread, and WinForms
+        // answers that with an unhandled-exception dialog on top of the terminal.
+        if (node is not JsonObject message)
             return;
 
-        switch (node["t"]?.GetValue<string>())
+        switch (ReadString(message, "t"))
         {
             case "loaded":
                 Post(BuildStartMessage());
                 break;
 
             case "ready":
-                _columns = ReadDimension(node["cols"], _columns);
-                _rows = ReadDimension(node["rows"], _rows);
+                _columns = ReadDimension(message, "cols", _columns);
+                _rows = ReadDimension(message, "rows", _rows);
                 _pageReady = true;
                 if (_connectRequested)
                     _ = StartSessionAsync();
                 break;
 
             case "input":
-                _session?.Send(node["d"]?.GetValue<string>() ?? string.Empty);
+                _session?.Send(ReadString(message, "d") ?? string.Empty);
                 break;
 
             case "resize":
-                _columns = ReadDimension(node["cols"], _columns);
-                _rows = ReadDimension(node["rows"], _rows);
+                _columns = ReadDimension(message, "cols", _columns);
+                _rows = ReadDimension(message, "rows", _rows);
                 // A no-op before the shell exists and after it ends, which is most of the time the
                 // control spends being laid out.
                 _session?.Resize(_columns, _rows);
                 break;
 
             case "copy":
-                CopyToClipboard(node["d"]?.GetValue<string>());
+                CopyToClipboard(ReadString(message, "d"));
                 break;
 
             case "wantpaste":
@@ -231,9 +235,14 @@ public class ProtocolNativeSsh : ProtocolBase
         return dark ? "dark" : "light";
     }
 
-    private static uint ReadDimension(JsonNode? value, uint fallback)
+    private static string? ReadString(JsonObject message, string name) =>
+        message[name] is JsonValue value && value.TryGetValue(out string? text) ? text : null;
+
+    private static uint ReadDimension(JsonObject message, string name, uint fallback)
     {
-        int parsed = value?.GetValue<int>() ?? 0;
+        if (message[name] is not JsonValue value || !value.TryGetValue(out int parsed))
+            return fallback;
+
         return parsed > 0 ? (uint)parsed : fallback;
     }
 
@@ -403,24 +412,43 @@ public class ProtocolNativeSsh : ProtocolBase
 
     private void OnOutputReceived(string text)
     {
-        if (!_webView.IsHandleCreated || _webView.IsDisposed)
-            return;
-
-        // The pump runs on its own thread; everything below here is UI-thread only.
-        _webView.BeginInvoke(() => Post(new JsonObject { ["t"] = "output", ["d"] = text }));
+        // The pump runs on its own thread; everything past the marshal is UI-thread only.
+        MarshalToTerminal(() => Post(new JsonObject { ["t"] = "output", ["d"] = text }));
     }
 
     private void OnSessionDisconnected(string reason)
     {
-        if (!_webView.IsHandleCreated || _webView.IsDisposed)
-            return;
-
-        _webView.BeginInvoke(() =>
+        MarshalToTerminal(() =>
         {
             IsSessionDisconnected = true;
             Event_Disconnected(this, reason, null);
             Close();
         });
+    }
+
+    /// <summary>
+    /// Hands work to the UI thread from the pump's.
+    /// </summary>
+    /// <remarks>
+    /// The checks cannot make this safe on their own: the UI thread owns the control's lifetime and
+    /// can dispose it between the test and the call. An unhandled exception on the pump thread ends
+    /// the process, and a session that has already gone away has nothing left to say.
+    /// </remarks>
+    private void MarshalToTerminal(Action action)
+    {
+        if (!_webView.IsHandleCreated || _webView.IsDisposed)
+            return;
+
+        try
+        {
+            _webView.BeginInvoke(action);
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private void Post(JsonObject message)

@@ -67,6 +67,16 @@ public sealed class FileHostKeyStore : IHostKeyStore
 
     public void Save(string host, int port, string keyAlgorithm, string fingerprint)
     {
+        // The record separator is a tab and the record terminator a newline, so a field carrying
+        // either would write more entries than it appears to — entries for hosts the user was
+        // never asked about. Refusing to record is safe: it means being asked again next time.
+        if (ContainsSeparator(host) || ContainsSeparator(keyAlgorithm) || ContainsSeparator(fingerprint))
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg,
+                "The SSH host key was not recorded because a field contained a separator character.");
+            return;
+        }
+
         lock (_gate)
         {
             List<(string Host, int Port, string Algorithm, string Fingerprint)> entries = [.. ReadAll()];
@@ -106,6 +116,9 @@ public sealed class FileHostKeyStore : IHostKeyStore
             }
         }
     }
+
+    private static bool ContainsSeparator(string? value) =>
+        value is not null && value.AsSpan().IndexOfAny('\t', '\r', '\n') >= 0;
 
     private static bool Matches(
         (string Host, int Port, string Algorithm, string Fingerprint) entry,

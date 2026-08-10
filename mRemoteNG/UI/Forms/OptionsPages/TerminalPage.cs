@@ -64,7 +64,11 @@ public sealed partial class TerminalPage
         numScrollback.Value = Clamp(settings.TerminalScrollback, numScrollback.Minimum, numScrollback.Maximum);
         chkCtrlVPastes.Checked = settings.TerminalCtrlVPastes;
 
-        int index = Array.IndexOf(ColorSchemeValues, settings.TerminalColorScheme ?? string.Empty);
+        // Case-insensitively, matching how ProtocolNativeSsh.ResolveColorScheme reads the same
+        // value. A hand-edited "dark" already renders a dark terminal; showing "Follow" here would
+        // make simply opening the page and clicking OK rewrite the setting to something else.
+        int index = Array.FindIndex(ColorSchemeValues,
+            value => string.Equals(value, settings.TerminalColorScheme, StringComparison.OrdinalIgnoreCase));
         cboColorScheme.SelectedIndex = index >= 0 ? index : 0;
     }
 

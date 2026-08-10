@@ -738,6 +738,13 @@
     change to build-msi.ps1.
   -->
   <ItemGroup>
+    <!--
+      Removed first: the SDK's default None glob already picked these up, and re-including them
+      without the Remove leaves every asset in the item list twice. Include rather than Update
+      because only Include gives %(RecursiveDir) the path below Assets\, which is what keeps the
+      served layout independent of where the sources sit.
+    -->
+    <None Remove="Connection\Protocol\SSH\Native\Assets\**\*" />
     <None Include="Connection\Protocol\SSH\Native\Assets\**\*"
           Link="TerminalAssets\%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />

@@ -26,7 +26,7 @@ docker run -d --name $Name `
     -e PUID=1000 -e PGID=1000 -e TZ=Etc/UTC `
     -e PASSWORD_ACCESS=true -e USER_NAME=$User -e USER_PASSWORD=$Password `
     -e SUDO_ACCESS=false `
-    -p "${Port}:2222" linuxserver/openssh-server:latest | Out-Null
+    -p "127.0.0.1:${Port}:2222" linuxserver/openssh-server:latest | Out-Null
 
 # Wait for sshd rather than sleeping a guessed amount.
 $deadline = (Get-Date).AddSeconds(60)

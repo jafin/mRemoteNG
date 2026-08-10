@@ -61,6 +61,7 @@ public static class SettingsSaver
             Properties.OptionsSecurityPage.Default.Save();
             Properties.OptionsStartupExitPage.Default.Save();
             Properties.OptionsTabsPanelsPage.Default.Save();
+            Properties.OptionsTerminalPage.Default.Save();
             Properties.OptionsThemePage.Default.Save();
             Properties.OptionsUpdatesPage.Default.Save();
 

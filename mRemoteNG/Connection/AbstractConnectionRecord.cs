@@ -546,7 +546,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
 
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Protocol), 3),
      DisplayName("Private Key File"),
-     Description("Path to a PuTTY private key (.ppk) file for SSH authentication. When set, the key is passed to PuTTY via the -i argument."),
+     Description("Path to a private key file for SSH authentication. PuTTY-backed protocols expect a PuTTY key (.ppk), passed to PuTTY via the -i argument; the native SSH terminal expects an OpenSSH-format key."),
      Editor(typeof(UI.Controls.ConnectionInfoPropertyGrid.PrivateKeyFileEditor), typeof(System.Drawing.Design.UITypeEditor)),
      AttributeUsedInProtocol(ProtocolType.SSH1, ProtocolType.SSH2, ProtocolType.OpenSSH, ProtocolType.SSHNative)]
     public virtual string PrivateKeyPath

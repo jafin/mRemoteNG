@@ -25,10 +25,20 @@ public sealed class DialogHostKeyVerifier(Control marshalTarget) : IHostKeyVerif
         if (_marshalTarget.IsDisposed || !_marshalTarget.IsHandleCreated)
             return false;      // nowhere to ask, so nothing to accept
 
-        if (_marshalTarget.InvokeRequired)
-            return (bool)_marshalTarget.Invoke(() => Ask(presentation));
+        try
+        {
+            if (_marshalTarget.InvokeRequired)
+                return (bool)_marshalTarget.Invoke(() => Ask(presentation));
 
-        return Ask(presentation);
+            return Ask(presentation);
+        }
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
+        {
+            // Accept runs on SSH.NET's receive thread while the UI thread owns the control, so the
+            // tab can close between the check above and the marshal. Refusing is the only safe
+            // answer once the question can no longer be asked.
+            return false;
+        }
     }
 
     private static bool Ask(HostKeyPresentation presentation)
