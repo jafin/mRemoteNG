@@ -38,14 +38,28 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
 {
     private static readonly Lock SaveLock = new();
     private static readonly CompositeFormat ConnectionFileAlreadyOpenFormat = CompositeFormat.Parse("Connection file '{0}' is already open.");
+    private static readonly CompositeFormat ConnectionsNotSavedFormat = CompositeFormat.Parse("Your changes were not saved: {0}");
+    private const string NothingLoadedReason = "no connection file is loaded.";
+    private const string NoConnectionsReason = "there are no connections to save.";
+    private const string PendingSaveTimedOutMessage =
+        "Your last change could not be written: a save that was already running did not finish in time.";
     private readonly PuttySessionsManager _puttySessionsManager = puttySessionsManager ?? throw new ArgumentNullException(nameof(puttySessionsManager));
     private readonly IDataProvider<string> _localConnectionPropertiesDataProvider = new FileDataProvider(Path.Combine(SettingsFileInfo.SettingsPath, SettingsFileInfo.LocalConnectionProperties));
     private readonly LocalConnectionPropertiesXmlSerializer _localConnectionPropertiesSerializer = new LocalConnectionPropertiesXmlSerializer();
-    private bool _batchingSaves;
+    private int _saveBatchDepth;
     private bool _saveRequested;
     private bool _saveAsyncRequested;
     private System.Threading.Timer? _saveDebounceTimer;
+    private volatile bool _savePending;
+    private string _pendingPropertyNameTrigger = "";
     private const int SaveDebounceMs = 2000;
+
+    /// <summary>
+    /// How long <see cref="FlushPendingSaves()"/> waits for a save that is already running.
+    /// </summary>
+    public static readonly TimeSpan DefaultFlushTimeout = TimeSpan.FromSeconds(20);
+
+    private bool BatchingSaves => _saveBatchDepth > 0;
     // Cached SQL custom encryption password — avoids re-prompting on every reload (#1646)
     private SecureString? _cachedSqlEncryptionPassword;
 
@@ -397,7 +411,7 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     /// </summary>
     public void BeginBatchingSaves()
     {
-        _batchingSaves = true;
+        _saveBatchDepth++;
     }
 
     /// <summary>
@@ -407,11 +421,25 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     /// </summary>
     public void EndBatchingSaves()
     {
-        _batchingSaves = false;
+        if (_saveBatchDepth > 0)
+            _saveBatchDepth--;
 
-        if (_saveAsyncRequested)
+        // A nested context ending does not end the outer one. Dispatching here would write
+        // early; worse, dropping the depth to zero would let the outer context's own edits
+        // through undeferred.
+        if (_saveBatchDepth > 0)
+            return;
+
+        // Take and clear the requests together. Left set, they made the *next* batch end with
+        // a save nobody asked for; left unread, they would drop the one that was asked for.
+        bool asyncRequested = _saveAsyncRequested;
+        bool requested = _saveRequested;
+        _saveAsyncRequested = false;
+        _saveRequested = false;
+
+        if (asyncRequested)
             SaveConnectionsAsync();
-        else if (_saveRequested)
+        else if (requested)
             SaveConnections();
     }
 
@@ -435,8 +463,44 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     public void SaveConnections()
     {
         if (ConnectionTreeModel is null || ConnectionFileName is null)
+        {
+            ReportSaveNotPerformed(NothingLoadedReason);
             return;
+        }
+
         SaveConnections(ConnectionTreeModel, UsingDatabase, new SaveFilter(), ConnectionFileName);
+    }
+
+    /// <summary>
+    /// Saves immediately, superseding any debounced save that has not run yet.
+    /// </summary>
+    /// <remarks>
+    /// For explicit user instructions such as File &gt; Save Connections, where deferring the
+    /// write by two seconds is wrong and leaving the timer armed afterwards would write the
+    /// same state a second time.
+    /// </remarks>
+    public void SaveConnectionsNow()
+    {
+        lock (SaveLock)
+        {
+            _savePending = false;
+            _saveDebounceTimer?.Dispose();
+            _saveDebounceTimer = null;
+            _pendingPropertyNameTrigger = "";
+            SaveConnections();
+        }
+    }
+
+    /// <summary>
+    /// Reports a save that did not happen. The user is told through the notification panel
+    /// rather than the log alone: a change that silently fails to reach disk is
+    /// indistinguishable from one that was stored, which is how a master password came to be
+    /// believed set while the file kept the old one.
+    /// </summary>
+    private static void ReportSaveNotPerformed(string reason)
+    {
+        Runtime.MessageCollector?.AddMessage(MessageClass.WarningMsg,
+            string.Format(CultureInfo.InvariantCulture, ConnectionsNotSavedFormat, reason));
     }
 
     /// <summary>
@@ -455,12 +519,19 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     public void SaveConnections(ConnectionTreeModel connectionTreeModel, bool useDatabase, SaveFilter saveFilter, string connectionFileName, bool forceSave = false, string propertyNameTrigger = "")
     {
         if (connectionTreeModel == null)
+        {
+            ReportSaveNotPerformed(NoConnectionsReason);
             return;
+        }
 
         if (!forceSave && !IsConnectionsFileLoaded)
+        {
+            ReportSaveNotPerformed(NothingLoadedReason);
             return;
+        }
 
-        if (_batchingSaves)
+        // Not a failure: the request is deferred to EndBatchingSaves, which drains it.
+        if (BatchingSaves)
         {
             _saveRequested = true;
             return;
@@ -538,7 +609,7 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     /// </param>
     public void SaveConnectionsAsync(string propertyNameTrigger = "")
     {
-        if (_batchingSaves)
+        if (BatchingSaves)
         {
             _saveAsyncRequested = true;
             return;
@@ -548,19 +619,87 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
         // events (e.g. from HostStatusMonitor or bulk edits) coalesce into a single
         // save instead of queuing N independent saves — each of which re-encrypts
         // every password with PBKDF2 at 600K iterations. See issue #83.
-        _saveDebounceTimer?.Dispose();
-        _saveDebounceTimer = new System.Threading.Timer(_ =>
+        //
+        // The timer runs on the thread pool and keeps nothing alive, so the write is only
+        // guaranteed to happen because FlushPendingSaves completes it on the way out.
+        lock (SaveLock)
         {
-            ConnectionTreeModel? treeModel = ConnectionTreeModel;
-            string? fileName = ConnectionFileName;
-            if (treeModel is null || fileName is null)
-                return;
+            _pendingPropertyNameTrigger = propertyNameTrigger;
+            _savePending = true;
+            _saveDebounceTimer?.Dispose();
+            _saveDebounceTimer = new System.Threading.Timer(_ => WritePendingSave(), null, SaveDebounceMs, Timeout.Infinite);
+        }
+    }
 
-            lock (SaveLock)
-            {
-                SaveConnections(treeModel, UsingDatabase, new SaveFilter(), fileName, propertyNameTrigger: propertyNameTrigger);
-            }
-        }, null, SaveDebounceMs, Timeout.Infinite);
+    /// <summary>
+    /// Writes a save that <see cref="SaveConnectionsAsync"/> scheduled but has not yet
+    /// performed, and returns once there is nothing outstanding.
+    /// </summary>
+    /// <remarks>
+    /// Call this before the process exits. Without it, an edit made inside the debounce
+    /// window is discarded when the thread pool goes away with the process.
+    /// </remarks>
+    /// <returns>False if a save already in progress did not finish within the time limit.</returns>
+    public bool FlushPendingSaves() => FlushPendingSaves(DefaultFlushTimeout);
+
+    /// <inheritdoc cref="FlushPendingSaves()"/>
+    public bool FlushPendingSaves(TimeSpan timeout)
+    {
+        if (!_savePending)
+            return true;
+
+        // The write runs on the calling thread deliberately. Handing it to a worker and
+        // waiting would leave the UI thread in a blocking wait while the worker marshals its
+        // progress messages to the notification panel — a Control.Invoke deadlock, and one
+        // that would happen on every exit rather than rarely. What can genuinely block here
+        // instead is a debounced save already in flight, so that is what is time-boxed.
+        if (!SaveLock.TryEnter(timeout))
+        {
+            Runtime.MessageCollector?.AddMessage(MessageClass.WarningMsg, PendingSaveTimedOutMessage);
+            return false;
+        }
+
+        try
+        {
+            WritePendingSaveUnderLock();
+        }
+        finally
+        {
+            SaveLock.Exit();
+        }
+
+        return true;
+    }
+
+    private void WritePendingSave()
+    {
+        lock (SaveLock)
+            WritePendingSaveUnderLock();
+    }
+
+    private void WritePendingSaveUnderLock()
+    {
+        // Whoever gets here first performs the write; the debounce timer and the flush race
+        // by design, and the loser must not write a second time.
+        if (!_savePending)
+            return;
+
+        _savePending = false;
+        _saveDebounceTimer?.Dispose();
+        _saveDebounceTimer = null;
+
+        string propertyNameTrigger = _pendingPropertyNameTrigger;
+        _pendingPropertyNameTrigger = "";
+
+        ConnectionTreeModel? treeModel = ConnectionTreeModel;
+        string? fileName = ConnectionFileName;
+        if (treeModel is null || fileName is null)
+        {
+            ReportSaveNotPerformed(NothingLoadedReason);
+            return;
+        }
+
+        SaveConnections(treeModel, UsingDatabase, new SaveFilter(), fileName, propertyNameTrigger: propertyNameTrigger);
     }
 
     public static string GetStartupConnectionFileName() =>

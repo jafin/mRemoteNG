@@ -792,14 +792,15 @@ public partial class ConnectionTree : TreeListView, IConnectionTree
         if (IsReadOnly) return;
         sortTarget ??= GetRootConnectionNode();
 
-        Runtime.ConnectionsService.BeginBatchingSaves();
-
-        if (sortTarget is ContainerInfo sortTargetAsContainer)
-            sortTargetAsContainer.SortRecursive(sortDirection);
-        else
-            SelectedNode?.Parent?.SortRecursive(sortDirection);
-
-        Runtime.ConnectionsService.EndBatchingSaves();
+        // Unbalanced, this leaves batching on for the rest of the session and every later
+        // save is silently swallowed into the deferred flag instead of reaching disk.
+        ExecuteInBatchedSaveContext(() =>
+        {
+            if (sortTarget is ContainerInfo sortTargetAsContainer)
+                sortTargetAsContainer.SortRecursive(sortDirection);
+            else
+                SelectedNode?.Parent?.SortRecursive(sortDirection);
+        });
     }
 
     public void SortSelectedNodesRecursive(ListSortDirection sortDirection)

@@ -32,6 +32,50 @@ often to save periodically, not about whether the user's last action survives.
 - **THEN** shutdown proceeds rather than waiting indefinitely
 - **AND** the failure is reported
 
+#### Scenario: The periodic-save setting has never been chosen
+
+- **WHEN** the application exits with `SaveConnectionsFrequency` still unassigned, as it ships
+- **THEN** the setting that the options page migrates it from decides whether to save on exit
+- **AND** an unassigned setting does not mean "never save on exit"
+
+### Requirement: Every persisted change to the root node is an edit
+
+The system SHALL raise a change notification when a persisted property of the connection file's root
+node is changed, so that the on-edit save applies to it as it does to every other property.
+
+`RootNodeInfo.Password` was a plain auto-property hiding the base property that does notify, as were
+the password value itself, TOTP, auto-lock and the root's name. Changing the master password
+therefore requested no save at all — not a save that was deferred and lost, but one that was never
+asked for. Ordinary edits still saved, which is what made the master password look uniquely broken.
+
+#### Scenario: Setting or clearing the master password
+
+- **WHEN** password protection on the connection file is turned on or off
+- **THEN** the change is saved in the same way as any other edit
+
+#### Scenario: Changing the master password to a different one
+
+- **WHEN** the password value changes but the file stays protected
+- **THEN** the change is saved, because the file has to be rewritten under the new key
+
+#### Scenario: A property set to the value it already had
+
+- **WHEN** a root property is assigned its current value
+- **THEN** no change is notified and no save is requested
+
+### Requirement: An explicit save writes immediately
+
+The system SHALL perform File > Save Connections at once rather than deferring it, and SHALL NOT
+leave a superseded debounced save armed to write the same state again.
+
+Save is an instruction, not an edit notification. Debounced, it let the user invoke Save, close the
+application, and lose the change they had just asked to have stored.
+
+#### Scenario: Saving and closing straight away
+
+- **WHEN** the user invokes Save and closes the application immediately
+- **THEN** the file has already been written
+
 ### Requirement: A save that does not happen is visible without the log
 
 The system SHALL make a skipped or failed connection save apparent to the user, and SHALL NOT leave
@@ -42,11 +86,26 @@ a batch in progress, or a thrown exception — and all of them are currently sil
 behaves as though the change was stored, which is how a master password came to be believed set while
 the file kept the old one.
 
+A failure must also survive the trip up to whoever can report it. Both layers under the service
+caught every exception and returned normally, so the service raised its saved event and logged
+success over a file that had not been written.
+
 #### Scenario: A save fails
 
 - **WHEN** writing the connection file throws
 - **THEN** the failure is surfaced to the user
 - **AND** the message says the change was not saved
+- **AND** the save is not also reported as having succeeded
+
+#### Scenario: A batch is left open by an error
+
+- **WHEN** an operation that defers saves does not complete normally
+- **THEN** deferral ends with it, rather than swallowing every later save for the rest of the session
+
+#### Scenario: A deferred request is not replayed
+
+- **WHEN** a batch ends and its deferred save is performed
+- **THEN** a later batch that defers nothing performs no save
 
 #### Scenario: A save is skipped
 

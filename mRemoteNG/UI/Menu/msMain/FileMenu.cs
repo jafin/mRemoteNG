@@ -258,7 +258,10 @@ public class FileMenu : ToolStripMenuItem
 
     private void mMenFileSave_Click(object sender, EventArgs e)
     {
-        Runtime.ConnectionsService.SaveConnectionsAsync();
+        // Save is an explicit instruction, not an edit notification: write now rather than
+        // two seconds from now. Debouncing it meant the user could invoke Save, close the
+        // application, and lose the change they had just asked to have stored.
+        Runtime.ConnectionsService.SaveConnectionsNow();
     }
 
     private void mMenFileSaveAs_Click(object sender, EventArgs e)

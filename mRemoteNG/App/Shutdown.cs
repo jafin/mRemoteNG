@@ -76,14 +76,30 @@ public static class Shutdown
         DateTime updateDate;
         DateTime currentDate = DateTime.Now;
 
-        if ((Properties.OptionsBackupPage.Default.SaveConnectionsFrequency == (int)ConnectionsBackupFrequencyEnum.OnExit))
+        // Whatever the user already changed goes to disk first, unconditionally. The setting
+        // below governs how often to save on a schedule; it was never meant to decide whether
+        // an edit the user has already made survives being closed.
+        Runtime.ConnectionsService.FlushPendingSaves();
+
+        int frequency = Properties.OptionsBackupPage.Default.SaveConnectionsFrequency;
+
+        // Unassigned is the shipped default, and the migration off it runs only in
+        // Tools > Options > Connections. A profile that never opened that page would
+        // otherwise fall through to "no save on exit" — so consult the legacy setting the
+        // migration reads instead of treating a fresh install as "never".
+        if (frequency == (int)ConnectionsBackupFrequencyEnum.Unassigned)
+            frequency = Properties.OptionsBackupPage.Default.SaveConsOnExit
+                ? (int)ConnectionsBackupFrequencyEnum.OnExit
+                : (int)ConnectionsBackupFrequencyEnum.Never;
+
+        if (frequency == (int)ConnectionsBackupFrequencyEnum.OnExit)
         {
             Runtime.ConnectionsService.SaveConnections();
             return;
         }
         lastUpdate = Runtime.ConnectionsService.UsingDatabase ? Runtime.ConnectionsService.LastSqlUpdate : Runtime.ConnectionsService.LastFileUpdate;
 
-        switch (Properties.OptionsBackupPage.Default.SaveConnectionsFrequency)
+        switch (frequency)
         {
             case (int)ConnectionsBackupFrequencyEnum.Daily:
                 updateDate = lastUpdate.AddDays(1);
