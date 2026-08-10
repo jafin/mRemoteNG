@@ -8798,7 +8798,7 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
-        ///   Looks up a localized string similar to Harden the store|The next save writes the hardened format.
+        ///   Looks up a localized string similar to Harden the store.
         /// </summary>
         internal static string StorageFormatUpgradeHarden {
             get {
@@ -8807,7 +8807,7 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
-        ///   Looks up a localized string similar to Export a classic copy first|Keeps a copy upstream mRemoteNG can open.
+        ///   Looks up a localized string similar to Export a classic copy first, without hardening.
         /// </summary>
         internal static string StorageFormatUpgradeExportFirst {
             get {

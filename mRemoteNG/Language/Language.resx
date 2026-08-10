@@ -3128,10 +3128,10 @@ They will not tell you why. They ask for the password again, and refuse the one 
     <value>The store's key is derived with PBKDF2-HMAC-SHA256 rather than PBKDF2-HMAC-SHA1. The level is recorded in the store itself, so a file carries its own format wherever it is copied.</value>
   </data>
   <data name="StorageFormatUpgradeHarden" xml:space="preserve">
-    <value>Harden the store|The next save writes the hardened format.</value>
+    <value>Harden the store</value>
   </data>
   <data name="StorageFormatUpgradeExportFirst" xml:space="preserve">
-    <value>Export a classic copy first|Keeps a copy upstream mRemoteNG can open. The store is not hardened by doing this.</value>
+    <value>Export a classic copy first, without hardening</value>
   </data>
   <data name="ExportClassicFormatTitle" xml:space="preserve">
     <value>Export Uses the Classic Format</value>

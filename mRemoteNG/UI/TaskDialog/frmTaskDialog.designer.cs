@@ -249,7 +249,7 @@ namespace mRemoteNG.UI.TaskDialog
             // 
             // lbExpandedInfo
             // 
-            this.lbExpandedInfo.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right) 
+            this.lbExpandedInfo.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
             this.lbExpandedInfo.Location = new System.Drawing.Point(50, 0);
             this.lbExpandedInfo.Name = "lbExpandedInfo";
@@ -259,7 +259,7 @@ namespace mRemoteNG.UI.TaskDialog
             // 
             // lbContent
             // 
-            this.lbContent.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right) 
+            this.lbContent.Anchor = ((System.Windows.Forms.AnchorStyles)(((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Left)
             | System.Windows.Forms.AnchorStyles.Right)));
             this.lbContent.Location = new System.Drawing.Point(50, 0);
             this.lbContent.Name = "lbContent";

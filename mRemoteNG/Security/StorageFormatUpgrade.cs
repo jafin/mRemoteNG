@@ -79,6 +79,27 @@ public static class StorageFormatUpgrade
     }
 
     /// <summary>
+    /// The confirmation's command buttons, in the order <see cref="StorageFormatUpgradeChoice"/>
+    /// reads them back, as the pipe-delimited list the task dialog expects.
+    /// </summary>
+    /// <remarks>
+    /// Built here rather than at the dialog so a test can hold the delimiter to account. A pipe
+    /// inside any one label silently becomes an extra button, and the choice the user's click maps
+    /// to shifts by one — which on this dialog means a click meant for the export hardening the
+    /// store instead.
+    /// </remarks>
+    public static string CommandButtons() =>
+        string.Join(ButtonDelimiter,
+            Language.StorageFormatUpgradeHarden,
+            Language.StorageFormatUpgradeExportFirst,
+            Language._Cancel);
+
+    internal const string ButtonDelimiter = "|";
+
+    /// <summary>How many buttons <see cref="CommandButtons"/> is meant to produce.</summary>
+    internal const int ExpectedButtonCount = 3;
+
+    /// <summary>
     /// Applies a choice to a store's root node, and reports whether the level changed.
     /// </summary>
     /// <remarks>

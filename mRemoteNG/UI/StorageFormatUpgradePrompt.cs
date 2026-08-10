@@ -49,10 +49,7 @@ public static class StorageFormatUpgradePrompt
     {
         StorageFormatUpgradeMessage message = StorageFormatUpgrade.BuildMessage(storeKind);
 
-        string commandButtons = string.Join(" | ",
-            Language.StorageFormatUpgradeHarden,
-            Language.StorageFormatUpgradeExportFirst,
-            Language._Cancel);
+        string commandButtons = StorageFormatUpgrade.CommandButtons();
 
         CTaskDialog.ShowTaskDialogBox(
             owner,

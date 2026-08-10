@@ -72,6 +72,19 @@ public class StorageFormatUpgradeTests
     }
 
     [Test]
+    public void TheButtonsAreThreeAndNoLabelSplitsItself()
+    {
+        // The task dialog splits its button list on the pipe, so a pipe inside a label silently
+        // becomes an extra button and shifts every choice after it by one — on this dialog, a click
+        // meant for the export would harden the store. Caught in the real dialog, not by a test,
+        // which is why there is now a test.
+        string[] buttons = StorageFormatUpgrade.CommandButtons().Split('|');
+
+        Assert.That(buttons, Has.Length.EqualTo(3));
+        Assert.That(buttons, Has.All.Not.Empty);
+    }
+
+    [Test]
     public void ConfirmingRaisesTheLevel()
     {
         RootNodeInfo root = new(RootNodeType.Connection);
