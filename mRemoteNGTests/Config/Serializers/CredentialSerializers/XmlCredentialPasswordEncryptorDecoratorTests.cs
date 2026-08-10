@@ -36,6 +36,31 @@ public class XmlCredentialPasswordEncryptorDecoratorTests
     }
 
     [Test]
+    public void TheCredentialFileStaysClassic()
+    {
+        // A settled decision, not an omission. The credential file has no storage format level, so
+        // there is nowhere to record a choice and no way for a user to make one — hardening it would
+        // break upstream mRemoteNG unconditionally rather than on request.
+        var cryptoProvider = SetupCryptoProvider();
+        cryptoProvider.KeyDerivationPrf = System.Security.Cryptography.HashAlgorithmName.SHA256;
+
+        // Constructing the decorator is what pins it, because the provider comes from outside and a
+        // caller configured for the connection file would otherwise harden this by accident.
+        _ = new XmlCredentialPasswordEncryptorDecorator(cryptoProvider, SetupBaseSerializer());
+
+        Assert.That(cryptoProvider.KeyDerivationPrf,
+            Is.EqualTo(mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.Default));
+    }
+
+    [Test]
+    public void TheCredentialFileRecordsNoPseudoRandomFunction()
+    {
+        string xml = _sut.Serialize([new CredentialRecord { Password = "pass".ConvertToSecureString() }], _key);
+
+        Assert.That(xml, Does.Not.Contain(mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.AttributeName));
+    }
+
+    [Test]
     public void EncryptsPasswordAttributesInXml()
     {
         var credList = Substitute.For<IEnumerable<ICredentialRecord>>();

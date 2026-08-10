@@ -42,6 +42,10 @@ in.
 1. `harden-connection-file-kdf`
 2. `replace-default-connection-file-key`
 
+The credential file is **not** hardened, permanently. It carries no format level, so hardening it
+would break upstream mRemoteNG unconditionally rather than on request. Pinned to classic in
+`XmlCredentialPasswordEncryptorDecorator` and covered by tests.
+
 In that order. The second depends on the first for the KDF that stretches its recovery password, and
 on R2 for the format level. One release is fine provided the order holds.
 

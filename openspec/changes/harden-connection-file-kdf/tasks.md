@@ -20,14 +20,14 @@ path.
 ## 3. File format
 
 - [x] 3.1 Write a `KdfPrf` root attribute beside `KdfIterations`, only when the function is not SHA-1. `XmlConnectionsSaver` sets the function from the store's level — the one place that knows both.
-- [ ] 3.2 Write it in `XmlCredentialPasswordEncryptorDecorator` too (`XmlCredentialPasswordEncryptorDecorator.cs:53`), which maintains its own copy of the same attribute.
+- [x] 3.2 **Not written — the credential file stays classic permanently.** Decided rather than deferred. It has no storage format level, so there is nowhere to record a choice and no way for a user to make one; hardening it would break upstream mRemoteNG unconditionally rather than on request. Pinned in the decorator's constructor rather than left to the caller, because the provider is supplied from outside and a caller configured for the connection file would otherwise harden it by accident.
 - [x] 3.3 Read it. — **The proposal named the wrong reader.** `CryptoProviderFactoryFromXml` serves the *credential* file; the connection file builds its provider in `XmlConnectionsDecryptor` via `XmlConnectionsDeserializer.CreateDecryptor`. Both now read it. `XmlConnectionsDecryptor.CreateThreadLocalProvider` needed it too, or batch decryption would silently fall back to SHA-1.
 - [x] 3.4 Tests: `KeyDerivationPrfTests` plus round-trip tests in `XmlSerializationLifeCycleTests`. The hardened round-trip is what caught the wrong-reader error in 3.3.
 
 ## 4. Compatibility
 
 - [x] 4.1 `AFileWithNoRecordedFunctionStillDecrypts` and `AClassicStoreWritesNoKdfPrfAttribute` cover the shape. A captured-file fixture would be stronger and is worth adding when one is to hand; the manual check in 5.4 is the real version of it.
-- [ ] 4.2 Fixture test: the same for a credential file written by `XmlCredentialPasswordEncryptorDecorator`.
+- [x] 4.2 Tests instead of a fixture: `TheCredentialFileStaysClassic` asserts the pin survives a provider configured otherwise, and `TheCredentialFileRecordsNoPseudoRandomFunction` asserts the attribute never reaches the file.
 - [x] 4.3 Confirm the SQL path is untouched — it uses the legacy provider and never reaches this code.
 
 ## 5. Verification
@@ -42,13 +42,13 @@ path.
 
 ## Still open in this change
 
-- **3.2 — the credential file.** `XmlCredentialPasswordEncryptorDecorator` writes its own
-  `KdfIterations`, and the task asked for `KdfPrf` beside it. Not done, deliberately: the credential
-  file has no format level, so hardening it would break upstream unconditionally rather than on
-  request. It needs either its own level or a decision that it stays classic permanently. The read
-  side is already in place — `CryptoProviderFactoryFromXml` parses the attribute — so whichever is
-  chosen, nothing has to be rebuilt.
-- **4.2** follows 3.2.
-- **The deferred confirmation and offer from `add-storage-format-opt-in` §4 and §5.** They belong
-  with this change, because this is the first thing that makes the warning true — a hardened file
-  now genuinely does not open in upstream. Not implemented yet.
+**The deferred confirmation and offer from `add-storage-format-opt-in` §4 and §5.** They belong here,
+because this is the first change that makes the warning true — a hardened file now genuinely does not
+open in upstream mRemoteNG. Not implemented yet.
+
+## Decided during implementation
+
+**The credential file stays classic permanently.** It has no format level and no place to record one,
+so the choice was between hardening it unconditionally — exactly what `add-storage-format-opt-in`
+exists to prevent — and leaving it alone. It is pinned in code and tested, not merely documented, so
+a provider configured for the connection file cannot harden it by accident.
