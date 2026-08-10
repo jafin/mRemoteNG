@@ -38,6 +38,15 @@ public class PuttyBaseConnectTests
     public void TearDown()
     {
         _puttyProtocol?.Close();
+
+        // Detach before disposing. Control.Dispose walks its Controls collection to dispose any
+        // ActiveX children, reading Count and then indexing — and the InterfaceControl removes
+        // itself from that same collection as it is disposed. The walk could therefore index a
+        // collection that had just emptied, which is the intermittent
+        // "index ('0') must be less than '0'" in this teardown. An empty collection is never
+        // walked at all.
+        _connectionTab?.Controls.Clear();
+
         _interfaceControl?.Dispose();
         _connectionTab?.Dispose();
         PuttyBase.PuttyPath = _originalPuttyPath;

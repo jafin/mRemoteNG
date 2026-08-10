@@ -43,12 +43,6 @@ public partial class ConnectionTree : TreeListView, IConnectionTree
     private ConnectionTreeModel? _connectionTreeModel;
     private List<ConnectionInfo> _clipboardNodes = [];
 
-    // When the model has exactly one connection root ("Connections"), that root is hidden and its
-    // children are shown at the top level — the pane heading already says "Connections", so the
-    // node is redundant and costs every entry an extra indent level. Null when not promoting
-    // (e.g. multiple connection roots). The root stays in the model; only the view is re-rooted.
-    private RootNodeInfo? _promotedRoot;
-
     public ConnectionInfo SelectedNode => (ConnectionInfo)SelectedObject;
 
     public NodeSearcher? NodeSearcher { get; private set; }
@@ -364,35 +358,24 @@ public partial class ConnectionTree : TreeListView, IConnectionTree
     }
 
     /// <summary>
-    /// Computes the objects shown at the top level of the tree. When there is exactly one
-    /// connection root, it is hidden and replaced (in place) by its children; any other roots
-    /// (PuTTY sessions, additional root folders) keep showing normally. Sets
-    /// <see cref="_promotedRoot"/> as a side effect.
+    /// Computes the objects shown at the top level of the tree: the model's roots, always.
     /// </summary>
+    /// <remarks>
+    /// A lone connection root used to be hidden and replaced by its children, on the grounds that
+    /// the pane heading already reads "Connections" and the node cost every entry an indent level.
+    /// It also carried the only user interface for the connection file's master password — the
+    /// <c>Password</c> property on the root, edited through the property grid — so hiding the node
+    /// removed the ability to set or remove one. Nothing else exposes it: the other password
+    /// prompts all verify a password that is already set.
+    ///
+    /// The indent saving is not worth the security control. The rest of the compact tree — chevron
+    /// expanders, the tighter indent, the sizing of the Name column — is unaffected.
+    /// </remarks>
     private IList<ConnectionInfo> ComputeViewRoots(ConnectionTreeModel model)
     {
         var roots = model.RootNodes;
         _viewRootSources = [.. roots];
-        var connectionRoots = roots
-            .OfType<RootNodeInfo>()
-            .Where(r => r.Type == RootNodeType.Connection)
-            .ToList();
-
-        _promotedRoot = connectionRoots.Count == 1 ? connectionRoots[0] : null;
-
-        if (_promotedRoot == null)
-            return [.. roots.Cast<ConnectionInfo>()];
-
-        List<ConnectionInfo> viewRoots = [];
-        foreach (var root in roots)
-        {
-            if (ReferenceEquals(root, _promotedRoot))
-                viewRoots.AddRange(_promotedRoot.Children);
-            else
-                viewRoots.Add(root);
-        }
-
-        return viewRoots;
+        return [.. roots.Cast<ConnectionInfo>()];
     }
 
     // The model's root nodes as of the last ComputeViewRoots call. A collection change that
@@ -792,14 +775,15 @@ public partial class ConnectionTree : TreeListView, IConnectionTree
         if (IsReadOnly) return;
         sortTarget ??= GetRootConnectionNode();
 
-        Runtime.ConnectionsService.BeginBatchingSaves();
-
-        if (sortTarget is ContainerInfo sortTargetAsContainer)
-            sortTargetAsContainer.SortRecursive(sortDirection);
-        else
-            SelectedNode?.Parent?.SortRecursive(sortDirection);
-
-        Runtime.ConnectionsService.EndBatchingSaves();
+        // Unbalanced, this leaves batching on for the rest of the session and every later
+        // save is silently swallowed into the deferred flag instead of reaching disk.
+        ExecuteInBatchedSaveContext(() =>
+        {
+            if (sortTarget is ContainerInfo sortTargetAsContainer)
+                sortTargetAsContainer.SortRecursive(sortDirection);
+            else
+                SelectedNode?.Parent?.SortRecursive(sortDirection);
+        });
     }
 
     public void SortSelectedNodesRecursive(ListSortDirection sortDirection)
@@ -1019,8 +1003,7 @@ public partial class ConnectionTree : TreeListView, IConnectionTree
                         {
                             foreach (var item in args.NewItems.OfType<ConnectionInfo>())
                             {
-                                // A child of the hidden root is a top-level object in the view.
-                                if (item.Parent != null && !ReferenceEquals(item.Parent, _promotedRoot))
+                                if (item.Parent != null)
                                     RefreshObject(item.Parent);
                                 else
                                     AddObject(item);
@@ -1033,14 +1016,14 @@ public partial class ConnectionTree : TreeListView, IConnectionTree
                             var topLevelMoved = false;
                             foreach (var item in args.NewItems.OfType<ConnectionInfo>())
                             {
-                                if (item.Parent != null && !ReferenceEquals(item.Parent, _promotedRoot))
+                                if (item.Parent != null)
                                     RefreshObject(item.Parent);
                                 else
                                     topLevelMoved = true;
                             }
 
-                            // Reordering the hidden root's children reorders the view roots, which
-                            // RefreshObject can't express — rebuild the top level, keeping state.
+                            // Reordering the view roots is something RefreshObject can't express —
+                            // rebuild the top level, keeping state.
                             if (topLevelMoved)
                                 RefreshViewRootsPreservingState();
                         }

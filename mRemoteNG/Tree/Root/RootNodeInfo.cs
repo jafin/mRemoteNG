@@ -15,6 +15,10 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
 {
     private string _name = Language.Connections;
     private string _customPassword = "";
+    private bool _passwordProtect;
+    private bool _autoLockOnMinimize;
+    private bool _totpEnabled;
+    private string _totpSecret = "";
 
     public RootNodeInfo(RootNodeType rootType)
         : this(rootType, Guid.NewGuid().ToString())
@@ -33,7 +37,7 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
     public override string Name
     {
         get => _name;
-        set => _name = value;
+        set => SetField(ref _name, value, nameof(Name));
     }
 
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Miscellaneous)),
@@ -41,24 +45,40 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.PasswordProtect)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.PropertyDescriptionPasswordProtect)),
      TypeConverter(typeof(MiscTools.YesNoTypeConverter))]
-    public new bool Password { get; set; }
+    public new bool Password
+    {
+        get => _passwordProtect;
+        set => SetField(ref _passwordProtect, value, nameof(Password));
+    }
 
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Miscellaneous)),
      Browsable(true),
      DisplayName("Auto lock on minimize"),
      Description("Require master password when restoring the app after minimize."),
      TypeConverter(typeof(MiscTools.YesNoTypeConverter))]
-    public bool AutoLockOnMinimize { get; set; }
+    public bool AutoLockOnMinimize
+    {
+        get => _autoLockOnMinimize;
+        set => SetField(ref _autoLockOnMinimize, value, nameof(AutoLockOnMinimize));
+    }
 
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Miscellaneous)),
      Browsable(true),
      DisplayName("Two-Factor Authentication (TOTP)"),
      Description("Require a TOTP code from an authenticator app in addition to the master password."),
      TypeConverter(typeof(MiscTools.YesNoTypeConverter))]
-    public bool TotpEnabled { get; set; }
+    public bool TotpEnabled
+    {
+        get => _totpEnabled;
+        set => SetField(ref _totpEnabled, value, nameof(TotpEnabled));
+    }
 
     [Browsable(false)]
-    public string TotpSecret { get; set; } = "";
+    public string TotpSecret
+    {
+        get => _totpSecret;
+        set => SetField(ref _totpSecret, value ?? "", nameof(TotpSecret));
+    }
 
     [Browsable(false)]
     public string PasswordString
@@ -66,7 +86,7 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
         get => (Password && !string.IsNullOrEmpty(_customPassword)) ? _customPassword : DefaultPassword;
         set
         {
-            _customPassword = value;
+            SetField(ref _customPassword, value ?? "", nameof(PasswordString));
             Password = !string.IsNullOrEmpty(value) && _customPassword != DefaultPassword;
         }
     }

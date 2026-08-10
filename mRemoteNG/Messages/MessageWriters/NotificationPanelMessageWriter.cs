@@ -53,7 +53,12 @@ public class NotificationPanelMessageWriter(ErrorAndInfoWindow messageWindow) : 
         {
             try
             {
-                _messageWindow.lvErrorCollector.Invoke((MethodInvoker)(() => AddToList(lvItem)));
+                // Post rather than send. A background worker has no use for the result, and
+                // blocking here deadlocks it against a UI thread that is itself waiting on
+                // that worker — which is exactly what the save lock makes the UI thread do
+                // while a debounced save reports its progress. Posted messages still arrive
+                // in order, so the panel's ordering is unaffected.
+                _messageWindow.lvErrorCollector.BeginInvoke((MethodInvoker)(() => AddToList(lvItem)));
             }
             catch (System.ComponentModel.InvalidAsynchronousStateException)
             {
