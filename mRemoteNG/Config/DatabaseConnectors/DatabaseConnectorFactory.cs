@@ -2,6 +2,7 @@
 using System.Runtime.Versioning;
 using mRemoteNG.App;
 using mRemoteNG.Security.SymmetricEncryption;
+using mRemoteNG.Security;
 
 namespace mRemoteNG.Config.DatabaseConnectors;
 
@@ -22,8 +23,7 @@ public static class DatabaseConnectorFactory
         string sqlCatalog = Properties.OptionsDBsPage.Default.SQLDatabaseName;
         string sqlUsername = Properties.OptionsDBsPage.Default.SQLUser;
         string sqlAuthType = Properties.OptionsDBsPage.Default.SQLAuthType;
-        LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-        string sqlPassword = cryptographyProvider.Decrypt(Properties.OptionsDBsPage.Default.SQLPass, Runtime.EncryptionKey);
+        string sqlPassword = SettingsSecretProtector.Default.Unprotect(Properties.OptionsDBsPage.Default.SQLPass, Runtime.EncryptionKey);
 
         return DatabaseConnector(sqlType, sqlHost, sqlCatalog, sqlUsername, sqlPassword, sqlAuthType);
     }

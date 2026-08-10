@@ -169,6 +169,11 @@ public sealed partial class SecurityPage : OptionsPage
     {
         if (string.IsNullOrEmpty(txtPasswdGenerator.Text)) return;
 
+        // Deliberately the legacy provider. This generator exists so an administrator can produce a
+        // value to place in the registry for provisioning, and the registry pages read that format.
+        // Changing it here without changing them would break the pairing; changing both would break
+        // every value an administrator has already deployed. Readers accept it either way, because
+        // SettingsSecretProtector treats an unmarked value as legacy.
         var cryptographyProvider = new LegacyRijndaelCryptographyProvider();
 
         try

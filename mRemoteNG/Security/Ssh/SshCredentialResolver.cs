@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.Versioning;
 using mRemoteNG.Connection;
@@ -150,8 +150,7 @@ public sealed class SshCredentialResolver : ISshCredentialResolver
         if (string.IsNullOrEmpty(password) && keyMaterialIsUsable && !string.IsNullOrEmpty(privateKey) &&
             string.Equals(Properties.OptionsCredentialsPage.Default.EmptyCredentials, "custom", StringComparison.Ordinal))
         {
-            SymmetricEncryption.LegacyRijndaelCryptographyProvider cryptographyProvider = new();
-            password = cryptographyProvider.Decrypt(
+            password = SettingsSecretProtector.Default.Unprotect(
                 Properties.OptionsCredentialsPage.Default.DefaultPassword, App.Runtime.EncryptionKey);
         }
 
