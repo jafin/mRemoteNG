@@ -2204,7 +2204,7 @@ namespace mRemoteNG.Resources.Language {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Decryption failed. {0}.
+        ///   Looks up a localized string similar to Decryption failed.
         /// </summary>
         internal static string ErrorDecryptionFailed {
             get {

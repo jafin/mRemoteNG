@@ -299,7 +299,28 @@ public partial class FrmOptions : Form
         if (page == null) return;
         page.ApplyLanguage();
         page.LoadRegistrySettings();
-        page.LoadSettings();
+
+        // A page that cannot read one of its settings is still added, with whatever it managed to
+        // load. Letting the exception escape here left the page out of _optionPages and aborted the
+        // loop that builds the rest — so a single unreadable secret produced an empty Options window
+        // with nothing said about why, and Options is the only place the bad value can be corrected.
+        //
+        // Reading a settings secret now throws rather than returning plausible bytes, which is the
+        // point of authenticating them; that makes this path reachable where it never was before.
+        try
+        {
+            page.LoadSettings();
+        }
+        catch (Exception ex)
+        {
+            // logOnly: false — this has to reach the user, not just the log. The setting it failed
+            // to read is one they can only correct from this page, and a field that is silently
+            // blank reads as "nothing was configured" rather than "this could not be decrypted".
+            Runtime.MessageCollector.AddExceptionMessage(
+                $"Options page \"{page.PageName}\" could not load all of its settings. A value that could not be read has been left blank; re-entering it will replace it.",
+                ex, logOnly: false);
+        }
+
         _optionPages.Add(page);
         lstOptionPages.AddObject(page);
 
