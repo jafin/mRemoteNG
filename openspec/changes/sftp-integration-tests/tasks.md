@@ -94,5 +94,4 @@
       By its own standard the test would not be one, so 3.2 was rewritten to assert what is real and
       was untested — that a genuine drop is reported exactly once, and that a reconnected session is
       not reported dropped. The ordering stays in `ReleaseClient` as insurance against a library
-      version that does raise on dispose. design.md D4 overstates the case and should be corrected
-      before this change is archived.
+      version that does raise on dispose. design.md D4 has been corrected to match what was measured.

@@ -84,17 +84,38 @@ gating would make a skipped group look identical to a suppressed failure.
 ### D4 — Reconnection is the case that justifies the change
 
 `ConnectAsync` replaced `_client` and `_authentication` without disposing them. Correct exactly once,
-which is all it was ever called — until reconnect called it again. The fix has an ordering constraint
-that no unit test can see: `ErrorOccurred` must be unsubscribed *before* the old client is disposed,
-because disposing a connected client can raise it, and a `Dropped` from the previous connection would
-mark the fresh one as dead.
-
-Against a container that is a direct assertion: reconnect several times, subscribe to `Dropped`, and
-require that no event arrives naming a connection that has been replaced. Getting the order wrong makes
-this fail. Nothing short of a real connection does.
+which is all it was ever called — until reconnect called it again. Reconnection is what the container
+makes testable, and it is worth the change on its own: a client replaced without being released still
+reports `IsConnected` while its socket belongs to a corpse, which no fake reproduces.
 
 Breaking the connection *at the server* — rather than closing it politely from the client — is what makes
-the third scenario real, and the container is what makes that possible at all.
+the dropped-connection scenario real, and the container is what makes that possible at all.
+
+> **Corrected after implementation.** This section originally claimed that the ordering constraint in
+> `ReleaseClient` — `ErrorOccurred` unsubscribed *before* the old client is disposed — would be pinned
+> by these tests, on the reasoning that "disposing a connected client can raise it", and that "getting
+> the order wrong makes this fail".
+>
+> It does not, with SSH.NET 2025.1.0. Task 8.5 inverted the two lines and every test still passed.
+> Measured against the container: killing the connection at the server raises `ErrorOccurred`
+> **immediately**, from the message-listener thread, while the old client is still the current one —
+> so the `Dropped` is attributed correctly and arrives long before any reconnect. Disposing that
+> already-dead client afterwards raises nothing, and disposing a healthy one is quiet too. There is no
+> window in which the previous connection's error lands on the fresh one, so there is nothing for a
+> test to catch.
+>
+> The ordering stays in `ReleaseClient`. It costs nothing and remains correct defensive practice
+> against a library version that does raise on dispose — but it is unasserted, and a test claiming to
+> assert it would have been decoration.
+>
+> What the reconnection tests do cover instead: a session stays usable across repeated reconnects, a
+> connection killed at the server is reported dropped exactly once, a reconnected session is not
+> reported dropped, and a session whose connection died reconnects into a working one. The second of
+> those was untested before and is the real guarantee the panel depends on.
+>
+> The general lesson is worth keeping: the value of a regression test is the regression it fails on,
+> and that has to be demonstrated rather than reasoned about. Task 8.5 existed to demonstrate it, and
+> earned its place by finding that this one could not.
 
 ### D5 — Assert the server's errors, not just its successes
 
