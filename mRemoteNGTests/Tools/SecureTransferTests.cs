@@ -1,9 +1,12 @@
-﻿using System.Linq;
+﻿using System;
+using System.Linq;
+using System.Reflection;
 using mRemoteNG.Connection.Protocol.SSH.Native.HostKeys;
 using mRemoteNG.Security.Ssh;
 using mRemoteNG.Tools;
 using mRemoteNGTests.Connection.Protocol.SSH.Native;
 using NUnit.Framework;
+using Renci.SshNet;
 
 namespace mRemoteNGTests.Tools;
 
@@ -299,6 +302,38 @@ public class SecureTransferTests
         transfer.CreateClient();
 
         Assert.That(transfer.ProtocolClient, Is.Not.Null);
+    }
+
+    [Test]
+    [TestCase(true)]
+    [TestCase(false)]
+    public void CreateClientWiresTheHostKeyCallbackForBothProtocols(bool scp)
+    {
+        // The gap every other test leaves open. TrustHostKey covers the decision, but deleting the
+        // one line that subscribes it would leave the whole fixture green and every transfer
+        // unverified — which is exactly the state this window was in before. SSH.NET raises
+        // HostKeyReceived only during a real handshake, so the subscription is as far as a test
+        // without a server can reach; the callback firing belongs to the integration suite.
+        using SecureTransfer transfer = Create(
+            new ResolvedSshCredential("alice", secret: "secret123"), Protocol(scp));
+
+        transfer.CreateClient();
+
+        Assert.That(HostKeySubscriberCount(transfer.ProtocolClient!), Is.EqualTo(1));
+    }
+
+    private static int HostKeySubscriberCount(BaseClient client)
+    {
+        FieldInfo? backing = typeof(BaseClient).GetField("HostKeyReceived",
+            BindingFlags.Instance | BindingFlags.NonPublic);
+
+        // Loud rather than silent if SSH.NET changes shape. A guard that quietly stops guarding is
+        // worse than one that never existed, so this fails and asks to be rewritten.
+        Assert.That(backing, Is.Not.Null,
+            "SSH.NET no longer backs HostKeyReceived with a delegate field — rewrite this check "
+            + "rather than deleting it; it is the only assertion that the callback is wired at all.");
+
+        return ((Delegate?)backing!.GetValue(client))?.GetInvocationList().Length ?? 0;
     }
 
     [Test]

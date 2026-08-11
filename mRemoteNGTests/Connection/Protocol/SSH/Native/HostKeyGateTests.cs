@@ -199,6 +199,95 @@ public class HostKeyGateTests
     }
 
     [Test]
+    public void TwoConnectionsToOneUnknownEndpointShareARefusalToo()
+    {
+        // The case the store cannot cover. A refused key is deliberately never written, so a caller
+        // queued behind a refusal finds an unknown endpoint and would ask again — leaving "asked
+        // once" true only when the answer happened to be yes. A user who says no to a changed key
+        // on a host two features are opening at once must not be asked twice.
+        MemoryHostKeyStore store = new();
+        RecordingHostKeyVerifier verifier = new(answer: false);
+        HostKeyDecisionLock decisions = new();
+
+        using CountdownEvent bothArrived = new(2);
+        HashSet<int> callers = [];
+        Lock callersGate = new();
+
+        store.OnFind = () =>
+        {
+            lock (callersGate)
+            {
+                if (callers.Add(Environment.CurrentManagedThreadId))
+                    bothArrived.Signal();
+            }
+        };
+
+        bool raced = false;
+        verifier.WhileAsking = () => raced = bothArrived.Wait(TimeSpan.FromSeconds(30));
+
+        bool[] trusted = [true, true];
+        Task[] connections =
+        [
+            Task.Run(() => trusted[0] = new HostKeyGate(store, verifier, decisions)
+                .Evaluate("host.invalid", 22, "ssh-ed25519", Fingerprint)),
+            Task.Run(() => trusted[1] = new HostKeyGate(store, verifier, decisions)
+                .Evaluate("host.invalid", 22, "ssh-ed25519", Fingerprint)),
+        ];
+
+        bool finished = Task.WaitAll(connections, TimeSpan.FromSeconds(60));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(finished, Is.True, "a connection never returned; the endpoint lock deadlocked");
+            Assert.That(raced, Is.True, "both connections must have been in the gate at once");
+            Assert.That(verifier.Asked, Has.Count.EqualTo(1), "one endpoint, one question — refused or not");
+            Assert.That(trusted, Is.All.False, "both connections take the refusal");
+            Assert.That(store.SaveCount, Is.Zero, "a refused key must not be recorded as accepted");
+        });
+    }
+
+    [Test]
+    public void ARefusalIsNotRememberedBeyondTheConnectionsWaitingOnIt()
+    {
+        // The other half of sharing a refusal: it must not become a denial the user cannot undo.
+        // A connection opened afterwards is a fresh attempt and is entitled to its own question.
+        MemoryHostKeyStore store = new();
+        RecordingHostKeyVerifier verifier = new(answer: false);
+        HostKeyDecisionLock decisions = new();
+        HostKeyGate gate = new(store, verifier, decisions);
+
+        gate.Evaluate("host.invalid", 22, "ssh-ed25519", Fingerprint);
+        gate.Evaluate("host.invalid", 22, "ssh-ed25519", Fingerprint);
+
+        Assert.That(verifier.Asked, Has.Count.EqualTo(2),
+            "a refusal shared with a later, unrelated connection would deny it silently");
+    }
+
+    [Test]
+    public void ASharedAnswerAppliesOnlyToTheKeyItWasGivenFor()
+    {
+        // The answer is fingerprint-matched. If the host offers a different key to the second
+        // connection, that is a different question and the first answer says nothing about it.
+        MemoryHostKeyStore store = new();
+        RecordingHostKeyVerifier verifier = new(answer: false);
+        HostKeyDecisionLock decisions = new();
+
+        using HostKeyDecision decision = decisions.Acquire("host.invalid", 22, "ssh-ed25519");
+        decision.Publish(Fingerprint, accepted: false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(decision.TryGetSharedAnswer(OtherFingerprint, out _), Is.False,
+                "a refusal of one key must not answer for another");
+            Assert.That(decision.TryGetSharedAnswer(Fingerprint, out bool sameKey), Is.True);
+            Assert.That(sameKey, Is.False, "the answer carried is the one that was given");
+        });
+
+        // Unused here; the gate's own path is covered by the concurrent tests above.
+        Assert.That(verifier.Asked, Is.Empty);
+    }
+
+    [Test]
     public void ConnectionsToDifferentEndpointsDoNotWaitOnEachOther()
     {
         // Per endpoint, not global. A prompt open for one host must not stall a connection to
@@ -230,6 +319,25 @@ public class HostKeyGateTests
 
         Assert.That(Task.WaitAll([first, second], TimeSpan.FromSeconds(60)), Is.True,
             "a decision about one endpoint blocked a connection to a different one");
+    }
+
+    [Test]
+    public void TheStoreDoubleMatchesHostNamesTheWayTheRealStoreDoes()
+    {
+        // Guards the double, not the gate. FileHostKeyStore compares host names case-insensitively
+        // and algorithms ordinally; a double that compared both ordinally would report a prompt
+        // where production is silent, and every test built on it would be measuring the double.
+        MemoryHostKeyStore store = new();
+        store.Save("Host.Invalid", 22, "ssh-ed25519", Fingerprint);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(store.Find("host.invalid", 22, "ssh-ed25519"), Is.EqualTo(Fingerprint));
+            Assert.That(store.Find("HOST.INVALID", 22, "ssh-ed25519"), Is.EqualTo(Fingerprint));
+            Assert.That(store.Find("host.invalid", 22, "SSH-ED25519"), Is.Null,
+                "the algorithm is a protocol identifier, not a name");
+            Assert.That(store.Find("host.invalid", 2222, "ssh-ed25519"), Is.Null);
+        });
     }
 
     [Test]

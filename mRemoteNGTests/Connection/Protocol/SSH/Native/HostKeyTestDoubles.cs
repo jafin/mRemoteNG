@@ -38,8 +38,18 @@ public sealed class MemoryHostKeyStore : IHostKeyStore
         }
     }
 
+    /// <summary>
+    /// Matches <c>FileHostKeyStore</c>: host names are case-insensitive, the algorithm is a protocol
+    /// identifier and is not.
+    /// </summary>
+    /// <remarks>
+    /// A double that is stricter than the real store is not a safe simplification. It would report a
+    /// prompt where production is silent, so a test could be made to pass by "fixing" behaviour that
+    /// was never broken — or, worse, a genuine casing bug could hide behind a double that never
+    /// matched anything anyway.
+    /// </remarks>
     private static string Key(string host, int port, string algorithm) =>
-        $"{host}|{port}|{algorithm}";
+        $"{host.ToUpperInvariant()}|{port}|{algorithm}";
 }
 
 /// <summary>
