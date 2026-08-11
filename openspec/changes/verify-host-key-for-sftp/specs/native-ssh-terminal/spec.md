@@ -14,8 +14,17 @@ than one. The file manager and the file transfer window each open their own SSH 
 same host, and a rule worded around "the session" left both of them outside it — which is how they
 were built with no host key verification at all while the session beside them verified carefully.
 
-Acceptance is recorded against the host, not the connection that obtained it, so a user is asked once
-per host rather than once per feature.
+Acceptance is recorded against the endpoint — host, port and host key algorithm together — and not
+against the connection that obtained it, so a user is asked once per endpoint rather than once per
+feature. The tuple is what the store already keys on, and it is the honest unit: a different port is
+a different service, and a key of a different algorithm is a different key. Both are legitimate
+reasons to be asked again, and a prompt in either case is not evidence that the record was lost.
+
+Trust is shared; the prompt is not. Every consumer SHALL consult the same persistent store, so a key
+accepted anywhere in the application is known everywhere in it. The prompt belongs to whichever
+window owns the connection, because a dialog has to appear over the thing the user is looking at.
+The two are separable and are separated deliberately: a consumer that cannot prompt still reads the
+shared record, so it proceeds on a known key and refuses only what it would have had to ask about.
 
 #### Scenario: An unknown host key
 
@@ -28,6 +37,19 @@ per host rather than once per feature.
 - **WHEN** a host presents a key differing from the stored one
 - **THEN** the change is reported prominently
 - **AND** the connection proceeds only if the user accepts
+
+#### Scenario: A changed host key that is accepted
+
+- **WHEN** the user accepts a changed key for an endpoint
+- **THEN** the accepted fingerprint replaces the stored one for that endpoint
+- **AND** a later connection presenting the previously stored fingerprint is treated as changed and
+  asked about again, not accepted silently
+
+#### Scenario: An endpoint differing only in port or key algorithm
+
+- **WHEN** a connection is made to a host already accepted, but on a different port or negotiating a
+  different host key algorithm
+- **THEN** the key is treated as unknown and presented for confirmation
 
 #### Scenario: A known host key
 
@@ -51,3 +73,11 @@ per host rather than once per feature.
 - **WHEN** an SSH connection is opened where no confirmation can be presented
 - **THEN** an unknown or changed key is refused
 - **AND** the connection does not proceed
+- **AND** a key already accepted for that endpoint still proceeds, because no confirmation is needed
+  to honour a decision the user has already made
+
+#### Scenario: Two connections to one endpoint at the same time
+
+- **WHEN** two SSH connections to the same endpoint are opened concurrently and its key is unknown
+- **THEN** the user is asked once
+- **AND** both connections take the answer given, rather than each presenting its own prompt

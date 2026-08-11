@@ -44,12 +44,21 @@ beside a verified one.
 
 - The host key requirement is restated to cover **every** SSH connection the application opens, with
   the terminal session as one case rather than the rule.
-- `SftpSession` and `SSHTransferWindow` verify through the same `HostKeyGate` and `FileHostKeyStore`
-  the session uses.
-- A host already accepted stays silent. `FileHostKeyStore` persists the acceptance, so a second
-  connection to a known host prompts for nothing — the measured cost of opening the panel stays zero
-  where it is zero today, and a prompt appears only when the host is genuinely unknown or changed,
-  which is when one is wanted.
+- `SftpSession` and `SSHTransferWindow` verify through a `HostKeyGate` backed by the same persistent
+  `FileHostKeyStore` the session uses. The **store** is shared; the **verifier** need not be, and
+  probably cannot be — `HostKeyGate` holds both, so a single shared gate would bind the file
+  manager's prompt to the terminal's WebView. What has to be common is the trust record, not the
+  window the dialog appears over.
+- An endpoint already accepted stays silent. `FileHostKeyStore` persists the acceptance against
+  host, port and key algorithm, so a second connection to a known endpoint prompts for nothing — the
+  measured cost of opening the panel stays zero where it is zero today, and a prompt appears only
+  when the endpoint is genuinely unknown or changed, which is when one is wanted. A different port
+  or a differently negotiated algorithm is a different endpoint and is asked about; that is the
+  store's existing key, not a new rule.
+- Two connections opened at once to an endpoint nobody has accepted must not produce two prompts.
+  `HostKeyGate.Evaluate` finds, asks and saves as three steps with nothing holding the endpoint in
+  between, so today the file manager and the session racing each other would each ask, and could be
+  given contradictory answers.
 - A consumer that cannot prompt fails closed. `NativeSshTerminalSession` already defaults to
   `DenyUnverifiedHostKeys` when no gate is supplied; the same default applies here rather than
   inventing a quieter one.
@@ -60,6 +69,12 @@ beside a verified one.
 the user is looking at. The file manager has no WebView. Whether the panel gets its own verifier
 bound to its own control, or whether a shared verifier is owned above both, is the design work here —
 it is not a matter of passing the existing object through.
+
+Whichever way it goes, the shape is constrained by two things the answer has to satisfy: every
+consumer reads and writes one store, and one unknown endpoint yields one prompt however many
+connections are waiting on it. A per-consumer gate satisfies the first only if the store instance —
+or at least the file behind it — is common to all of them, and the second only if the decision is
+serialized somewhere both can see.
 
 ## Impact
 
