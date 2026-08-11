@@ -48,6 +48,8 @@
          openspec design.md D4); do not float without re-reviewing the source. -->
     <PackageVersion Include="SshNet.Agent" Version="[2024.2.0.5]" />
     <PackageVersion Include="System.Configuration.ConfigurationManager" Version="10.0.10" />
+    <!-- Test-only. Starts the SFTP server the integration tests run against; never shipped. -->
+    <PackageVersion Include="Testcontainers" Version="4.13.0" />
     <PackageVersion Include="System.Collections.Immutable" Version="10.0.10" />
     <PackageVersion Include="System.Data.Odbc" Version="10.0.10" />
     <PackageVersion Include="System.Diagnostics.DiagnosticSource" Version="10.0.10" />
