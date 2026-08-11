@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Globalization;
 using System.Runtime.Versioning;
@@ -110,6 +111,21 @@ public abstract class SftpIntegrationTestBase
 
         Assert.That(SftpServerFixture.Container, Is.Not.Null,
             "the SFTP container is not running; the fixture should have failed before this test ran");
+    }
+
+    /// <summary>
+    /// Reports on the thread that raised the progress, unlike <see cref="System.Progress{T}"/>.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="System.Progress{T}"/> posts to a synchronisation context or the thread pool, so
+    /// its callbacks can land after the operation that raised them has already finished. That makes
+    /// a test either sleep and hope, or assert against a queue that is still filling — and it makes
+    /// "cancel on first report" unable to cancel anything, because the transfer is over before the
+    /// handler runs. Reporting inline removes the race rather than waiting it out.
+    /// </remarks>
+    protected sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 
     private sealed class NothingRemembered : IHostKeyStore

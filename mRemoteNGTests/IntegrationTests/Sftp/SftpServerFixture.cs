@@ -37,10 +37,21 @@ namespace mRemoteNGTests.IntegrationTests.Sftp;
 public class SftpServerFixture
 {
     /// <summary>
-    /// Pinned rather than tracking <c>latest</c>, so the image moving under the suite is a
-    /// deliberate update and not a Tuesday.
+    /// Pinned by digest, so the image moving under the suite is a deliberate update and not a
+    /// Tuesday.
     /// </summary>
-    private const string Image = "atmoz/sftp:alpine";
+    /// <remarks>
+    /// A tag would not do it. <c>:alpine</c> is as mutable as <c>:latest</c> — it is a name the
+    /// publisher can repoint at any time — so pinning to it buys the appearance of stability and
+    /// none of the substance. A digest names one image and cannot be moved.
+    /// <para>
+    /// Updating it is deliberate: <c>docker pull atmoz/sftp:alpine</c> then
+    /// <c>docker image inspect atmoz/sftp:alpine --format '{{index .RepoDigests 0}}'</c>, and read
+    /// what changed before pasting it here.
+    /// </para>
+    /// </remarks>
+    private const string Image =
+        "atmoz/sftp@sha256:81fa92512bf8ead4849f33c1c153907b86d32d77704d1c62a9c70b4316ae9e50";
 
     /// <summary>Set to <c>1</c> to skip this group on a machine with no Docker.</summary>
     public const string SkipVariable = "MRNG_SKIP_SFTP_INTEGRATION";

@@ -30,9 +30,15 @@
 
 - [x] 3.1 Test reconnecting a connected session several times in succession, asserting it is usable after
       each — a listing succeeding is the proof.
-- [x] 3.2 Subscribe to `Dropped` across those reconnects and assert no event arrives for a connection that
-      has been replaced. This is what fails if `ErrorOccurred` is unsubscribed after the dispose instead
-      of before.
+- [x] 3.2 Subscribe to `Dropped` across those reconnects and assert that a connection killed at the
+      server is reported exactly once, and that a session which has just reconnected is not reported
+      dropped.
+
+      *Rewritten during implementation.* This task originally ended "This is what fails if
+      `ErrorOccurred` is unsubscribed after the dispose instead of before" — which is not true; see
+      8.5 for the measurements. The sentence was removed rather than left standing, because a task
+      list that describes coverage the tests do not provide is worse than one that describes less.
+      The drop-reporting behaviour above is what the test does assert, and nothing covered it before.
 - [x] 3.3 Break the connection at the server rather than closing it politely, then reconnect and confirm
       the session lists again.
 

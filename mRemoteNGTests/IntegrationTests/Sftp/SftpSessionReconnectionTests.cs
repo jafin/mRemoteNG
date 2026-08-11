@@ -61,8 +61,17 @@ public class SftpSessionReconnectionTests : SftpIntegrationTestBase
         // So this asserts what is real and was untested: the drop is reported, exactly once, for the
         // connection that genuinely died — and reconnecting over it does not report it again.
         SftpSession session = NewSession();
+
+        // Signalled rather than slept for. ErrorOccurred arrives on SSH.NET's own thread, so a
+        // fixed delay is a guess in both directions: too short and a slow runner fails a correct
+        // session, too long and a late event slips past the assertion unnoticed.
         ConcurrentQueue<string> dropped = new();
-        session.Dropped += (_, reason) => dropped.Enqueue(reason ?? string.Empty);
+        TaskCompletionSource nextDrop = Fresh();
+        session.Dropped += (_, reason) =>
+        {
+            dropped.Enqueue(reason ?? string.Empty);
+            nextDrop.TrySetResult();
+        };
 
         await session.ConnectAsync();
         await session.ListDirectoryAsync(RemoteDirectory);
@@ -71,27 +80,36 @@ public class SftpSessionReconnectionTests : SftpIntegrationTestBase
         {
             await KillTheConnectionAtTheServerAsync();
 
-            // ErrorOccurred arrives on SSH.NET's own thread, so the drop has to be waited for
-            // rather than assumed to have landed by the time the kill returns.
-            await Task.Delay(TimeSpan.FromMilliseconds(750));
-
-            Assert.That(dropped, Has.Count.EqualTo(1),
+            // Returns the moment the drop lands; the timeout is the assertion, not the wait.
+            Assert.That(async () => await nextDrop.Task.WaitAsync(TimeSpan.FromSeconds(15)),
+                Throws.Nothing,
                 $"round {attempt + 1}: a connection died at the server and the session did not "
                 + "report it — the panel would show a listing it can no longer refresh");
 
+            Assert.That(dropped, Has.Count.EqualTo(1), $"round {attempt + 1}: expected exactly one drop");
+
             dropped.Clear();
+            nextDrop = Fresh();
 
             await session.ConnectAsync();
             await session.ListDirectoryAsync(RemoteDirectory);
-            await Task.Delay(TimeSpan.FromMilliseconds(750));
 
-            Assert.That(dropped, Is.Empty,
+            // A negative needs a window, but a bounded one that fails the instant an event arrives
+            // rather than one that hopes none does.
+            Assert.That(await Task.WhenAny(nextDrop.Task, Task.Delay(TimeSpan.FromSeconds(2))),
+                Is.Not.SameAs(nextDrop.Task),
                 $"round {attempt + 1}: a session that has just reconnected reported itself dropped "
                 + $"({string.Join("; ", dropped)})");
         }
 
         Assert.That(session.IsConnected, Is.True);
     }
+
+    /// <summary>
+    /// A source that completes on the next drop. Asynchronous continuations, so completing it from
+    /// SSH.NET's thread does not run the awaiting test inline on it.
+    /// </summary>
+    private static TaskCompletionSource Fresh() => new(TaskCreationOptions.RunContinuationsAsynchronously);
 
     /// <summary>
     /// Breaks the session's connection from the server end.

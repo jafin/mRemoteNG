@@ -1,9 +1,11 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
 using mRemoteNG.Connection.Sftp;
 using NUnit.Framework;
+using Renci.SshNet.Common;
 
 namespace mRemoteNGTests.IntegrationTests.Sftp;
 
@@ -75,7 +77,12 @@ public class SftpSessionFileOperationTests : SftpIntegrationTestBase
         SftpEntry directory = (await session.ListDirectoryAsync(RemoteDirectory))
             .Single(e => e.Name == "full-dir");
 
-        Assert.CatchAsync(async () => await session.DeleteAsync(directory));
+        Exception? refusal = Assert.CatchAsync(async () => await session.DeleteAsync(directory));
+
+        // The exact type, not a base one. SftpPathNotFoundException also derives from
+        // SftpException, so accepting subclasses would let a test pass because the path was wrong
+        // rather than because the server refused a directory that was genuinely not empty.
+        Assert.That(refusal, Is.TypeOf<SftpException>().And.Message.EqualTo("Failure"));
     }
 
     [Test]
@@ -85,7 +92,10 @@ public class SftpSessionFileOperationTests : SftpIntegrationTestBase
         // contrived. A session that swallowed this would report a save as successful.
         SftpSession session = await ConnectedSessionAsync();
 
-        Assert.CatchAsync(async () => await session.CreateDirectoryAsync("/not-allowed"));
+        // Named, so a client-side defect cannot satisfy this. "Something threw" would pass for a
+        // malformed path or a dropped connection, neither of which is the refusal being claimed.
+        Assert.CatchAsync<SftpPermissionDeniedException>(
+            async () => await session.CreateDirectoryAsync("/not-allowed"));
     }
 
     [Test]

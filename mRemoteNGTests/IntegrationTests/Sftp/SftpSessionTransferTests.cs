@@ -49,10 +49,13 @@ public class SftpSessionTransferTests : SftpIntegrationTestBase
         // a server: a total taken from the wrong place reads as a progress bar that never fills.
         SftpSession session = await ConnectedSessionAsync();
 
+        // Reported inline, so every report has landed by the time the await returns and there is
+        // nothing to sleep for. A fixed delay here would be a guess that fails on a loaded runner
+        // and passes for the wrong reason on a fast one.
         ConcurrentQueue<SftpTransferProgress> uploadProgress = new();
         using MemoryStream source = new(Content);
         await session.UploadAsync(source, RemotePath("progress.txt"), Content.Length,
-            new Progress<SftpTransferProgress>(uploadProgress.Enqueue));
+            new InlineProgress<SftpTransferProgress>(uploadProgress.Enqueue));
 
         SftpEntry uploaded = (await session.ListDirectoryAsync(RemoteDirectory))
             .Single(e => e.Name == "progress.txt");
@@ -60,10 +63,7 @@ public class SftpSessionTransferTests : SftpIntegrationTestBase
         ConcurrentQueue<SftpTransferProgress> downloadProgress = new();
         using MemoryStream destination = new();
         await session.DownloadAsync(uploaded, destination,
-            new Progress<SftpTransferProgress>(downloadProgress.Enqueue));
-
-        // Progress<T> posts asynchronously, so the last report can arrive after the await returns.
-        await Task.Delay(TimeSpan.FromMilliseconds(500));
+            new InlineProgress<SftpTransferProgress>(downloadProgress.Enqueue));
 
         Assert.Multiple(() =>
         {
@@ -90,11 +90,19 @@ public class SftpSessionTransferTests : SftpIntegrationTestBase
         using CancellationTokenSource cancellation = new();
         using MemoryStream source = new(large);
 
+        // Inline, and this one has to be. Progress<T> queues the handler, so the cancel could run
+        // after the upload had already finished — the test would pass or fail on scheduling rather
+        // than on whether cancellation works, and an upload that ignored the token entirely could
+        // still satisfy it.
         Task upload = session.UploadAsync(source, RemotePath("cancelled.bin"), large.Length,
-            new Progress<SftpTransferProgress>(_ => cancellation.Cancel()),
+            new InlineProgress<SftpTransferProgress>(_ => cancellation.Cancel()),
             cancellation.Token);
 
         Assert.CatchAsync<OperationCanceledException>(async () => await upload);
+
+        // Cancelled part-way, not after the fact: the whole point is that the bytes stopped.
+        Assert.That(source.Position, Is.LessThan(large.Length),
+            "the source was read to the end, so nothing was actually cut short");
     }
 
     [Test]
