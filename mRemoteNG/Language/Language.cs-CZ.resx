@@ -479,7 +479,7 @@ Otevírám nový prázdný soubor seznamu spojení.</value>
     <value>Spuštění PuTTY se nezdařilo.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Dešifrování se nezdařilo. {0}</value>
+    <value>Dešifrování se nezdařilo.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Začifrování se nezdařilo. {0}</value>

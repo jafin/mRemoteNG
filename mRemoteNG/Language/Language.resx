@@ -602,7 +602,7 @@ Starting with new connections file.</value>
     <value>PuTTY could not be launched.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Decryption failed. {0}</value>
+    <value>Decryption failed.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Encryption failed. {0}</value>
@@ -3150,5 +3150,8 @@ Keeps a copy upstream mRemoteNG can open. The store is not hardened by doing thi
 That copy is protected less strongly than the store it came from. Keep it somewhere you would be willing to keep the store itself.
 
 Export anyway?</value>
+  </data>
+  <data name="ErrorOptionsPageSettingsNotLoaded" xml:space="preserve">
+    <value>Options page "{0}" could not load all of its settings. A value that could not be read has been left blank; re-entering it will replace it.</value>
   </data>
 </root>

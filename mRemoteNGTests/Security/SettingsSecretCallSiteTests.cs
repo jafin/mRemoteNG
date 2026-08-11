@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.RegularExpressions;
 using NUnit.Framework;
 
 namespace mRemoteNGTests.Security;
@@ -43,6 +44,34 @@ public class SettingsSecretCallSiteTests
         ["UI/Forms/OptionsPages/SecurityPage.cs"] = "password generator that produces the provisioning format",
     };
 
+    /// <summary>
+    /// The settings that hold a secret, and the files allowed to touch one without going through
+    /// <c>SettingsSecretProtector</c>, with the reason.
+    /// </summary>
+    /// <remarks>
+    /// Manual verification of the migration was done on <c>DefaultPassword</c>; the SQL and proxy
+    /// secrets were never exercised end to end, because that needs a SQL Server and an authenticated
+    /// proxy. What could go wrong without either is a call site reading the stored value raw and
+    /// handing an <c>aead1:</c> string to a server as the password — which is a question about the
+    /// source, not about a running instance, so it is answered here instead.
+    /// </remarks>
+    private static readonly Dictionary<string, Dictionary<string, string>> SecretSettings = new(StringComparer.Ordinal)
+    {
+        ["DefaultPassword"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Config/Settings/Registry/OptRegistryCredentialsPage.cs"] = "registry provisioning writes the stored form",
+        },
+        ["SQLPass"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Config/Settings/Registry/OptRegistrySqlServerPage.cs"] = "registry provisioning writes the stored form",
+            ["Config/DatabaseConnectors/DatabaseProfile.cs"] = "moves the stored form to and from a profile without reading it",
+        },
+        ["UpdateProxyAuthPass"] = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["Config/Settings/Registry/OptRegistryUpdatesPage.cs"] = "registry provisioning writes the stored form",
+        },
+    };
+
     private static DirectoryInfo ProjectDirectory
     {
         get
@@ -56,18 +85,24 @@ public class SettingsSecretCallSiteTests
         }
     }
 
+    /// <summary>The project's own source, without build output.</summary>
+    private static IEnumerable<string> SourceFiles() =>
+        Directory.EnumerateFiles(ProjectDirectory.FullName, "*.cs", SearchOption.AllDirectories)
+            .Where(file =>
+            {
+                string relative = Path.GetRelativePath(ProjectDirectory.FullName, file).Replace('\\', '/');
+                return !relative.StartsWith("bin/", StringComparison.OrdinalIgnoreCase) &&
+                       !relative.StartsWith("obj/", StringComparison.OrdinalIgnoreCase);
+            });
+
     [Test]
     public void OnlyApprovedCallSitesConstructTheLegacyProvider()
     {
         List<string> offenders = [];
 
-        foreach (string file in Directory.EnumerateFiles(ProjectDirectory.FullName, "*.cs", SearchOption.AllDirectories))
+        foreach (string file in SourceFiles())
         {
             string relative = Path.GetRelativePath(ProjectDirectory.FullName, file).Replace('\\', '/');
-
-            if (relative.StartsWith("bin/", StringComparison.OrdinalIgnoreCase) ||
-                relative.StartsWith("obj/", StringComparison.OrdinalIgnoreCase))
-                continue;
 
             if (!File.ReadAllText(file).Contains("LegacyRijndaelCryptographyProvider", StringComparison.Ordinal))
                 continue;
@@ -91,6 +126,41 @@ public class SettingsSecretCallSiteTests
             .ToList();
 
         Assert.That(missing, Is.Empty, "allow-list entries that no longer name a real file");
+    }
+
+    [Test]
+    public void EverySecretSettingIsReadThroughTheProtector()
+    {
+        List<string> offenders = [];
+
+        foreach ((string setting, Dictionary<string, string> allowed) in SecretSettings)
+        {
+            foreach (string file in SourceFiles())
+            {
+                string relative = Path.GetRelativePath(ProjectDirectory.FullName, file).Replace('\\', '/');
+                if (allowed.ContainsKey(relative))
+                    continue;
+
+                // `Default.<setting>` reaches the stored value; `pageRegSettingsInstance.<setting>`
+                // is the registry-provisioning flag of the same name, which holds no secret. The
+                // word boundary keeps SQLPass from matching the SQLPassword control beside it.
+                Regex read = new($@"Default\.{Regex.Escape(setting)}\b", RegexOptions.None, TimeSpan.FromSeconds(5));
+
+                // Statement-wise, because a call often wraps onto the following line.
+                IEnumerable<string> statements = File.ReadAllText(file)
+                    .Split(';', StringSplitOptions.RemoveEmptyEntries)
+                    .Where(statement => read.IsMatch(statement));
+
+                offenders.AddRange(statements
+                    .Where(statement => !statement.Contains("SettingsSecretProtector", StringComparison.Ordinal))
+                    .Select(_ => $"{relative} reads {setting} without the protector"));
+            }
+        }
+
+        Assert.That(offenders, Is.Empty,
+            "a settings secret handed out in its stored form is an aead1: string where a password belongs. " +
+            "Read it through SettingsSecretProtector, or add the file to SecretSettings with the reason it " +
+            "only moves the stored value around.");
     }
 
     /// <summary>

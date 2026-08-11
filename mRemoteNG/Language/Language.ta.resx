@@ -485,7 +485,7 @@
     <value>புட்டியை தொடங்க முடியவில்லை.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>மறைகுறியாக்கம் தோல்வியடைந்தது. {0}</value>
+    <value>மறைகுறியாக்கம் தோல்வியடைந்தது.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>குறியாக்கம் தோல்வியடைந்தது. {0}</value>

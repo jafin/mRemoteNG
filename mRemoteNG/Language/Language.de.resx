@@ -477,7 +477,7 @@ Starte mit neuer Datei.</value>
     <value>PuTTY konnte nicht gestartet werden.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Entschlüsselung ist gescheitert. {0}</value>
+    <value>Entschlüsselung ist gescheitert.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Verschlüsselung fehlgeschlagen. {0}</value>
