@@ -22,7 +22,7 @@
 
 ## 4. Confirm the cost does not change where it is already zero
 
-- [ ] 4.1 Re-run `add-sftp-browser-panel` task 1.2 against a host whose key is already accepted: session and panel must still produce zero prompts. Connect both to the same port, or the comparison proves nothing — the store keys on host, port and algorithm, so a panel prompting for a host the session accepted on another port is correct behaviour, not a broken store. With the endpoint held equal, a prompt does mean the store is not shared and 2.2 is wrong.
+- [x] 4.1 Re-run `add-sftp-browser-panel` task 1.2 against a host whose key is already accepted: session and panel must still produce zero prompts. Connect both to the same port, or the comparison proves nothing — the store keys on host, port and algorithm, so a panel prompting for a host the session accepted on another port is correct behaviour, not a broken store. With the endpoint held equal, a prompt does mean the store is not shared and 2.2 is wrong.
 - [ ] 4.2 Manual: connect the panel to a host never opened as a session, confirm exactly one prompt and that accepting it is remembered.
 - [ ] 4.3 Manual: change the host key (regenerate the fixture container) and confirm the panel refuses on the same terms as the session.
 
