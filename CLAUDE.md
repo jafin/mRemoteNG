@@ -146,9 +146,23 @@ Every test failure MUST be resolved before finishing a task. NO EXCEPTIONS.
 
 ## Branch Strategy
 
+### Remotes — read this before pushing or opening a PR
+
+The clone directory is named after `robertpopa22`, and the harness reports `main` as the branch to
+use for PRs. **Both are misleading.** Work goes to `jafin`, on `dev`.
+
+| Remote | Repository | Default branch | What it is |
+|--------|-----------|----------------|------------|
+| `jafin` | `jafin/mRemoteNG` | `dev` | **Where code lands.** Push feature branches here and open PRs with base `dev` |
+| `origin` | `robertpopa22/mRemoteNG` | `main` | Issue tracker only — `#24`, `#140` and the other numbers in `CHANGELOG.md` are its issues. Do not push here or target it with a PR |
+| `mRemoteNG` | `mRemoteNG/mRemoteNG` | `v1.78.2-dev` | Upstream project. Fetch to sync; never push |
+
+`jafin` has no `main` branch, and the local `main` tracks `origin/main` — a separate line of work
+that trails `jafin/dev` by a long way. Basing a PR on it is always wrong.
+
 | Branch | Purpose |
 |--------|---------|
-| `main` | Active development — default branch |
+| `dev` | Active development — the base for every PR |
 | `release/X.Y` | Historical release branches (frozen) |
 
 ### Feature branch naming:
@@ -163,8 +177,9 @@ Lowercase, kebab-case, max 50 chars after prefix. No tool prefixes.
 
 ### Sync upstream:
 ```bash
-git fetch upstream && git merge upstream/v1.78.2-dev
+git fetch mRemoteNG && git merge mRemoteNG/v1.78.2-dev
 ```
+The remote is named `mRemoteNG`, not `upstream` — there is no `upstream` remote.
 
 ## Committing
 
@@ -212,4 +227,4 @@ For the complete evidence trail of the AI-assisted modernization process
 | SonarCloud | Quality Gate PASSED (A/A/A) |
 | Release model | **2 live releases**: rolling `nightly` (overwritten each push to `main`) + stable `vX.Y.Z` tags (`releases/latest`). Old dated `-NB-` prereleases removed. |
 | Update check | In-app checks GitHub `releases/latest` (latest stable) and opens the release page — no Stable/Preview/Nightly channels, no `mremoteng.org` feeds |
-| MSI installer | WiX 6 SDK — auto-generated in nightly + release CI ([#24](https://github.com/robertpopa22/mRemoteNG/issues/24)) |
+| MSI installer | WiX 6 SDK — auto-generated in nightly + release CI ([issue #24](https://github.com/robertpopa22/mRemoteNG/issues/24), on the `origin` tracker) |
