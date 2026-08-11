@@ -38,13 +38,15 @@ foreach ($stale in @($key, "$key.pub")) {
 # The keypair is made before the server starts, in a throwaway container, so the public half can be
 # handed to the image's own PUBLIC_KEY mechanism at run time.
 #
-# Writing authorized_keys after the fact does not work: the init creates its own, and on the overlay
-# filesystem a later write leaves *two* directory entries of that name with the lookup resolving to
-# the init's empty one. Every tool reports success and sshd reads nothing, so key auth fails with
-# "Permission denied (publickey)" and nothing in the container to explain it. Letting the image
-# install the key is the only version of this without a race.
+# This used to write /config/.ssh/authorized_keys from a here-string after the container was up, and
+# silently produced a file named `authorized_keys<CR>` — see the CRLF note below. sshd read the real,
+# empty one the init had created, so key auth failed with "Permission denied (publickey)" while `ls`
+# appeared to show the key installed.
 #
-# It also removes the dependency on ssh-keygen being on the host's PATH, which it frequently is not.
+# Handing the key to the image is better than fixing that write, because it removes the ordering
+# question entirely: there is no window between the init creating its files and this one writing
+# over them. It also drops the dependency on ssh-keygen being on the host's PATH, which it
+# frequently is not.
 Write-Host "Generating a keypair..."
 $keygen = "$Name-keygen"
 docker rm -f $keygen 2>$null | Out-Null
@@ -74,22 +76,45 @@ docker run -d --name $Name `
 $deadline = (Get-Date).AddSeconds(60)
 do {
     Start-Sleep -Milliseconds 500
-    $listening = (docker logs $Name 2>&1) -match "sshd is listening"
-    # Existence only. `test -O` would ask whether the *effective* user owns it, and docker exec runs
-    # as root while /config belongs to uid 1000 — so it is false forever and the wait always expires.
-    $configReady = (docker exec $Name sh -c 'test -d /config && echo READY' 2>$null) -match "READY"
-    $ready = $listening -and $configReady
+    $log = docker logs $Name 2>&1
+    $listening = $log -match "sshd is listening"
+
+    # The init's own completion marker. Waiting for /config to merely exist is not enough: the init
+    # is still rebuilding its contents at that point, so a mkdir lands in a directory that is then
+    # replaced and the write is lost with a success exit code.
+    $initDone = $log -match "\[ls\.io-init\] done\."
+
+    $ready = $listening -and $initDone
 } until ($ready -or (Get-Date) -gt $deadline)
 if (-not $ready) { throw "sshd did not come up within 60s" }
 
 Write-Host "Creating benchmark payloads..."
-docker exec $Name sh -c @'
+
+# The carriage returns are stripped because this file has CRLF endings and `sh` does not treat one
+# as whitespace: it becomes the last character of the last token on the line. `mkdir -p /config/bench`
+# then creates a directory whose name ends in CR, and the redirect on the next line writes into
+# `bench` -- which does not exist. The error reads
+#
+#     sh: can't create /config/bench/ascii.txt
+#     : nonexistent directory
+#
+# where the stray line break is the CR being echoed back, and is the only clue that this is what
+# happened. It is also what produced the two apparently identical `authorized_keys` entries that
+# `ls` used to show: one real, one named `authorized_keys<CR>`.
+$benchPayloads = (@'
 mkdir -p /config/bench
 yes 'The quick brown fox jumps over the lazy dog 0123456789 abcdefghijklmnopqrstuvwxyz' | head -n 65000 > /config/bench/ascii.txt
 yes 'ελληνικά ρусский 日本語テキスト 中文测试 emoji: ✅★☂ — mixed 多字节 content' | head -n 20000 > /config/bench/utf8.txt
 yes 'x=0123456789 abcdefghijklmnopqrstuvwxyz ABCDEFGHIJKLMNOPQRSTUVWXYZ 0123456789 abcdefghijklmnopqrstuvwxyz ABCDEFG' | head -n 40 > /config/bench/screen.txt
 chmod -R a+r /config/bench
-'@ | Out-Null
+'@) -replace "`r", ""
+
+docker exec $Name sh -c $benchPayloads | Out-Null
+
+# Verified rather than assumed: a lost write here reports success and fails later inside the
+# benchmark with a missing file.
+$payloads = (docker exec $Name sh -c 'test -s /config/bench/ascii.txt && test -s /config/bench/utf8.txt && test -s /config/bench/screen.txt && echo PAYLOADS' 2>$null) -match "PAYLOADS"
+if (-not $payloads) { throw "benchmark payloads were not written to /config/bench" }
 
 # Password auth is what the image advertises, but its sshd_config ships PasswordAuthentication no.
 docker exec $Name sh -c "sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config; pkill -HUP sshd" | Out-Null
