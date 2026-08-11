@@ -404,27 +404,32 @@ public class SSHTransferWindow : BaseWindow
             // This window has never verified host keys, so a user transferring to a host they have
             // never opened a session to will now be asked. The store is the shared one, so a host
             // already accepted anywhere in the application costs nothing here. The verifier
-            // marshals to this window, which is the UI thread Connect runs on.
+            // marshals to this window's thread, which is free because the connection is made on
+            // the transfer thread — a dialog cannot be shown by the thread waiting for it.
             HostKeyGate hostKeys = new(SharedHostKeyStore.Instance, new DialogHostKeyVerifier(this));
 
+            // Built here, connected on the background thread: everything in this statement reads a
+            // control, and controls belong to this thread.
             st = new SecureTransfer(txtHost.Text, int.Parse(txtPort.Text, CultureInfo.InvariantCulture),
                 BuildCredential(), Protocol, txtLocalFile.Text, txtRemoteFile.Text, hostKeys);
             st.UploadProgress += SecureTransfer_UploadProgress;
-
-            // Connect creates the protocol objects and makes the initial connection.
-            st.Connect();
-
-            Thread t = new(StartTransferBG);
-            t.SetApartmentState(ApartmentState.STA);
-            t.IsBackground = true;
-            t.Start();
         }
         catch (Exception ex)
         {
             Runtime.MessageCollector.AddExceptionStackTrace(Language.SshTransferFailed, ex);
-            st?.Disconnect();
             st?.Dispose();
+            st = null;
+            return;
         }
+
+        // Before the thread starts, not inside it. The window no longer freezes while connecting,
+        // so a second click would otherwise start a second transfer and abandon the first.
+        DisableButtons();
+
+        Thread t = new(StartTransferBG);
+        t.SetApartmentState(ApartmentState.STA);
+        t.IsBackground = true;
+        t.Start();
     }
 
     /// <summary>
@@ -464,29 +469,51 @@ public class SSHTransferWindow : BaseWindow
 
     private void StartTransferBG()
     {
+        SecureTransfer? transfer = st;
+        if (transfer is null)
+            return;
+
         try
         {
-            if (st is null) return;
-            DisableButtons();
+            try
+            {
+                // Connecting here rather than on the UI thread. It blocks for the whole handshake,
+                // and the host key question is asked inside it: a dialog that marshals to this
+                // window could never be answered by the thread that was waiting for the connection.
+                // It also stops an unreachable host freezing the application until TCP gives up.
+                transfer.Connect();
+            }
+            catch (Exception ex)
+            {
+                // The message a failed connect reported when it ran on the UI thread. A connection
+                // that was never made is not a transfer that failed part way through.
+                Runtime.MessageCollector.AddExceptionStackTrace(Language.SshTransferFailed, ex);
+                return;
+            }
+
             Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                $"Transfer of {Path.GetFileName(st.SrcFile)} started.", true);
+                $"Transfer of {Path.GetFileName(transfer.SrcFile)} started.", true);
             // This thread exists to keep the upload off the UI thread, so blocking it here is
             // the point. Progress now arrives on UploadProgress as bytes go out, which replaces
             // the 50 ms poll of SftpUploadAsyncResult.UploadedBytes that this used to run.
-            st.UploadAsync().GetAwaiter().GetResult();
+            transfer.UploadAsync().GetAwaiter().GetResult();
 
             Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
-                $"Transfer of {Path.GetFileName(st.SrcFile)} completed.", true);
-            st.Disconnect();
-            st.Dispose();
-            EnableButtons();
+                $"Transfer of {Path.GetFileName(transfer.SrcFile)} completed.", true);
         }
         catch (Exception ex)
         {
             Runtime.MessageCollector.AddExceptionStackTrace(Language.SshBackgroundTransferFailed, ex,
                 MessageClass.ErrorMsg, false);
-            st?.Disconnect();
-            st?.Dispose();
+        }
+        finally
+        {
+            transfer.Disconnect();
+            transfer.Dispose();
+
+            // However this ended. The button is disabled before the thread starts now, so leaving
+            // it disabled on a failure would put the window out of service until it was reopened.
+            EnableButtons();
         }
     }
 
@@ -538,33 +565,36 @@ public class SSHTransferWindow : BaseWindow
         }
     }
 
-    private delegate void EnableButtonsCB();
+    private void EnableButtons() => SetTransferEnabled(true);
 
-    private void EnableButtons()
+    private void DisableButtons() => SetTransferEnabled(false);
+
+    /// <summary>
+    /// Marshals the transfer button's state onto the UI thread, tolerating a window that has since
+    /// been closed.
+    /// </summary>
+    /// <remarks>
+    /// The tolerance is the point. This is called from the transfer thread's <c>finally</c>, and a
+    /// user who closes the window while a transfer is running would otherwise take an unhandled
+    /// <see cref="ObjectDisposedException"/> on a background thread — which ends the process rather
+    /// than the transfer.
+    /// </remarks>
+    private void SetTransferEnabled(bool enabled)
     {
-        if (btnTransfer.InvokeRequired)
+        try
         {
-            EnableButtonsCB d = EnableButtons;
-            btnTransfer.Invoke(d);
-        }
-        else
-        {
-            btnTransfer.Enabled = true;
-        }
-    }
+            if (btnTransfer.IsDisposed)
+                return;
 
-    private delegate void DisableButtonsCB();
-
-    private void DisableButtons()
-    {
-        if (btnTransfer.InvokeRequired)
-        {
-            DisableButtonsCB d = DisableButtons;
-            btnTransfer.Invoke(d);
+            if (btnTransfer.InvokeRequired)
+                btnTransfer.Invoke(() => btnTransfer.Enabled = enabled);
+            else
+                btnTransfer.Enabled = enabled;
         }
-        else
+        catch (Exception ex) when (ex is ObjectDisposedException or InvalidOperationException)
         {
-            btnTransfer.Enabled = false;
+            // Closed between the check and the marshal. There is no button left to re-enable, and
+            // the transfer's own outcome has already been reported.
         }
     }
 

@@ -27,8 +27,9 @@ asked in. The other two consumers need the first half and cannot use the second.
 
 - Reading OpenSSH `known_hosts`. Still additive, still a separate change.
 - Sharing one SSH transport between consumers. Unavailable; see `add-sftp-browser-panel` design D1.
-- Moving the transfer window's connect off the UI thread. Wanted (see Risks), but it is a change to
-  that window's error handling and belongs in its own commit.
+- Reworking the transfer window beyond moving its connect onto the thread it already starts for the
+  upload. That move is in scope — see Risks — because verifying host keys there is what makes
+  connecting on the UI thread unsafe rather than merely rude.
 
 ## Decisions
 
@@ -99,16 +100,25 @@ keeps the risk below bounded and rare.
 
 ## Risks / Trade-offs
 
-**A blocked UI thread while another consumer's prompt is open** → `SSHTransferWindow` calls
-`SecureTransfer.Connect()` synchronously on the UI thread, so the UI thread can enter `Evaluate`. If
-it waits on an endpoint lock held by a background connection whose verifier is trying to marshal *to*
-that same UI thread, neither proceeds: the UI thread is not pumping, so the dialog never appears.
-Mitigated two ways. The known-key fast path means the wait is only reachable for an endpoint that is
-genuinely unknown or changed **and** being connected to twice at once. And the wait is bounded
-(2 minutes); on expiry the caller re-reads the store and, finding nothing, asks its own question. The
-degraded outcome is two prompts, which is what the change set out to avoid but is not a safety
-failure. Deadlocking the application would be worse than asking twice. Moving that connect onto the
-background thread the window already starts removes the risk entirely and is the right follow-up.
+**A blocked UI thread while another consumer's prompt is open** → `SSHTransferWindow` used to call
+`SecureTransfer.Connect()` synchronously on the UI thread, which meant the UI thread could enter
+`Evaluate`. Waiting there on an endpoint lock held by a background connection whose verifier was
+marshalling *to* that same UI thread would have deadlocked both: a thread blocked on a lock is not
+pumping messages, so the dialog it was being asked to show could never appear.
+
+Removed at the source. `Connect()` now runs on the thread the window already starts for the upload,
+so no UI thread enters the gate and the host key prompt is marshalled to a thread that is free to
+show it. Two consequences follow from the window no longer freezing, and both are handled: the
+transfer button is disabled *before* the thread starts, since a responsive window would otherwise
+accept a second click and abandon the first transfer; and it is re-enabled in a `finally` that
+tolerates the window having been closed, because an `ObjectDisposedException` on a background thread
+ends the process rather than the transfer.
+
+Two defences are kept rather than relied on. `Evaluate` answers a known key before touching the lock,
+so the common case never waits at all, and the wait itself is bounded at 2 minutes — on expiry the
+caller re-reads the store and, finding nothing, asks its own question. The degraded outcome is two
+prompts, which is what this change set out to avoid but is not a safety failure. A future caller that
+connects on the UI thread again gets a slow window, not a dead application.
 
 **A behaviour change for the transfer window** → It has never verified. A user transferring to a host
 they have never opened a session to will now be asked, and if the window cannot ask, refused. This is

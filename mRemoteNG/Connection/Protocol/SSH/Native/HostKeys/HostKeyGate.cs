@@ -118,11 +118,11 @@ public sealed class HostKeyGate(
 /// on the gate would serialize nothing between the file manager and a session.
 /// </para>
 /// <para>
-/// The wait is bounded. <c>SSHTransferWindow</c> connects on the UI thread, so the UI thread can
-/// reach here; if it waits on a lock whose holder is trying to marshal a dialog onto that same
-/// thread, neither side moves. On expiry the caller falls through and asks its own question. Two
-/// prompts is the outcome this class exists to avoid, but it is not a safety failure, and a
-/// deadlocked application would be worse than being asked twice.
+/// The wait is bounded. Every consumer connects off the UI thread, which is what keeps a caller
+/// from waiting here while holding the thread a dialog has to be shown on — but a future one that
+/// forgets would otherwise deadlock rather than merely stall. On expiry the caller falls through
+/// and asks its own question. Two prompts is the outcome this class exists to avoid, but it is not
+/// a safety failure, and a deadlocked application would be worse than being asked twice.
 /// </para>
 /// </remarks>
 public sealed class HostKeyDecisionLock
