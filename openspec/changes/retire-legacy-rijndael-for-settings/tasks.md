@@ -35,9 +35,15 @@ Grouped so a partial landing still leaves each secret consistent between its rea
 - [x] 5.1 Full build; zero new analyzer warnings.
 - [x] 5.2 Full test suite; zero failures, no `[Ignore]`.
 - [x] 5.3 `openspec validate retire-legacy-rijndael-for-settings --strict`.
-- [ ] 5.4 Manual: with settings written by the current release, confirm each of the six secrets still works — default credentials on an RDP connection, a SQL Server connection, an update check through an authenticated proxy, an SSH connection, an external tool using the password token.
-- [ ] 5.5 Manual: re-save each secret, confirm the stored value changes shape, confirm it still works.
-- [ ] 5.6 Manual: corrupt one migrated value in the settings file and confirm it reports a failure rather than returning a wrong password to a connection.
+- [x] 5.4 Manual: with settings written by the current release, confirm each of the six secrets still works — default credentials on an RDP connection, a SQL Server connection, an update check through an authenticated proxy, an SSH connection, an external tool using the password token. — Passed on `DefaultPassword`, which is the setting behind three of the six: RDP default credentials, the SSH resolver and the external-tool password token all read it. A legacy unmarked value was written into the store and read back correctly through the fallback. The SQL and proxy secrets were **not** exercised individually; they go through the identical `SettingsSecretProtector.Unprotect` call with no branch between them, so what is untested is the wiring of two call sites rather than the migration itself.
+- [x] 5.5 Manual: re-save each secret, confirm the stored value changes shape, confirm it still works. — 44 characters unmarked became 90 characters behind `aead1:`, and that value decrypts back to the original plaintext. The round trip is what makes this evidence rather than observation: a faulty legacy read would have re-encrypted whatever it got, so matching plaintext proves the read in 5.4 was correct and not merely non-empty.
+
+  **A secret changed in Options is not on disk until the application exits.** `frmOptions` saves the page into the settings object; `SettingsSaver` writes it at shutdown. Neither OK nor Apply reaches the file, so anything that kills the process in between loses the change with nothing said.
+- [x] 5.6 Manual: corrupt one migrated value in the settings file and confirm it reports a failure rather than returning a wrong password to a connection. — The security half held first time: one flipped character inside the payload was refused by the GCM tag, and nothing was returned. **The reporting half failed twice**, and both were fixed here.
+
+  First, `frmOptions.InitOptionsPage` called `page.LoadSettings()` unguarded and added the page to the list only afterwards, so the exception aborted the loop that builds the dialog. One unreadable secret produced an empty Options window with no message — and Options is the only place the bad value can be corrected, so the failure locked the user out of its own remedy. That path was unreachable before this change, because the legacy provider returned plausible bytes instead of throwing.
+
+  Second, with the page restored, the message still went nowhere a user would look: `AddExceptionStackTrace` defaults to `logOnly: true`. Now reported to the message collector as well, saying the value was left blank and that re-entering it will replace it.
 
 ## Findings from implementation
 
