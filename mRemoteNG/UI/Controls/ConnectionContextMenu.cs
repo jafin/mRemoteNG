@@ -1037,14 +1037,10 @@ public sealed class ConnectionContextMenu : ContextMenuStrip
             _cMenTreeTypeClipboard.Enabled = false;
         }
 
-        // Braced deliberately: this was a single-statement if, and appending a second line to
-        // it silently made that line unconditional.
-        if (!(connectionInfo.Protocol == ProtocolType.SSH1 | connectionInfo.Protocol == ProtocolType.SSH2))
-        {
-            _cMenTreeToolsTransferFile.Enabled = false;
-        }
-
-        // Set positively rather than mirroring the transfer window's gate — see ProtocolFeature.
+        // Both set positively — see ProtocolFeature. Every item was enabled by
+        // EnableMenuItemsRecursive before this ran, so an assignment says what the state is rather
+        // than leaving it to whatever an earlier branch happened not to turn off.
+        _cMenTreeToolsTransferFile.Enabled = ProtocolFeature.SupportsFileTransfer(connectionInfo.Protocol);
         _cMenTreeToolsFileManager.Enabled = ProtocolFeature.SupportsSftp(connectionInfo.Protocol);
 
         _cMenTreeToolsWakeOnLan.Enabled = WakeOnLan.IsValidMacAddress(connectionInfo.MacAddress);
@@ -1084,14 +1080,10 @@ public sealed class ConnectionContextMenu : ContextMenuStrip
             _cMenTreeTypeClipboard.Enabled = false;
         }
 
-        // Braced deliberately: this was a single-statement if, and appending a second line to
-        // it silently made that line unconditional.
-        if (!(connectionInfo.Protocol == ProtocolType.SSH1 | connectionInfo.Protocol == ProtocolType.SSH2))
-        {
-            _cMenTreeToolsTransferFile.Enabled = false;
-        }
-
-        // Set positively rather than mirroring the transfer window's gate — see ProtocolFeature.
+        // Both set positively — see ProtocolFeature. Every item was enabled by
+        // EnableMenuItemsRecursive before this ran, so an assignment says what the state is rather
+        // than leaving it to whatever an earlier branch happened not to turn off.
+        _cMenTreeToolsTransferFile.Enabled = ProtocolFeature.SupportsFileTransfer(connectionInfo.Protocol);
         _cMenTreeToolsFileManager.Enabled = ProtocolFeature.SupportsSftp(connectionInfo.Protocol);
 
         _cMenTreeToolsWakeOnLan.Enabled = WakeOnLan.IsValidMacAddress(connectionInfo.MacAddress);
