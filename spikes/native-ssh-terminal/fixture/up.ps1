@@ -19,6 +19,8 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+. (Join-Path $PSScriptRoot "keys.ps1")
+
 docker rm -f $Name 2>$null | Out-Null
 
 New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
@@ -26,13 +28,9 @@ $key = Join-Path $KeyDir "spike_key"
 
 # The private key is written below with inheritance stripped, so a plain Remove-Item on a leftover
 # from an earlier run fails with access denied and takes the whole script with it -- which is what
-# "idempotent" above was claiming not to do. Take ownership back before deleting.
+# "idempotent" above was claiming not to do.
 foreach ($stale in @($key, "$key.pub")) {
-    if (-not (Test-Path -LiteralPath $stale)) { continue }
-    try { (Get-Item -LiteralPath $stale -Force).IsReadOnly = $false } catch { }
-    icacls $stale /reset /Q 2>&1 | Out-Null
-    icacls $stale /grant "$($env:USERNAME):(F)" /Q 2>&1 | Out-Null
-    Remove-Item -LiteralPath $stale -Force -ErrorAction Stop
+    Remove-KeyFile -Path $stale
 }
 
 # The keypair is made before the server starts, in a throwaway container, so the public half can be
