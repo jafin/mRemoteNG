@@ -3,7 +3,21 @@
 ## 1. Spikes
 
 - [x] 1.1 **Hosting the split.** `PuttyBase` and `ProtocolOpenSSH` reparent a native window onto `InterfaceControl.Handle`. Prove a session window can be reparented into a child panel of a split without reintroducing window-chrome or focus artifacts, for PuTTY SSH2 and for `ProtocolOpenSSH`. If it proves messy, record the fallback (a dockable window bound to the active connection) and take it. Gates section 4. **Done 2026-08-09 — cleared, and it corrected the design.** No native window is reparented at all: the split goes *around* `InterfaceControl` (a `SplitContainer` in `ConnectionTab`, session in `Panel1`) rather than inside it, so all ten protocols that `SetParent` onto `InterfaceControl.Handle` are untouched and `InterfaceControl.Size` still means the session area. See design.md D4, revised. Full suite 7024/7024.
-- [ ] 1.2 Confirm what a second connection costs in practice: connect a session and a panel with an agent, with a stored password, and with a provider-supplied credential. Record how many prompts each produces.
+- [x] 1.2 Confirm what a second connection costs in practice: connect a session and a panel with an agent, with a stored password, and with a provider-supplied credential. Record how many prompts each produces. — Measured against a real sshd (the `native-ssh-terminal` fixture, container on 127.0.0.1:2222).
+
+  | Credential | Session | Panel |
+  |---|---|---|
+  | Agent (key loaded in ssh-agent) | 0 | 0 |
+  | Stored password on the connection | 0 | 0 |
+  | Provider-supplied | **not exercised** | |
+
+  **The provider case is inconclusive, deliberately.** `ExternalCredentialProvider` means a live third-party secrets system — Delinea, PasswordState, 1Password, Vault/OpenBao, PasswordSafe, LAPS. Five are licensed products or need a domain; only Vault/OpenBao is standable-up locally, and configuring its engine and field mapping is a long way round to a number the design already predicts. What the two measured rows establish is that the panel's second connection re-resolves credentials without asking the user anything, and the provider path goes through the *same* `SshCredentialResolver.Resolve` call (`SftpSession.cs:75`) as the two that were measured. What remains unknown is whether a particular vendor's connector prompts or rate-limits on a second fetch — a property of their SDK rather than of this design. **Nothing caches the resolved credential between the session and the panel, so a provider that charges for a fetch is charged twice.**
+
+  **Two faults surfaced while measuring, which is what the spike was for.**
+
+  The file manager was unreachable from a native SSH session at all: `ConnectionContextMenu` gated it on `SSH2 or OpenSSH`, inline in two places, and `SSHNative` arrived from a different change. Fixed, and the gate moved to `ProtocolFeature.SupportsSftp` with a test, because a protocol list duplicated at two call sites is what let it slip.
+
+  **`SftpSession` does not verify the host key.** The session builds a `HostKeyGate` with a `FileHostKeyStore` and a `DialogHostKeyVerifier` (`ProtocolNativeSsh.cs:258`); the panel subscribes nothing to `HostKeyReceived`, and SSH.NET accepts any key when nothing does. So part of the 0/0 above is not "asked once and remembered" but "never checked" — the panel would connect to an impostor without comment, beside a session that would refuse. Raised separately; it needs its own change, because whether the panel silently reuses the session's accepted key or prompts on its own is a design decision, not a patch.
 
 ## 2. SFTP session
 

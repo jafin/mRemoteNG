@@ -21,18 +21,64 @@ $ErrorActionPreference = "Stop"
 
 docker rm -f $Name 2>$null | Out-Null
 
+New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
+$key = Join-Path $KeyDir "spike_key"
+
+# The private key is written below with inheritance stripped, so a plain Remove-Item on a leftover
+# from an earlier run fails with access denied and takes the whole script with it -- which is what
+# "idempotent" above was claiming not to do. Take ownership back before deleting.
+foreach ($stale in @($key, "$key.pub")) {
+    if (-not (Test-Path -LiteralPath $stale)) { continue }
+    try { (Get-Item -LiteralPath $stale -Force).IsReadOnly = $false } catch { }
+    icacls $stale /reset /Q 2>&1 | Out-Null
+    icacls $stale /grant "$($env:USERNAME):(F)" /Q 2>&1 | Out-Null
+    Remove-Item -LiteralPath $stale -Force -ErrorAction Stop
+}
+
+# The keypair is made before the server starts, in a throwaway container, so the public half can be
+# handed to the image's own PUBLIC_KEY mechanism at run time.
+#
+# Writing authorized_keys after the fact does not work: the init creates its own, and on the overlay
+# filesystem a later write leaves *two* directory entries of that name with the lookup resolving to
+# the init's empty one. Every tool reports success and sshd reads nothing, so key auth fails with
+# "Permission denied (publickey)" and nothing in the container to explain it. Letting the image
+# install the key is the only version of this without a race.
+#
+# It also removes the dependency on ssh-keygen being on the host's PATH, which it frequently is not.
+Write-Host "Generating a keypair..."
+$keygen = "$Name-keygen"
+docker rm -f $keygen 2>$null | Out-Null
+docker run -d --name $keygen --entrypoint sleep linuxserver/openssh-server:latest 300 | Out-Null
+docker exec $keygen sh -c 'rm -f /tmp/spike_key /tmp/spike_key.pub; ssh-keygen -q -t ed25519 -N "" -f /tmp/spike_key -C spike' | Out-Null
+if ($LASTEXITCODE -ne 0) { docker rm -f $keygen | Out-Null; throw "key generation failed" }
+docker cp "${keygen}:/tmp/spike_key" $key | Out-Null
+docker cp "${keygen}:/tmp/spike_key.pub" "$key.pub" | Out-Null
+docker rm -f $keygen | Out-Null
+if (-not (Test-Path $key) -or -not (Test-Path "$key.pub")) { throw "could not copy the keypair out of $keygen" }
+
+$publicKey = (Get-Content "$key.pub" -Raw).Trim()
+
 Write-Host "Starting $Name on port $Port..."
 docker run -d --name $Name `
     -e PUID=1000 -e PGID=1000 -e TZ=Etc/UTC `
     -e PASSWORD_ACCESS=true -e USER_NAME=$User -e USER_PASSWORD=$Password `
-    -e SUDO_ACCESS=false `
+    -e SUDO_ACCESS=false -e PUBLIC_KEY="$publicKey" `
     -p "127.0.0.1:${Port}:2222" linuxserver/openssh-server:latest | Out-Null
 
 # Wait for sshd rather than sleeping a guessed amount.
+#
+# "sshd is listening" is necessary but not sufficient: the image's init is still populating /config
+# after that line appears. Writing to /config in the gap silently loses the write -- which cost the
+# benchmark payloads and, worse, authorized_keys, so key auth failed with no indication why. Probe
+# the directory as well, because it is the thing actually being waited on.
 $deadline = (Get-Date).AddSeconds(60)
 do {
     Start-Sleep -Milliseconds 500
-    $ready = (docker logs $Name 2>&1) -match "sshd is listening"
+    $listening = (docker logs $Name 2>&1) -match "sshd is listening"
+    # Existence only. `test -O` would ask whether the *effective* user owns it, and docker exec runs
+    # as root while /config belongs to uid 1000 — so it is false forever and the wait always expires.
+    $configReady = (docker exec $Name sh -c 'test -d /config && echo READY' 2>$null) -match "READY"
+    $ready = $listening -and $configReady
 } until ($ready -or (Get-Date) -gt $deadline)
 if (-not $ready) { throw "sshd did not come up within 60s" }
 
@@ -48,37 +94,11 @@ chmod -R a+r /config/bench
 # Password auth is what the image advertises, but its sshd_config ships PasswordAuthentication no.
 docker exec $Name sh -c "sed -i 's/^PasswordAuthentication no/PasswordAuthentication yes/' /etc/ssh/sshd_config; pkill -HUP sshd" | Out-Null
 
-Write-Host "Installing a keypair..."
-New-Item -ItemType Directory -Force -Path $KeyDir | Out-Null
-$key = Join-Path $KeyDir "spike_key"
-if (Test-Path $key) { Remove-Item "$key*" -Force }
-
-# Generated inside the container, not on the host: ssh-keygen is not reliably on PATH on Windows,
-# and an empty passphrase cannot be expressed portably through PowerShell's native argument
-# quoting -- `-N '""'` passes a literal two-character passphrase.
-docker exec $Name sh -c @'
-rm -f /tmp/spike_key /tmp/spike_key.pub
-ssh-keygen -q -t ed25519 -N "" -f /tmp/spike_key -C spike
-mkdir -p /config/.ssh
-cp /tmp/spike_key.pub /config/.ssh/authorized_keys
-chmod 700 /config/.ssh
-chmod 600 /config/.ssh/authorized_keys
-chown -R 1000:1000 /config/.ssh
-rm -f /tmp/spike_key.pub
-'@ | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "key generation failed inside $Name" }
-
-docker cp "${Name}:/tmp/spike_key" $key | Out-Null
-if (-not (Test-Path $key)) { throw "could not copy the private key out of $Name" }
-docker exec $Name rm -f /tmp/spike_key | Out-Null
-
 # docker cp writes the key with inherited ACLs, which grants Authenticated Users. SSH.NET does not
-# care, so mRemoteNG works either way, but ssh-add and ssh refuse the file outright - which makes
-# the agent half of task 8.5 untestable until this is tightened.
+# care, so mRemoteNG works either way, but ssh-add and ssh refuse the file outright. Tightening it
+# here is what makes the agent testable: with this line, `ssh-add` accepts the key and an agent
+# scenario can be exercised against this host.
 icacls $key /inheritance:r /grant:r "$($env:USERNAME):R" | Out-Null
-
-# ssh-add wants the public half alongside it; docker cp only brought the private key out.
-ssh-keygen -y -f $key | Out-File "$key.pub" -Encoding ascii
 
 Write-Host ""
 Write-Host "Ready." -ForegroundColor Green
