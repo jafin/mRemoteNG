@@ -72,7 +72,7 @@ public abstract class SftpIntegrationTestBase
             // The container's host key is fresh and is not the subject here. Accepting it outright
             // keeps these tests about SFTP; the gate's own behaviour is covered without a server in
             // HostKeyGateTests, and refusing here would only test the fixture.
-            new HostKeyGate(new NothingRemembered(), new AcceptAnyHostKey()));
+            AcceptingGate());
 
         _sessions.Add(session);
         return session;
@@ -127,6 +127,13 @@ public abstract class SftpIntegrationTestBase
     {
         public void Report(T value) => report(value);
     }
+
+    /// <summary>
+    /// A gate that accepts the container's key outright, for the same reason <see cref="NewSession"/>
+    /// does: the host key is fresh and is not what any of these tests are about.
+    /// </summary>
+    protected static HostKeyGate AcceptingGate() =>
+        new(new NothingRemembered(), new AcceptAnyHostKey());
 
     private sealed class NothingRemembered : IHostKeyStore
     {

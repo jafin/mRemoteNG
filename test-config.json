@@ -55,7 +55,7 @@
       {
         "name": "Integration",
         "filter": "FullyQualifiedName~mRemoteNGTests.IntegrationTests",
-        "expected": 21
+        "expected": 58
       }
     ],
     "isolated": [

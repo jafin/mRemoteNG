@@ -64,8 +64,24 @@ jobs:
       # The repo's canonical runner: throttled parallel groups plus the isolated
       # FrmOptions tests that need a message pump, and a coverage gate (exit 96) if a
       # namespace in the DLL is not claimed by any group in test-config.json.
+      #
+      # The SFTP integration group is skipped here, and only here. Its fixture starts a
+      # Linux container, and this job runs on a GitHub-hosted Windows image where Docker
+      # serves Windows containers only — there is no Docker Desktop or WSL2 backend to
+      # switch, so the pull fails with `No such image` and every test in the namespace
+      # fails in OneTimeSetUp. Running the group on a Linux job is not an alternative
+      # either: both projects target net10.0-windows and the fixtures are
+      # [SupportedOSPlatform("windows")].
+      #
+      # The fixture deliberately fails rather than skips when Docker is unavailable, so
+      # that a broken runner cannot pass quietly. That is the right default and is left
+      # alone; this variable is the deliberate opt-out it provides, and it is set at the
+      # one place where the absence is a known property of the runner rather than a
+      # fault. Remove it when this job runs somewhere that can start a Linux container.
       - name: Run tests
         shell: bash
+        env:
+          MRNG_SKIP_SFTP_INTEGRATION: 1
         run: bash run-tests-core.sh
 
       - name: Collect test results on failure
