@@ -253,9 +253,10 @@ public class ProtocolNativeSsh : ProtocolBase
 
         try
         {
-            // The dialog marshals to the terminal control, so the prompt appears over the tab the
-            // user is actually looking at rather than behind it.
-            HostKeyGate hostKeys = new(new FileHostKeyStore(), new DialogHostKeyVerifier(_webView));
+            // The dialog marshals to the terminal control, so the question is asked on the UI
+            // thread that owns this tab. The store is the shared one: a key accepted here has to be
+            // known to the file manager and the transfer window, which open their own connections.
+            HostKeyGate hostKeys = new(SharedHostKeyStore.Instance, new DialogHostKeyVerifier(_webView));
 
             NativeSshTerminalSession session =
                 NativeSshTerminalSession.ForConnection(_connectionInfo, hostKeys: hostKeys);

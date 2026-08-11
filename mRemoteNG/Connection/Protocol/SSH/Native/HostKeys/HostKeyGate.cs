@@ -1,4 +1,7 @@
 using System;
+using System.Collections.Generic;
+using System.Globalization;
+using System.Threading;
 
 namespace mRemoteNG.Connection.Protocol.SSH.Native.HostKeys;
 
@@ -54,10 +57,17 @@ public interface IHostKeyVerifier
 /// an inconvenience.
 /// </para>
 /// </remarks>
-public sealed class HostKeyGate(IHostKeyStore store, IHostKeyVerifier verifier)
+/// <param name="decisions">
+/// Serializes deciding about one endpoint. Defaults to the process-wide instance, which is what
+/// makes two connections opened at once cost one prompt rather than two; pass a private one to
+/// isolate a test.
+/// </param>
+public sealed class HostKeyGate(
+    IHostKeyStore store, IHostKeyVerifier verifier, HostKeyDecisionLock? decisions = null)
 {
     private readonly IHostKeyStore _store = store ?? throw new ArgumentNullException(nameof(store));
     private readonly IHostKeyVerifier _verifier = verifier ?? throw new ArgumentNullException(nameof(verifier));
+    private readonly HostKeyDecisionLock _decisions = decisions ?? HostKeyDecisionLock.Shared;
 
     /// <returns><c>true</c> if the session may proceed.</returns>
     public bool Evaluate(string host, int port, string keyAlgorithm, string fingerprint)
@@ -66,12 +76,22 @@ public sealed class HostKeyGate(IHostKeyStore store, IHostKeyVerifier verifier)
         ArgumentException.ThrowIfNullOrEmpty(keyAlgorithm);
         ArgumentException.ThrowIfNullOrEmpty(fingerprint);
 
-        string? known = _store.Find(host, port, keyAlgorithm);
-
-        // Already accepted: proceed without asking. Prompting every time trains users to click
-        // through the prompt, which is what makes the changed-key case dangerous.
-        if (string.Equals(known, fingerprint, StringComparison.Ordinal))
+        // Already accepted: proceed without asking, and without touching the lock. Prompting every
+        // time trains users to click through the prompt, which is what makes the changed-key case
+        // dangerous. Staying clear of the lock matters too — a caller on the UI thread must not
+        // wait on a decision another thread is making, and this is the case that would.
+        if (IsAlreadyAccepted(host, port, keyAlgorithm, fingerprint))
             return true;
+
+        using IDisposable decision = _decisions.Acquire(host, port, keyAlgorithm);
+
+        // Re-read under the lock. Another connection to this endpoint may have asked while this one
+        // waited, and taking its answer is the whole point: one question, one answer, both
+        // connections. Without this the loser of the race asks the user the same thing again.
+        if (IsAlreadyAccepted(host, port, keyAlgorithm, fingerprint))
+            return true;
+
+        string? known = _store.Find(host, port, keyAlgorithm);
 
         HostKeyPresentation presentation = new(
             host, port, keyAlgorithm, fingerprint, known,
@@ -82,6 +102,108 @@ public sealed class HostKeyGate(IHostKeyStore store, IHostKeyVerifier verifier)
 
         _store.Save(host, port, keyAlgorithm, fingerprint);
         return true;
+    }
+
+    private bool IsAlreadyAccepted(string host, int port, string keyAlgorithm, string fingerprint) =>
+        string.Equals(_store.Find(host, port, keyAlgorithm), fingerprint, StringComparison.Ordinal);
+}
+
+/// <summary>
+/// Holds an endpoint while it is being decided about, so concurrent connections to it ask once.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Separate from <see cref="HostKeyGate"/> because each window owns its own gate — the verifier has
+/// to reach a live UI thread — while the decision has to be serialized across all of them. A field
+/// on the gate would serialize nothing between the file manager and a session.
+/// </para>
+/// <para>
+/// The wait is bounded. <c>SSHTransferWindow</c> connects on the UI thread, so the UI thread can
+/// reach here; if it waits on a lock whose holder is trying to marshal a dialog onto that same
+/// thread, neither side moves. On expiry the caller falls through and asks its own question. Two
+/// prompts is the outcome this class exists to avoid, but it is not a safety failure, and a
+/// deadlocked application would be worse than being asked twice.
+/// </para>
+/// </remarks>
+public sealed class HostKeyDecisionLock
+{
+    private static readonly TimeSpan MaximumWait = TimeSpan.FromMinutes(2);
+
+    /// <summary>The one every gate uses unless told otherwise.</summary>
+    public static HostKeyDecisionLock Shared { get; } = new();
+
+    private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
+    private readonly Lock _table = new();
+
+    /// <summary>Holds the endpoint until the returned handle is disposed.</summary>
+    public IDisposable Acquire(string host, int port, string keyAlgorithm)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(host);
+        ArgumentException.ThrowIfNullOrEmpty(keyAlgorithm);
+
+        // The store's key, so the unit that is held is the unit that is remembered: a prompt for
+        // one endpoint must not block a connection to a different port on the same machine.
+        string key = string.Create(CultureInfo.InvariantCulture,
+            $"{host.ToUpperInvariant()}|{port}|{keyAlgorithm}");
+
+        Entry entry;
+        lock (_table)
+        {
+            if (!_entries.TryGetValue(key, out Entry? existing))
+            {
+                existing = new Entry();
+                _entries[key] = existing;
+            }
+
+            // Claimed before waiting, so the entry cannot be removed and replaced by a releasing
+            // holder while this caller is queued on the semaphore it is queued on.
+            existing.Waiters++;
+            entry = existing;
+        }
+
+        // A caller that timed out proceeds unserialized rather than failing the connection, and must
+        // not release a semaphore it never took.
+        bool held = entry.Gate.Wait(MaximumWait);
+        return new Release(this, key, entry, held);
+    }
+
+    private void ReleaseEntry(string key, Entry entry, bool held)
+    {
+        if (held)
+            entry.Gate.Release();
+
+        lock (_table)
+        {
+            if (--entry.Waiters > 0)
+                return;
+
+            if (_entries.TryGetValue(key, out Entry? current) && current == entry)
+                _entries.Remove(key);
+
+            entry.Gate.Dispose();
+        }
+    }
+
+    private sealed class Entry
+    {
+        public readonly SemaphoreSlim Gate = new(1, 1);
+
+        /// <summary>Everyone holding or queued for <see cref="Gate"/>, guarded by the table lock.</summary>
+        public int Waiters;
+    }
+
+    private sealed class Release(HostKeyDecisionLock owner, string key, Entry entry, bool held) : IDisposable
+    {
+        private bool _released;
+
+        public void Dispose()
+        {
+            if (_released)
+                return;
+
+            _released = true;
+            owner.ReleaseEntry(key, entry, held);
+        }
     }
 }
 

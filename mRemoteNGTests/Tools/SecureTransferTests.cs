@@ -1,6 +1,8 @@
-using System.Linq;
+﻿using System.Linq;
+using mRemoteNG.Connection.Protocol.SSH.Native.HostKeys;
 using mRemoteNG.Security.Ssh;
 using mRemoteNG.Tools;
+using mRemoteNGTests.Connection.Protocol.SSH.Native;
 using NUnit.Framework;
 
 namespace mRemoteNGTests.Tools;
@@ -14,6 +16,7 @@ namespace mRemoteNGTests.Tools;
 public class SecureTransferTests
 {
     private const string Host = "example-host";
+    private const string Algorithm = "ssh-ed25519";
 
     private static readonly string[] PasswordThenKeyboardInteractive = ["password", "keyboard-interactive"];
     private static readonly string[] KeyboardInteractiveOnly = ["keyboard-interactive"];
@@ -158,8 +161,172 @@ public class SecureTransferTests
         Assert.DoesNotThrow(transfer.Dispose);
     }
 
+    // ---- host keys -------------------------------------------------------------
+
+    /// <summary>
+    /// Both protocols, every time. <c>CreateClient</c> branches on <see
+    /// cref="SecureTransfer.SshTransferProtocol"/>, and a client built down an untested branch would
+    /// connect with nothing verifying the host key at all — which is exactly how this window came to
+    /// have no verification for either.
+    /// </summary>
+    [Test]
+    [TestCase(true)]
+    [TestCase(false)]
+    public void AnUnknownKeyIsRefusedWhenTheUserDeclines(bool scp)
+    {
+        MemoryHostKeyStore store = new();
+        RecordingHostKeyVerifier verifier = new(answer: false);
+
+        using SecureTransfer transfer = CreateWithGate(store, verifier, Protocol(scp));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(transfer.TrustHostKey(Algorithm, HostKeyFingerprints.First), Is.False);
+            Assert.That(verifier.Asked, Has.Count.EqualTo(1));
+            Assert.That(verifier.Asked[0].Status, Is.EqualTo(HostKeyStatus.Unknown));
+            Assert.That(store.SaveCount, Is.Zero);
+        });
+    }
+
+    [Test]
+    [TestCase(true)]
+    [TestCase(false)]
+    public void AKeyAlreadyAcceptedTransfersWithNoPrompt(bool scp)
+    {
+        MemoryHostKeyStore store = new();
+        store.Save(Host, 22, Algorithm, HostKeyFingerprints.First);
+        RecordingHostKeyVerifier verifier = new(answer: false);
+
+        using SecureTransfer transfer = CreateWithGate(store, verifier, Protocol(scp));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(transfer.TrustHostKey(Algorithm, HostKeyFingerprints.First), Is.True);
+            Assert.That(verifier.Asked, Is.Empty);
+        });
+    }
+
+    [Test]
+    [TestCase(true)]
+    [TestCase(false)]
+    public void AChangedKeyIsRefusedWhenTheUserDeclines(bool scp)
+    {
+        MemoryHostKeyStore store = new();
+        store.Save(Host, 22, Algorithm, HostKeyFingerprints.First);
+        RecordingHostKeyVerifier verifier = new(answer: false);
+
+        using SecureTransfer transfer = CreateWithGate(store, verifier, Protocol(scp));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(transfer.TrustHostKey(Algorithm, HostKeyFingerprints.Second), Is.False);
+            Assert.That(verifier.Asked[0].Status, Is.EqualTo(HostKeyStatus.Changed));
+            Assert.That(store.Find(Host, 22, Algorithm), Is.EqualTo(HostKeyFingerprints.First));
+        });
+    }
+
+    [Test]
+    [TestCase(true)]
+    [TestCase(false)]
+    public void TheSameHostOnADifferentPortIsAskedAboutSeparately(bool scp)
+    {
+        MemoryHostKeyStore store = new();
+        store.Save(Host, 22, Algorithm, HostKeyFingerprints.First);
+        RecordingHostKeyVerifier verifier = new(answer: false);
+
+        using SecureTransfer transfer = CreateWithGate(store, verifier, Protocol(scp), port: 2222);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(transfer.TrustHostKey(Algorithm, HostKeyFingerprints.First), Is.False);
+            Assert.That(verifier.Asked[0].Status, Is.EqualTo(HostKeyStatus.Unknown));
+            Assert.That(verifier.Asked[0].Port, Is.EqualTo(2222));
+        });
+    }
+
+    [Test]
+    [TestCase(true)]
+    [TestCase(false)]
+    public void ADifferentKeyAlgorithmIsAskedAboutSeparately(bool scp)
+    {
+        MemoryHostKeyStore store = new();
+        store.Save(Host, 22, Algorithm, HostKeyFingerprints.First);
+        RecordingHostKeyVerifier verifier = new(answer: false);
+
+        using SecureTransfer transfer = CreateWithGate(store, verifier, Protocol(scp));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(transfer.TrustHostKey("ssh-rsa", HostKeyFingerprints.Second), Is.False);
+            Assert.That(verifier.Asked[0].Status, Is.EqualTo(HostKeyStatus.Unknown));
+        });
+    }
+
+    [Test]
+    [TestCase(true)]
+    [TestCase(false)]
+    public void AnAcceptedChangeReplacesTheStoredKeyAndTheOldOneIsThenTheChangedOne(bool scp)
+    {
+        MemoryHostKeyStore store = new();
+        store.Save(Host, 22, Algorithm, HostKeyFingerprints.First);
+        RecordingHostKeyVerifier verifier = new(answer: true);
+
+        using SecureTransfer transfer = CreateWithGate(store, verifier, Protocol(scp));
+
+        transfer.TrustHostKey(Algorithm, HostKeyFingerprints.Second);
+        transfer.TrustHostKey(Algorithm, HostKeyFingerprints.First);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(verifier.Asked, Has.Count.EqualTo(2));
+            Assert.That(verifier.Asked[1].Status, Is.EqualTo(HostKeyStatus.Changed),
+                "the fingerprint that was replaced is not privileged by having once been accepted");
+            Assert.That(verifier.Asked[1].PreviousFingerprint, Is.EqualTo(HostKeyFingerprints.Second));
+        });
+    }
+
+    [Test]
+    [TestCase(true)]
+    [TestCase(false)]
+    public void BothProtocolsProduceOneClientForTheHostKeyCallbackToBeWiredTo(bool scp)
+    {
+        // The subscription is made once, on this property, outside the protocol branch. That is
+        // what keeps the two paths from diverging again; this asserts the property answers for
+        // both, so there is no branch where the subscription silently applies to nothing.
+        using SecureTransfer transfer = Create(
+            new ResolvedSshCredential("alice", secret: "secret123"), Protocol(scp));
+
+        transfer.CreateClient();
+
+        Assert.That(transfer.ProtocolClient, Is.Not.Null);
+    }
+
+    [Test]
+    public void WithNoGateSuppliedAnUnknownKeyIsRefused()
+    {
+        using SecureTransfer transfer = Create(
+            new ResolvedSshCredential("alice", secret: "secret123"),
+            SecureTransfer.SshTransferProtocol.Sftp);
+
+        Assert.That(transfer.TrustHostKey(Algorithm, HostKeyFingerprints.First), Is.False);
+    }
+
     private static SecureTransfer Create(ResolvedSshCredential credential,
         SecureTransfer.SshTransferProtocol protocol,
         int port = 22) =>
         new(Host, port, credential, protocol, "local.txt", "/remote.txt");
+
+    private static SecureTransfer CreateWithGate(MemoryHostKeyStore store,
+        RecordingHostKeyVerifier verifier,
+        SecureTransfer.SshTransferProtocol protocol,
+        int port = 22) =>
+        new(Host, port, new ResolvedSshCredential("alice"), protocol, "local.txt", "/remote.txt",
+            new HostKeyGate(store, verifier, new HostKeyDecisionLock()));
+
+    /// <summary>
+    /// The protocol under test, taken as a bool because <see cref="SecureTransfer"/> is internal and
+    /// a public test method cannot declare a parameter of its nested enum.
+    /// </summary>
+    private static SecureTransfer.SshTransferProtocol Protocol(bool scp) =>
+        scp ? SecureTransfer.SshTransferProtocol.Scp : SecureTransfer.SshTransferProtocol.Sftp;
 }

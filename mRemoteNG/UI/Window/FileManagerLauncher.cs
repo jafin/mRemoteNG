@@ -3,6 +3,7 @@ using System.Linq;
 using System.Runtime.Versioning;
 using mRemoteNG.App;
 using mRemoteNG.Connection;
+using mRemoteNG.Connection.Protocol.SSH.Native.HostKeys;
 using mRemoteNG.Connection.Sftp;
 using mRemoteNG.Messages;
 using mRemoteNG.UI.Panels;
@@ -39,7 +40,16 @@ public static class FileManagerLauncher
             // Its own SFTP session, resolved from the connection the same way every other
             // SSH.NET-backed caller does. It does not touch a session tab for the same
             // connection: sharing a transport is not available.
-            SftpSession session = SftpSession.ForConnection(connectionInfo);
+            //
+            // The gate reads the store every other consumer reads, so a host already accepted for a
+            // session is known here and costs no prompt. The verifier is this panel's own: the
+            // control selects the UI thread the question is asked on, not the window it appears
+            // over, so the panel hosting the tab serves as well as the terminal's WebView does
+            // there. It is bound to the host panel rather than the tab because the session is built
+            // before the tab that shows it.
+            HostKeyGate hostKeys = new(SharedHostKeyStore.Instance, new DialogHostKeyVerifier(host));
+
+            SftpSession session = SftpSession.ForConnection(connectionInfo, hostKeys: hostKeys);
             FileManagerTab tab = new(connectionInfo, session);
 
             tab.Show(host.GetDockPanel(), DockState.Document);

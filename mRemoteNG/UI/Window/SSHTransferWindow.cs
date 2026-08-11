@@ -6,6 +6,7 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Windows.Forms;
 using mRemoteNG.App;
+using mRemoteNG.Connection.Protocol.SSH.Native.HostKeys;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Security.Ssh;
@@ -400,8 +401,14 @@ public class SSHTransferWindow : BaseWindow
 
         try
         {
+            // This window has never verified host keys, so a user transferring to a host they have
+            // never opened a session to will now be asked. The store is the shared one, so a host
+            // already accepted anywhere in the application costs nothing here. The verifier
+            // marshals to this window, which is the UI thread Connect runs on.
+            HostKeyGate hostKeys = new(SharedHostKeyStore.Instance, new DialogHostKeyVerifier(this));
+
             st = new SecureTransfer(txtHost.Text, int.Parse(txtPort.Text, CultureInfo.InvariantCulture),
-                BuildCredential(), Protocol, txtLocalFile.Text, txtRemoteFile.Text);
+                BuildCredential(), Protocol, txtLocalFile.Text, txtRemoteFile.Text, hostKeys);
             st.UploadProgress += SecureTransfer_UploadProgress;
 
             // Connect creates the protocol objects and makes the initial connection.
