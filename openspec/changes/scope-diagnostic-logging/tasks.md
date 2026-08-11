@@ -16,14 +16,17 @@
 
 ## 3. Confirm no secrets are logged
 
-- [ ] 3.1 Add a test asserting no password-bearing property is written to the message collector or the log. This encodes the current state, which is already correct, so that enabling verbose does not quietly become an extraction path later.
+- [x] 3.1 Add a test asserting no password-bearing property is written to the message collector or the log. This encodes the current state, which is already correct, so that enabling verbose does not quietly become an extraction path later. — `LogSecretExclusionTests`. Drives the one unit-testable path that holds a secret and then reports on it: resolve the credential, translate it for the OpenSSH backend (which cannot use a password and so always has something to say), replay the diagnostics as the protocols do, with every message filter on. The secret-bearing properties are filled by reflection rather than listed, so a password property added to `ConnectionInfo` later is covered without anyone returning here. Confirmed non-vacuous by mutation: appending `RevealSecret()` to the credential rendering fails all three tests, naming the property that leaked. **Boundary, recorded rather than glossed:** only `Password` travels this path. `RDGatewayPassword` and `VNCProxyPassword` reach the log through `RdpProtocol`, which needs the RDP ActiveX control and a message pump; their assertions are a tripwire for a future leak into this path, not coverage of their own.
 - [x] 3.2 Record in the proposal what was checked, so a future audit does not re-derive it — done in proposal.md.
 
 ## 4. Verification
 
-- [ ] 4.1 Full build; zero new analyzer warnings.
-- [ ] 4.2 Full test suite; zero failures, no `[Ignore]`.
-- [ ] 4.3 `openspec validate scope-diagnostic-logging --strict`.
+- [x] 4.1 Full build; zero new analyzer warnings. — Done 2026-08-12. Clean; the only warnings in the build are the pre-existing MA0002/MA0006 in the SFTP integration tests, untouched by this change.
+- [x] 4.2 Full test suite; zero failures, no `[Ignore]`. — Done 2026-08-12. 7,800 passed, 0 failed, 0 crashes across all nine groups plus the isolated `FrmOptions` phase.
+- [x] 4.3 `openspec validate scope-diagnostic-logging --strict`. — Done 2026-08-12 — valid.
 - [ ] 4.4 Manual: fresh profile, run, confirm the log holds startup information and no debug noise.
 - [ ] 4.5 Manual: switch to verbose, confirm debug messages appear without restarting, switch back, confirm they stop.
 - [ ] 4.6 Manual: launch with `-qc:user@host`, confirm the logged command line is redacted the same way the debug report renders it.
+
+4.4–4.6 are the only work left in this change. They need the application on a desktop and 4.6 opens a
+connection, so they were not run from the automated session that closed 3.1 and 4.1–4.3.
