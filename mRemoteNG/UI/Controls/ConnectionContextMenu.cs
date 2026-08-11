@@ -1044,11 +1044,8 @@ public sealed class ConnectionContextMenu : ContextMenuStrip
             _cMenTreeToolsTransferFile.Enabled = false;
         }
 
-        // Set positively rather than mirroring the transfer window's gate. The file manager
-        // opens its own SSH.NET connection, so it also serves an OpenSSH connection - but not
-        // SSH1, which SSH.NET's SFTP does not support.
-        _cMenTreeToolsFileManager.Enabled =
-            connectionInfo.Protocol is ProtocolType.SSH2 or ProtocolType.OpenSSH;
+        // Set positively rather than mirroring the transfer window's gate — see ProtocolFeature.
+        _cMenTreeToolsFileManager.Enabled = ProtocolFeature.SupportsSftp(connectionInfo.Protocol);
 
         _cMenTreeToolsWakeOnLan.Enabled = WakeOnLan.IsValidMacAddress(connectionInfo.MacAddress);
 
@@ -1094,11 +1091,8 @@ public sealed class ConnectionContextMenu : ContextMenuStrip
             _cMenTreeToolsTransferFile.Enabled = false;
         }
 
-        // Set positively rather than mirroring the transfer window's gate. The file manager
-        // opens its own SSH.NET connection, so it also serves an OpenSSH connection - but not
-        // SSH1, which SSH.NET's SFTP does not support.
-        _cMenTreeToolsFileManager.Enabled =
-            connectionInfo.Protocol is ProtocolType.SSH2 or ProtocolType.OpenSSH;
+        // Set positively rather than mirroring the transfer window's gate — see ProtocolFeature.
+        _cMenTreeToolsFileManager.Enabled = ProtocolFeature.SupportsSftp(connectionInfo.Protocol);
 
         _cMenTreeToolsWakeOnLan.Enabled = WakeOnLan.IsValidMacAddress(connectionInfo.MacAddress);
 
