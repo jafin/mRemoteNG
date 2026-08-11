@@ -88,7 +88,9 @@ public static class ProtocolFeature
     /// <remarks>
     /// The file manager opens its own SSH.NET connection rather than reusing the session's, so what
     /// matters is whether SSH.NET's SFTP can talk to the host — not how the session itself is
-    /// hosted.
+    /// hosted. That admits <see cref="ProtocolType.SSH2"/>, <see cref="ProtocolType.OpenSSH"/> and
+    /// <see cref="ProtocolType.SSHNative"/>, and excludes <see cref="ProtocolType.SSH1"/>, which
+    /// SSH.NET's SFTP does not support.
     /// <para>
     /// Stated here rather than inline at the menu because it was inline, in two places, when
     /// <see cref="ProtocolType.SSHNative"/> was added by a different change — so the native SSH

@@ -448,7 +448,7 @@
     <value>Impossível salvar lista de ligação.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Falha de descriptografia. {0}</value>
+    <value>Falha de descriptografia.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Falha de descriptografia. {0}</value>

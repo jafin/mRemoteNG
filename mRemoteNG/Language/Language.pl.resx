@@ -482,7 +482,7 @@ Utworzono nowy plik połączeń.</value>
     <value>Nie udało się uruchomić PuTTY.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Odszyfrowywanie nie powiodło się. {0}</value>
+    <value>Odszyfrowywanie nie powiodło się.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Szyfrowywanie nie powiodło się. {0}</value>

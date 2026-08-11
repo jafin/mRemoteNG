@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Windows.Forms;
@@ -299,12 +300,48 @@ public partial class FrmOptions : Form
         if (page == null) return;
         page.ApplyLanguage();
         page.LoadRegistrySettings();
-        page.LoadSettings();
+
+        LoadSettingsSafely(page);
+
         _optionPages.Add(page);
         lstOptionPages.AddObject(page);
 
         // Track changes in all controls on the page
         TrackChangesInControls(page);
+    }
+
+    /// <summary>
+    /// Loads one page's settings, keeping a page that cannot read one of them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The page is kept with whatever it managed to load. Letting the exception escape during
+    /// initialization left the page out of <c>_optionPages</c> and aborted the loop that builds the
+    /// rest — a single unreadable secret produced an empty Options window with nothing said about
+    /// why, and Options is the only place the bad value can be corrected. Escaping during a reload
+    /// is worse still: <see cref="BtnCancel_Click"/> reloads before raising <c>CloseRequested</c>,
+    /// so the throw would leave Cancel unable to close the dialog it was meant to abandon.
+    /// </para>
+    /// <para>
+    /// Reading a settings secret now throws rather than returning plausible bytes, which is the
+    /// point of authenticating them; that makes this path reachable where it never was before.
+    /// </para>
+    /// </remarks>
+    private static void LoadSettingsSafely(OptionsPage page)
+    {
+        try
+        {
+            page.LoadSettings();
+        }
+        catch (Exception ex)
+        {
+            // logOnly: false — this has to reach the user, not just the log. The setting it failed
+            // to read is one they can only correct from this page, and a field that is silently
+            // blank reads as "nothing was configured" rather than "this could not be decrypted".
+            Runtime.MessageCollector.AddExceptionMessage(
+                string.Format(CultureInfo.InvariantCulture, Language.ErrorOptionsPageSettingsNotLoaded, page.PageName),
+                ex, logOnly: false);
+        }
     }
 
     private object ImageGetter(object rowobject)
@@ -468,7 +505,7 @@ public partial class FrmOptions : Form
         try
         {
             foreach (OptionsPage page in _optionPages)
-                page.LoadSettings();
+                LoadSettingsSafely(page);
         }
         finally
         {

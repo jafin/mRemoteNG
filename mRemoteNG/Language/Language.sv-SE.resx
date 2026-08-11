@@ -479,7 +479,7 @@ Startar med en ny anslutningsfil.</value>
     <value>PuTTY kunde inte startas.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Dekryptering misslyckades. {0}</value>
+    <value>Dekryptering misslyckades.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Kryptering misslyckades. {0}</value>

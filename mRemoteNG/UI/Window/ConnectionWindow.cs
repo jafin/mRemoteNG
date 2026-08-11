@@ -1447,11 +1447,7 @@ public partial class ConnectionWindow : BaseWindow
                 cmenTabTransferFile.Visible = false;
             }
 
-            if (interfaceControl.Info.Protocol == ProtocolType.SSH1 |
-                interfaceControl.Info.Protocol == ProtocolType.SSH2)
-            {
-                cmenTabTransferFile.Visible = true;
-            }
+            cmenTabTransferFile.Visible = ProtocolFeature.SupportsFileTransfer(interfaceControl.Info.Protocol);
 
             ConnectionInfo? selectedConnectionInfo = GetMultiSshConnectionInfoForTab(GetSelectedTab());
             bool showMultiSshFilters = interfaceControl.Protocol is PuttyBase && selectedConnectionInfo != null;
@@ -1545,8 +1541,7 @@ public partial class ConnectionWindow : BaseWindow
             InterfaceControl? interfaceControl = GetInterfaceControl();
             if (interfaceControl == null) return;
 
-            if (interfaceControl.Info.Protocol == ProtocolType.SSH1 |
-                interfaceControl.Info.Protocol == ProtocolType.SSH2)
+            if (ProtocolFeature.SupportsFileTransfer(interfaceControl.Info.Protocol))
                 SshTransferFile();
             else if (interfaceControl.Info.Protocol == ProtocolType.VNC)
                 VncTransferFile();

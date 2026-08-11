@@ -2204,7 +2204,7 @@ namespace mRemoteNG.Resources.Language {
         }
         
         /// <summary>
-        ///   Looks up a localized string similar to Decryption failed. {0}.
+        ///   Looks up a localized string similar to Decryption failed.
         /// </summary>
         internal static string ErrorDecryptionFailed {
             get {
@@ -8848,6 +8848,15 @@ namespace mRemoteNG.Resources.Language {
         internal static string ExportClassicFormatContent {
             get {
                 return ResourceManager.GetString("ExportClassicFormatContent", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Options page &quot;{0}&quot; could not load all of its settings. A value that could not be read has been left blank; re-entering it will replace it.
+        /// </summary>
+        internal static string ErrorOptionsPageSettingsNotLoaded {
+            get {
+                return ResourceManager.GetString("ErrorOptionsPageSettingsNotLoaded", resourceCulture);
             }
         }
     }

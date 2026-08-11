@@ -30,7 +30,7 @@ and adapted (including SQL-schema support upstream does not have).
 ### Changed
 - Dependencies synced to upstream levels: Microsoft.Data.SqlClient 7.0.2, WebView2 1.0.4022.49, AWSSDK current
 - Test suite grown to **6,329 tests** (0 failures)
-- **Replaced log4net with Serilog** for file-based diagnostic logging — same rolling-file policy (10MB per file, 5 backups), same log fields (timestamp, thread id, level, message), but the on-disk line format now comes from a Serilog output template instead of log4net's `PatternLayout`; any external tooling doing strict text parsing of `mRemoteNG.log` may need to adjust
+- **Replaced log4net with Serilog** for file-based diagnostic logging — same rolling-file policy (10MB per file, 5 backups), same log fields (timestamp, thread id, level, message), but the on-disk line format now comes from a Serilog output template instead of log4net's `PatternLayout`; any external tooling doing strict text parsing of `mRemoteNG.log` may need to adjust — in particular the level column now reads `INFORMATION` and `WARNING` where log4net wrote `INFO` and `WARN`
 
 ## [1.82.0] - 2026-07-02
 

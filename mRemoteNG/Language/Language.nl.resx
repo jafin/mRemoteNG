@@ -455,7 +455,7 @@ Beginnen met nieuwe Connectie bestand.</value>
     <value>De connectie lijst kan niet worden opgeslagen..</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Decryptie is mislukt. {0}</value>
+    <value>Decryptie is mislukt.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Encryptie is mislukt. {0}</value>

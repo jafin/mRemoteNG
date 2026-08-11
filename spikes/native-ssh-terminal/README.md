@@ -23,6 +23,10 @@ cd NativeTerminalSpike/bin/Release/net10.0-windows
 pwsh -File fixture/down.ps1
 ```
 
+`up.ps1` and `down.ps1` both take `-KeyDir`; pass the same value to both, or neither. Teardown
+deletes only the directory it is told about, and a private key it never looks at is one it cannot
+report on.
+
 Add `--delivery inline` to measure the `NavigateToString` route instead of the default virtual-host
 mapping. Add `--password spikepass` instead of `--key` to exercise password auth.
 

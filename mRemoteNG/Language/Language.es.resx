@@ -449,7 +449,7 @@ Arrancando con un nuevo archivo de conexiones.</value>
     <value>La lista de conexiones no ha podido ser grabada.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Descifrado fallido. {0}</value>
+    <value>Descifrado fallido.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Cifrado fallido. {0}</value>

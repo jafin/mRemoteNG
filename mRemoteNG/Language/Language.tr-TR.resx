@@ -477,7 +477,7 @@ Yeni bağlantılar dosyası ile başlanıyor.</value>
     <value>PuTTY başlatılamadı.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Çözümleme başarısız. {0}</value>
+    <value>Çözümleme başarısız.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Şifreleme başarısız. {0}</value>
