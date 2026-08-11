@@ -14,8 +14,20 @@ namespace mRemoteNG.App;
 public class Logger
 {
     private const long MaxFileSizeBytes = 10 * 1024 * 1024;
-    private const int MaxRetainedFiles = 5;
-    private const string OutputTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss,fff} [{ThreadId}] {Level:u6}- {Message:lj}{NewLine}{Exception}";
+
+    /// <summary>The active log file plus five rolled-over backups.</summary>
+    /// <remarks>
+    /// Serilog counts the file it is currently writing, so the limit is one higher than log4net's
+    /// <c>maxSizeRollBackups</c> was for the same "1 main log + 5 backups" policy.
+    /// </remarks>
+    private const int MaxRetainedFiles = 6;
+
+    /// <remarks>
+    /// <c>{Level,-6:u}</c> rather than <c>{Level:u6}</c>: a width given inside the format specifier
+    /// truncates, which turned Information and Warning into <c>INFORM</c> and <c>WARNIN</c> in the
+    /// log. Alignment pads without truncating, which is what log4net's <c>%-6level</c> did.
+    /// </remarks>
+    private const string OutputTemplate = "{Timestamp:yyyy-MM-dd HH:mm:ss,fff} [{ThreadId}] {Level,-6:u}- {Message:lj}{NewLine}{Exception}";
 
     public static readonly Logger Instance = new();
 
@@ -98,6 +110,8 @@ public class Logger
                     formatProvider: CultureInfo.InvariantCulture)
                 .CreateLogger();
 
+            // Disposed after the replacement is live so a message logged mid-switch still lands.
+            // Safe even when the path is unchanged: the file sink opens lazily, on the first write.
             (previous as IDisposable)?.Dispose();
         }
     }
