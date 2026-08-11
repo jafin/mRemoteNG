@@ -79,9 +79,9 @@ password can pass the check and expose the hostnames, usernames and ports, which
 
 Scoped to the version, because an empty sentinel means two different things. At the
 authenticated-encryption version it means the database was never initialised and there is nothing to
-verify a password against. Below it, it means the database has no master password — which is how
-every SQL store in existence today is configured, and refusing those would lock out installations
-that work.
+verify a password against. Below it, it means that particular database has no master password
+configured — a legacy database with one stores a sentinel — and refusing those would lock out
+installations that work today.
 
 ### Requirement: A SQL database is reachable from any machine and any edition
 

@@ -37,7 +37,13 @@ the one to keep.
 
 - **WHEN** the command line is written to the log at startup
 - **THEN** the user profile path is replaced with a placeholder
-- **AND** the result matches what the debug report would contain
+- **AND** hostnames and accounts are left intact
+
+The startup log and the debug report deliberately redact to different strengths, so they do not
+produce the same text and the requirement must not ask them to. The log is the user's own file, read
+to work out what went wrong, and stripping the hostnames from one line while every connection message
+below still carries them would cost the log its use and hide nothing. Path redaction is the part they
+share, because a profile path carries the Windows account name and nothing being logged needs it.
 
 #### Scenario: A new caller logs the command line
 

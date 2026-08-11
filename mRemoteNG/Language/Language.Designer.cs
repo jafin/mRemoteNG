@@ -8717,6 +8717,24 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string similar to Storage Format.
+        /// </summary>
+        internal static string StorageFormatProperty {
+            get {
+                return ResourceManager.GetString("StorageFormatProperty", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Classic stores can be opened by upstream mRemoteNG. Hardened stores cannot.
+        /// </summary>
+        internal static string PropertyDescriptionStorageFormat {
+            get {
+                return ResourceManager.GetString("PropertyDescriptionStorageFormat", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to This store already uses the hardened format.
         /// </summary>
         internal static string StorageFormatAlreadyHardened {

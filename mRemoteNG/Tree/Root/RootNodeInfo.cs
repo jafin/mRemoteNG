@@ -118,8 +118,8 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Miscellaneous)),
      Browsable(true),
      ReadOnly(true),
-     DisplayName("Storage Format"),
-     Description("Classic stores can be opened by upstream mRemoteNG. Hardened stores cannot.")]
+     LocalizedAttributes.LocalizedDisplayName(nameof(Language.StorageFormatProperty)),
+     LocalizedAttributes.LocalizedDescription(nameof(Language.PropertyDescriptionStorageFormat))]
     public string StorageFormatDisplay => Security.StorageFormat.Describe(StorageFormat);
 
     [Browsable(false)]
