@@ -65,7 +65,7 @@ public sealed class NativeSshTerminalSession : INativeSshTerminalSession
         _host = host;
         _port = port;
         _credential = credential;
-        _hostKeys = hostKeys ?? new HostKeyGate(new FileHostKeyStore(), new DenyUnverifiedHostKeys());
+        _hostKeys = hostKeys ?? new HostKeyGate(SharedHostKeyStore.Instance, new DenyUnverifiedHostKeys());
 
         // Translated up front rather than at connect time so Diagnostics is answerable before a
         // connection exists — the protocol reports them whether or not the session got that far.

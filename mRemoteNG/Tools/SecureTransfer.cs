@@ -4,11 +4,13 @@ using System.Runtime.Versioning;
 using System.Threading;
 using System.Threading.Tasks;
 using mRemoteNG.App;
+using mRemoteNG.Connection.Protocol.SSH.Native.HostKeys;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Security.Ssh;
 using mRemoteNG.Security.Ssh.Adapters;
 using Renci.SshNet;
+using Renci.SshNet.Common;
 using SshNetConnectionInfo = Renci.SshNet.ConnectionInfo;
 
 namespace mRemoteNG.Tools;
@@ -29,6 +31,7 @@ internal sealed class SecureTransfer : IDisposable
     private readonly string _host;
     private readonly int _port;
     private readonly ResolvedSshCredential _credential;
+    private readonly HostKeyGate _hostKeys;
     private SshNetAuthentication? _authentication;
 
     public readonly SshTransferProtocol Protocol;
@@ -49,18 +52,25 @@ internal sealed class SecureTransfer : IDisposable
     /// has finished with it. The authentication methods read it lazily, so it must stay alive
     /// for the whole connection.
     /// </param>
+    /// <param name="hostKeys">
+    /// Decides whether the presented host key is acceptable. Omitting it refuses every key that
+    /// would have needed a question, while still proceeding on one already accepted — the gate
+    /// reads the shared store before it reaches a verifier.
+    /// </param>
     public SecureTransfer(string host,
         int port,
         ResolvedSshCredential credential,
         SshTransferProtocol protocol,
         string source = "",
-        string dest = "")
+        string dest = "",
+        HostKeyGate? hostKeys = null)
     {
         ArgumentNullException.ThrowIfNull(credential);
 
         _host = host;
         _port = port;
         _credential = credential;
+        _hostKeys = hostKeys ?? new HostKeyGate(SharedHostKeyStore.Instance, new DenyUnverifiedHostKeys());
         Protocol = protocol;
         SrcFile = source.Trim('"');
         DstFile = dest.Trim('"');
@@ -100,7 +110,19 @@ internal sealed class SecureTransfer : IDisposable
         {
             SftpClt = new SftpClient(connectionInfo);
         }
+
+        // Deliberately outside the branch. Without a handler SSH.NET accepts whatever key it is
+        // offered, and a per-branch subscription is one edit away from covering only the protocol
+        // whoever made the edit was thinking about. Both clients are BaseClient; one line here
+        // makes the two paths unable to diverge.
+        ProtocolClient!.HostKeyReceived += OnHostKeyReceived;
     }
+
+    /// <summary>
+    /// Whichever client the protocol selected, as the base type that carries everything common to
+    /// both — the host key callback above being the reason this exists.
+    /// </summary>
+    internal BaseClient? ProtocolClient => (BaseClient?)ScpClt ?? SftpClt;
 
     public void Connect()
     {
@@ -182,6 +204,18 @@ internal sealed class SecureTransfer : IDisposable
     private void OnScpUploading(object? sender, Renci.SshNet.Common.ScpUploadEventArgs e) =>
         ReportProgress((long)e.Uploaded, e.Size);
 
+    private void OnHostKeyReceived(object? sender, HostKeyEventArgs e) =>
+        // Formatted as OpenSSH prints it, and identically to the terminal session's, because both
+        // are compared against the one store.
+        e.CanTrust = TrustHostKey(e.HostKeyName, $"SHA256:{e.FingerPrintSHA256}");
+
+    /// <summary>
+    /// The trust decision for a presented key. Separated from SSH.NET's event so both protocols'
+    /// behaviour is assertable without a server.
+    /// </summary>
+    internal bool TrustHostKey(string keyAlgorithm, string fingerprint) =>
+        _hostKeys.Evaluate(_host, _port, keyAlgorithm, fingerprint);
+
     private void ReportProgress(long transferred, long total) =>
         UploadProgress?.Invoke(this, new SecureTransferProgressEventArgs(transferred, total));
 
@@ -212,6 +246,9 @@ internal sealed class SecureTransfer : IDisposable
     {
         if (ScpClt is not null)
             ScpClt.Uploading -= OnScpUploading;
+
+        if (ProtocolClient is not null)
+            ProtocolClient.HostKeyReceived -= OnHostKeyReceived;
 
         ScpClt?.Dispose();
         SftpClt?.Dispose();

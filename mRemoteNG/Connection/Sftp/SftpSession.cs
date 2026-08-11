@@ -5,6 +5,7 @@ using System.Runtime.Versioning;
 using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
+using mRemoteNG.Connection.Protocol.SSH.Native.HostKeys;
 using mRemoteNG.Security.Ssh;
 using mRemoteNG.Security.Ssh.Adapters;
 using mRemoteNG.Security.Ssh.Agent;
@@ -38,6 +39,7 @@ public sealed class SftpSession : ISftpSession
     private readonly string _host;
     private readonly int _port;
     private readonly ResolvedSshCredential _credential;
+    private readonly HostKeyGate _hostKeys;
 
     private SftpClient? _client;
     private SshNetAuthentication? _authentication;
@@ -47,7 +49,13 @@ public sealed class SftpSession : ISftpSession
     /// Ownership passes to this instance. The authentication methods read it lazily, so it must
     /// stay alive for the life of the connection.
     /// </param>
-    public SftpSession(string host, int port, ResolvedSshCredential credential)
+    /// <param name="hostKeys">
+    /// Decides whether the presented host key is acceptable. Omitting it refuses every key that
+    /// would have needed a question — a connection with no way to ask must not answer on the user's
+    /// behalf — while still proceeding on any key already accepted, since the gate reads the shared
+    /// store before it reaches a verifier.
+    /// </param>
+    public SftpSession(string host, int port, ResolvedSshCredential credential, HostKeyGate? hostKeys = null)
     {
         ArgumentNullException.ThrowIfNull(host);
         ArgumentNullException.ThrowIfNull(credential);
@@ -55,13 +63,16 @@ public sealed class SftpSession : ISftpSession
         _host = host;
         _port = port;
         _credential = credential;
+        _hostKeys = hostKeys ?? new HostKeyGate(SharedHostKeyStore.Instance, new DenyUnverifiedHostKeys());
     }
 
     /// <summary>
     /// Builds a session for an mRemoteNG connection, resolving its credentials the same way
     /// every other SSH.NET-backed caller does.
     /// </summary>
-    public static SftpSession ForConnection(ConnectionInfo connectionInfo, ISshAgentSettingsSource? agentSettings = null)
+    public static SftpSession ForConnection(ConnectionInfo connectionInfo,
+        ISshAgentSettingsSource? agentSettings = null,
+        HostKeyGate? hostKeys = null)
     {
         ArgumentNullException.ThrowIfNull(connectionInfo);
 
@@ -77,7 +88,7 @@ public sealed class SftpSession : ISftpSession
                 agentEnabled ? new SshNetAgentProvider() : null)
             .Resolve(connectionInfo, SshCredentialResolutionOptions.ForSshNet(agentEnabled));
 
-        return new SftpSession(connectionInfo.Hostname.Trim(), connectionInfo.Port, credential);
+        return new SftpSession(connectionInfo.Hostname.Trim(), connectionInfo.Port, credential, hostKeys);
     }
 
     public bool IsConnected => _client?.IsConnected == true;
@@ -111,6 +122,12 @@ public sealed class SftpSession : ISftpSession
         SftpClient client = new(connectionInfo);
         client.ErrorOccurred += OnClientError;
 
+        // Without a handler SSH.NET accepts whatever key it is offered. This connection is a second
+        // one to a host the session may already have verified, and it has to be held to the same
+        // terms — otherwise the protection the session provides sits beside a connection that has
+        // none.
+        client.HostKeyReceived += OnHostKeyReceived;
+
         try
         {
             await client.ConnectAsync(cancellationToken).ConfigureAwait(false);
@@ -118,6 +135,7 @@ public sealed class SftpSession : ISftpSession
         catch
         {
             client.ErrorOccurred -= OnClientError;
+            client.HostKeyReceived -= OnHostKeyReceived;
             client.Dispose();
             throw;
         }
@@ -334,6 +352,19 @@ public sealed class SftpSession : ISftpSession
     private void OnClientError(object? sender, Renci.SshNet.Common.ExceptionEventArgs e) =>
         Dropped?.Invoke(this, e.Exception?.Message ?? string.Empty);
 
+    private void OnHostKeyReceived(object? sender, HostKeyEventArgs e) =>
+        // FingerPrintSHA256 is base64 without padding, matching what OpenSSH prints, so a user can
+        // compare it against ssh-keyscan output character for character. Formatted identically to
+        // the session's, because both are compared against the one store.
+        e.CanTrust = TrustHostKey(e.HostKeyName, $"SHA256:{e.FingerPrintSHA256}");
+
+    /// <summary>
+    /// The trust decision for a presented key, separated from SSH.NET's event so it is testable
+    /// without a server: a wrong answer in the changed-key case is a security defect, not a bug.
+    /// </summary>
+    internal bool TrustHostKey(string keyAlgorithm, string fingerprint) =>
+        _hostKeys.Evaluate(_host, _port, keyAlgorithm, fingerprint);
+
     /// <summary>
     /// Detaches and disposes the current client, if there is one.
     /// </summary>
@@ -349,6 +380,7 @@ public sealed class SftpSession : ISftpSession
             return;
 
         _client.ErrorOccurred -= OnClientError;
+        _client.HostKeyReceived -= OnHostKeyReceived;
         _client.Dispose();
         _client = null;
     }
