@@ -28,6 +28,12 @@ namespace mRemoteNGTests.IntegrationTests.Sftp;
 /// server-free tests; adding a second container to reach it would buy little, since what differs
 /// between the branches is which SSH.NET client is constructed and that is assertable without one.
 /// </para>
+/// <para>
+/// Each test disconnects in a <c>finally</c> and disposes through <c>using</c>, which is the shape
+/// <see cref="mRemoteNG.UI.Window.SSHTransferWindow"/> uses around its own transfer. Mirroring the
+/// production caller matters more here than brevity: a test that tore down along a path the real
+/// one never takes would not be exercising the same lifetime.
+/// </para>
 /// </remarks>
 [TestFixture]
 [SupportedOSPlatform("windows")]
@@ -63,8 +69,14 @@ public class SecureTransferUploadTests : SftpIntegrationTestBase
         using SecureTransfer transfer = NewTransfer(RemotePath("upload.bin"));
 
         transfer.Connect();
-        await transfer.UploadAsync();
-        transfer.Disconnect();
+        try
+        {
+            await transfer.UploadAsync();
+        }
+        finally
+        {
+            transfer.Disconnect();
+        }
 
         // Compared by digest through the container's own tooling rather than by reading the file
         // back through the code under test, which would pass just as happily if both directions
@@ -86,8 +98,14 @@ public class SecureTransferUploadTests : SftpIntegrationTestBase
         transfer.UploadProgress += (_, e) => reports.Enqueue((e.Transferred, e.Total));
 
         transfer.Connect();
-        await transfer.UploadAsync();
-        transfer.Disconnect();
+        try
+        {
+            await transfer.UploadAsync();
+        }
+        finally
+        {
+            transfer.Disconnect();
+        }
 
         Assert.Multiple(() =>
         {
@@ -117,11 +135,15 @@ public class SecureTransferUploadTests : SftpIntegrationTestBase
         using SecureTransfer transfer = NewTransfer($"{RemoteDirectory}/absent/file.bin");
 
         transfer.Connect();
-
-        Assert.ThrowsAsync<Renci.SshNet.Common.SftpPathNotFoundException>(
-            async () => await transfer.UploadAsync());
-
-        transfer.Disconnect();
+        try
+        {
+            Assert.ThrowsAsync<Renci.SshNet.Common.SftpPathNotFoundException>(
+                async () => await transfer.UploadAsync());
+        }
+        finally
+        {
+            transfer.Disconnect();
+        }
 
         // Nothing half-written was left behind under the test's own directory.
         string listing = await ExecAsync("ls", "-A", ContainerDirectory);
