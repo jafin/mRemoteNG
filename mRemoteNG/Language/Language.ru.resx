@@ -479,7 +479,7 @@
     <value>PuTTY не может быть запущен.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Не удалось расшифровать. {0}</value>
+    <value>Не удалось расшифровать.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Не удалось зашифровать. {0}</value>

@@ -479,7 +479,7 @@
     <value>PuTTY 无法启动。</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>解密失败。{0}</value>
+    <value>解密失败。</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>加密失败。{0}</value>

@@ -455,7 +455,7 @@
     <value>無法儲存連線清單。</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>解密失敗。 {0}</value>
+    <value>解密失敗。</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>加密失敗。 {0}</value>

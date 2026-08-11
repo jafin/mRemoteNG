@@ -298,7 +298,7 @@
     <value>La lista de conexiones no pudo ser guardada.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>La decriptación falló. {0}</value>
+    <value>La decriptación falló.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>La encriptación falló. {0}</value>

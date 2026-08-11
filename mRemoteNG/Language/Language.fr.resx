@@ -479,7 +479,7 @@ Démarrage avec un nouveau fichier de connexions.</value>
     <value>PuTTY n'a pas pu être démarré.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Échec du déchiffrement.{0}</value>
+    <value>Échec du déchiffrement.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Échec du chiffrement.{0}</value>

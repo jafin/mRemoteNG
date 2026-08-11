@@ -446,7 +446,7 @@ Creazione di un nuovo file delle connessioni.</value>
     <value>L'elenco delle connessioni non può essere salvato.</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>Decriptaggio fallito. {0}</value>
+    <value>Decriptaggio fallito.</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>Criptaggio fallito. {0}</value>

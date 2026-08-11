@@ -3145,4 +3145,7 @@ That copy is protected less strongly than the store it came from. Keep it somewh
 
 Export anyway?</value>
   </data>
+  <data name="ErrorOptionsPageSettingsNotLoaded" xml:space="preserve">
+    <value>Options page "{0}" could not load all of its settings. A value that could not be read has been left blank; re-entering it will replace it.</value>
+  </data>
 </root>

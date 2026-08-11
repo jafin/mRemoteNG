@@ -487,7 +487,7 @@ Starting with new connections file.</value>
     <value>PuTTYの実行に失敗しました</value>
   </data>
   <data name="ErrorDecryptionFailed" xml:space="preserve">
-    <value>復号化に失敗しました：{0}</value>
+    <value>復号化に失敗しました。</value>
   </data>
   <data name="ErrorEncryptionFailed" xml:space="preserve">
     <value>暗号化に失敗しました：{0}</value>

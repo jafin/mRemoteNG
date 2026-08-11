@@ -2,6 +2,7 @@
 using System;
 using System.Collections.Generic;
 using System.Configuration;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Windows.Forms;
@@ -300,13 +301,34 @@ public partial class FrmOptions : Form
         page.ApplyLanguage();
         page.LoadRegistrySettings();
 
-        // A page that cannot read one of its settings is still added, with whatever it managed to
-        // load. Letting the exception escape here left the page out of _optionPages and aborted the
-        // loop that builds the rest — so a single unreadable secret produced an empty Options window
-        // with nothing said about why, and Options is the only place the bad value can be corrected.
-        //
-        // Reading a settings secret now throws rather than returning plausible bytes, which is the
-        // point of authenticating them; that makes this path reachable where it never was before.
+        LoadSettingsSafely(page);
+
+        _optionPages.Add(page);
+        lstOptionPages.AddObject(page);
+
+        // Track changes in all controls on the page
+        TrackChangesInControls(page);
+    }
+
+    /// <summary>
+    /// Loads one page's settings, keeping a page that cannot read one of them.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The page is kept with whatever it managed to load. Letting the exception escape during
+    /// initialization left the page out of <c>_optionPages</c> and aborted the loop that builds the
+    /// rest — a single unreadable secret produced an empty Options window with nothing said about
+    /// why, and Options is the only place the bad value can be corrected. Escaping during a reload
+    /// is worse still: <see cref="BtnCancel_Click"/> reloads before raising <c>CloseRequested</c>,
+    /// so the throw would leave Cancel unable to close the dialog it was meant to abandon.
+    /// </para>
+    /// <para>
+    /// Reading a settings secret now throws rather than returning plausible bytes, which is the
+    /// point of authenticating them; that makes this path reachable where it never was before.
+    /// </para>
+    /// </remarks>
+    private static void LoadSettingsSafely(OptionsPage page)
+    {
         try
         {
             page.LoadSettings();
@@ -317,15 +339,9 @@ public partial class FrmOptions : Form
             // to read is one they can only correct from this page, and a field that is silently
             // blank reads as "nothing was configured" rather than "this could not be decrypted".
             Runtime.MessageCollector.AddExceptionMessage(
-                $"Options page \"{page.PageName}\" could not load all of its settings. A value that could not be read has been left blank; re-entering it will replace it.",
+                string.Format(CultureInfo.InvariantCulture, Language.ErrorOptionsPageSettingsNotLoaded, page.PageName),
                 ex, logOnly: false);
         }
-
-        _optionPages.Add(page);
-        lstOptionPages.AddObject(page);
-
-        // Track changes in all controls on the page
-        TrackChangesInControls(page);
     }
 
     private object ImageGetter(object rowobject)
@@ -489,7 +505,7 @@ public partial class FrmOptions : Form
         try
         {
             foreach (OptionsPage page in _optionPages)
-                page.LoadSettings();
+                LoadSettingsSafely(page);
         }
         finally
         {
