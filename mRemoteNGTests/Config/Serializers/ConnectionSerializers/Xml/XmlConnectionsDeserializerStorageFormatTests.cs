@@ -60,6 +60,39 @@ public class XmlConnectionsDeserializerStorageFormatTests
         Assert.That(requests, Is.Zero, "the authentication requestor was never invoked");
     }
 
+    [TestCase("<?xml version=\"1.0\" encoding=\"UTF-8\"?>", TestName = "UppercaseEncoding")]
+    [TestCase("<?xml version=\"1.0\" encoding=\"utf-8\" standalone=\"yes\"?>", TestName = "StandaloneAttribute")]
+    [TestCase("", TestName = "NoDeclarationAtAll")]
+    public void ADeclarationLegacyDecryptDoesNotRecogniseIsStillRefusedAsNewerNotCorrupt(string declaration)
+    {
+        // LegacyFullFileDecrypt runs before the root node is read, and returns its input untouched
+        // only when that input contains the exact declaration <?xml version="1.0" encoding="utf-8"?>
+        // — case-insensitively, so an uppercase encoding is fine. A standalone attribute or no
+        // declaration at all is not: the file goes through a decrypt attempt that mangles it, and
+        // the load then fails as "Failed to parse XML connection file". That reports a newer-format
+        // store as a corrupt one, which is the second of the two misdiagnoses task 2.2 rules out.
+        string confCons = WithStorageFormat(Resources.confCons_v2_6, UnknownLevel);
+        int firstElement = confCons.IndexOf("<Connections", StringComparison.Ordinal);
+        string rebuilt = declaration + confCons[firstElement..];
+
+        int requests = 0;
+        XmlConnectionsDeserializer deserializer = new("", () =>
+        {
+            requests++;
+            return "irrelevant".ConvertToSecureString();
+        });
+
+        NotSupportedException? thrown = Assert.Throws<NotSupportedException>(
+            () => deserializer.Deserialize(rebuilt));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(thrown!.Message, Does.Contain(UnknownLevel),
+                "refused as a newer-format store, not as unparseable XML");
+            Assert.That(requests, Is.Zero, "the authentication requestor was never invoked");
+        });
+    }
+
     [TestCase("")]
     [TestCase("Hardened")]
     public void TheTwoLevelsThatExistStillOpen(string level)
@@ -109,7 +142,7 @@ public class XmlConnectionsDeserializerStorageFormatTests
             {
                 Directory.Delete(directory, recursive: true);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // A leftover temp directory is not worth failing a green test over.
             }
@@ -142,7 +175,7 @@ public class XmlConnectionsDeserializerStorageFormatTests
             {
                 Directory.Delete(directory, recursive: true);
             }
-            catch (IOException)
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
             {
                 // A leftover temp directory is not worth failing a green test over.
             }
@@ -158,9 +191,12 @@ public class XmlConnectionsDeserializerStorageFormatTests
         if (rootStart < 0)
             rootStart = confCons.IndexOf("<Connections", StringComparison.Ordinal);
 
-        Assert.That(rootStart, Is.GreaterThan(0), "the fixture's root element was not found");
+        // Zero is a legitimate position — a document with no XML declaration starts with its root.
+        Assert.That(rootStart, Is.GreaterThanOrEqualTo(0), "the fixture's root element was not found");
 
         int rootEnd = confCons.IndexOf('>', rootStart);
+
+        Assert.That(rootEnd, Is.GreaterThan(rootStart), "the fixture's root element is unterminated");
 
         return confCons[..rootEnd] +
                $" {StorageFormat.AttributeName}=\"{level}\"" +

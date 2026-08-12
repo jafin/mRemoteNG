@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Diagnostics; // Added
 using System.Globalization;
+using System.IO;
 using System.Runtime.Versioning;
 using System.Security;
 using System.Windows.Forms;
@@ -57,6 +58,16 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
         try
         {
             _rootNodeInfo.Filename = ConnectionFileName;
+
+            // Before LoadXmlConnectionData, which calls LegacyFullFileDecrypt. That method returns
+            // the input untouched only when it contains the exact declaration
+            // <?xml version="1.0" encoding="utf-8"?> (case-insensitively). A file declaring
+            // standalone="yes", or carrying no declaration at all, instead goes through a decrypt
+            // attempt that mangles it — and the store then fails as "Failed to parse XML connection
+            // file", reporting a newer-format store as a corrupt one. Reading the declaration off
+            // the raw text first is what stops that misdiagnosis, and is what makes "refused before
+            // any decryption is attempted" true rather than nearly true.
+            RefuseUnrecognisedStorageFormat(xml);
 
             phaseSw.Restart();
             LoadXmlConnectionData(xml);
@@ -202,28 +213,75 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
         // upstream mRemoteNG has ever written. Read from the file rather than from configuration so
         // that opening a store in a newer build cannot change what it is.
         string? recordedLevel = connectionsRootElement.Attributes?[StorageFormat.AttributeName]?.Value;
-        StorageFormatLevel? level = StorageFormat.Resolve(recordedLevel);
 
-        // A level this build does not know says a newer build wrote the file deliberately. Reading
-        // it as classic would discard that, and the next ordinary save would write the file back
-        // without it. Refused here — before CreateDecryptor, and so before any password is asked
-        // for — because a prompt on a file that was never going to open teaches the user their
-        // password is wrong. Same treatment the SQL store already gives a database newer than it
-        // understands.
-        if (level is null)
+        // Already refused in Deserialize for anything this build cannot resolve, so this cannot be
+        // null. Kept as a resolve rather than a cast so the two paths cannot drift apart.
+        _rootNodeInfo.StorageFormat = ThrowIfUnrecognised(recordedLevel);
+    }
+
+    /// <summary>
+    /// Refuses a store declaring a format level this build does not recognise, reading the
+    /// declaration straight off the raw text before anything is decrypted.
+    /// </summary>
+    /// <remarks>
+    /// Input that is not readable XML is not judged here: a legacy fully-encrypted file is
+    /// ciphertext at this point and carries no readable declaration, and refusing it would break
+    /// every such file. Those are re-checked from the parsed document once decrypted.
+    /// </remarks>
+    private static void RefuseUnrecognisedStorageFormat(string xml)
+    {
+        string? recordedLevel;
+
+        try
         {
-            // Reported through the message collector rather than a task dialog, which is where the
-            // SQL store's refusal of a newer database goes. The throw reaches Runtime.LoadConnections,
-            // which already owns the dialog for a load that failed.
-            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg,
-                string.Format(CultureInfo.InvariantCulture, Language.ErrorConnectionFileFormatNewerThanClient,
-                    recordedLevel, App.Info.GeneralAppInfo.ProductName));
+            using XmlReader reader = XmlReader.Create(new StringReader(xml),
+                new XmlReaderSettings { XmlResolver = null, DtdProcessing = DtdProcessing.Prohibit });
 
-            throw new NotSupportedException(
-                $"Connection file declares storage format '{recordedLevel}', which this build does not recognise.");
+            // The root element, whatever it is called: this fork writes it namespaced as
+            // mrng:Connections, upstream writes a bare Connections.
+            if (!reader.Read() || reader.MoveToContent() != XmlNodeType.Element)
+                return;
+
+            recordedLevel = reader.GetAttribute(StorageFormat.AttributeName);
+        }
+        catch (XmlException)
+        {
+            // Not XML — encrypted, or malformed. Either way the declaration is not readable, and
+            // the existing paths report those failures on their own terms.
+            return;
         }
 
-        _rootNodeInfo.StorageFormat = level.Value;
+        ThrowIfUnrecognised(recordedLevel);
+    }
+
+    /// <summary>
+    /// Resolves a recorded level, refusing the store when the value is present but unrecognised.
+    /// </summary>
+    /// <remarks>
+    /// A level this build does not know says a newer build wrote the file deliberately. Reading it
+    /// as classic would discard that, and the next ordinary save would write the file back without
+    /// it. Refused before any password is asked for, because a prompt on a file that was never
+    /// going to open teaches the user their password is wrong — the same misdiagnosis a hardened
+    /// file produces in upstream mRemoteNG. Same treatment the SQL store gives a database newer
+    /// than it understands.
+    /// </remarks>
+    private static StorageFormatLevel ThrowIfUnrecognised(string? recordedLevel)
+    {
+        StorageFormatLevel? level = StorageFormat.Resolve(recordedLevel);
+        if (level is not null)
+            return level.Value;
+
+        string message = string.Format(CultureInfo.InvariantCulture,
+            Language.ErrorConnectionFileFormatNewerThanClient,
+            recordedLevel, App.Info.GeneralAppInfo.ProductName);
+
+        // Reported through the message collector, which is where the SQL store's refusal of a newer
+        // database goes. The same text goes on the exception: Runtime.LoadConnections surfaces
+        // ex.Message in a MessageBox when the startup file fails, and two dialogs disagreeing about
+        // the same refusal — one localized, one not — is worse than saying it twice.
+        Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, message);
+
+        throw new NotSupportedException(message);
     }
 
     private void CreateDecryptor(RootNodeInfo rootNodeInfo, XmlElement? connectionsRootElement = null)

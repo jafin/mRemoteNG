@@ -1,7 +1,12 @@
 # diagnostic-logging Specification
 
 ## Purpose
-TBD - created by archiving change scope-diagnostic-logging. Update Purpose after archive.
+
+What the application writes to its own log file, and what it must never write there. The log has no
+access control beyond the file system and is routinely attached to bug reports, so its contents are
+effectively whatever the user is willing to send a stranger. This capability governs three things:
+how much is written by default, how diagnostic text is redacted before it lands, and the secrets
+that are excluded from it at every level.
 ## Requirements
 ### Requirement: The log level is configurable and defaults to information
 
@@ -30,7 +35,12 @@ troubleshooting should choose, not something everyone pays for permanently.
 
 ### Requirement: The command line is sanitised wherever it is logged
 
-The system SHALL apply the same redaction to the command line everywhere it is recorded.
+The system SHALL route every record of the command line through the shared sanitiser, and SHALL
+redact the user profile path in all of them.
+
+The two callers deliberately redact to different strengths beyond that shared guarantee — see the
+scenarios below — so this requirement fixes what they have in common rather than demanding identical
+output.
 
 `DebugReportBuilder` already replaces the user profile path before including the command line; the
 startup logger writes the same data unredacted. One of the two is wrong, and the one that redacts is

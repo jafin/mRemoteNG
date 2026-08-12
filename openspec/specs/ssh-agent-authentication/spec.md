@@ -1,7 +1,14 @@
 # ssh-agent-authentication Specification
 
 ## Purpose
-TBD - created by archiving change add-ssh-agent-credential-resolver. Update Purpose after archive.
+
+Using a running SSH agent as a credential source: discovering the identities it holds, deciding when
+to consult it at all, and what happens when it is absent, empty or unreachable. Only the SSH.NET
+backend goes through this — PuTTY talks to Pageant natively and `ssh.exe` talks to the Windows agent
+natively, so for those the agent is consulted only to decide whether to emit a key argument, and a
+global setting must not appear to disable agent support this application does not control. Failure
+to reach an agent is reported and falls through to the other credential sources rather than ending
+the connection.
 ## Requirements
 ### Requirement: SSH agent identities are available as a credential source
 

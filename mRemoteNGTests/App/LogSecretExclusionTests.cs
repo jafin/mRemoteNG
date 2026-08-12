@@ -54,6 +54,7 @@ public class LogSecretExclusionTests
     private mRemoteNG.Properties.OptionsNotificationsPage _settings = null!;
     private (bool Debug, bool Info, bool Warning, bool Error) _originalFilters;
     private string _originalEmptyCredentials = null!;
+    private string _originalLogFilePath = null!;
 
     [SetUp]
     public void Setup()
@@ -73,6 +74,10 @@ public class LogSecretExclusionTests
 
         _originalEmptyCredentials = mRemoteNG.Properties.OptionsCredentialsPage.Default.EmptyCredentials;
         mRemoteNG.Properties.OptionsCredentialsPage.Default.EmptyCredentials = "noinfo";
+
+        // The logger is process-wide, so restoring the default path rather than the one that was
+        // actually configured would redirect any later fixture's output somewhere it did not ask for.
+        _originalLogFilePath = _settings.LogFilePath;
 
         _directory = Path.Combine(Path.GetTempPath(), "mRemoteNGTests-secretlog-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(_directory);
@@ -97,14 +102,18 @@ public class LogSecretExclusionTests
 
         mRemoteNG.Properties.OptionsCredentialsPage.Default.EmptyCredentials = _originalEmptyCredentials;
 
-        // Releases the temporary file so the directory can go.
-        Logger.Instance.SetLogPath(Logger.DefaultLogPath);
+        // Releases the temporary file so the directory can go, and puts the logger back where it
+        // was rather than where it defaults to.
+        Logger.Instance.SetLogPath(string.IsNullOrEmpty(_originalLogFilePath)
+            ? Logger.DefaultLogPath
+            : _originalLogFilePath);
+        _settings.LogFilePath = _originalLogFilePath;
 
         try
         {
             Directory.Delete(_directory, recursive: true);
         }
-        catch (IOException)
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
             // A leftover temp directory is not worth failing a green test over.
         }
