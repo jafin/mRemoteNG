@@ -61,8 +61,27 @@ public static class StorageFormatUpgradePrompt
                 return false;
             }
 
+            // Task 7.2. A refusal used to end in silence, which after a question about protecting a
+            // file reads as "nothing to worry about". For a store with no master password the truth
+            // is the opposite, and it is said once here rather than nagged: the automatic offer fires
+            // only once per store, and the File menu route is the user asking.
+            //
+            // Connection files only. A SQL store's fallback key is the same constant, but what to do
+            // about it is `require-sql-master-password`'s to decide, and a message about a file's
+            // backups and sync folders would be wrong about a database anyway.
+            if (choice == StorageFormatUpgradeChoice.Decline && storeKind == StorageFormatStoreKind.ConnectionFile)
+                ShowDecline(owner, rootNode, recoveryPasswordDeclined: false);
+
             return StorageFormatUpgrade.Apply(rootNode, choice);
         }
+    }
+
+    private static void ShowDecline(Control owner, RootNodeInfo rootNode, bool recoveryPasswordDeclined)
+    {
+        MessageBox.Show(owner,
+            StorageFormatUpgrade.BuildDeclineExplanation(recoveryPasswordDeclined,
+                StorageFormatUpgrade.StoreIsKeyedOnThePublishedDefault(rootNode)),
+            Language.StorageFormatUpgradeTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
     }
 
     /// <summary>
@@ -97,8 +116,7 @@ public static class StorageFormatUpgradePrompt
         {
             if (recoveryPassword is not { Length: > 0 })
             {
-                MessageBox.Show(owner, Language.RecoveryPasswordDeclined, Language.RecoveryPasswordTitle,
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                ShowDecline(owner, rootNode, recoveryPasswordDeclined: true);
                 return false;
             }
 

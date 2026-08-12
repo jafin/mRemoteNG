@@ -97,6 +97,17 @@ point every copy they hold is equally unopenable.
 - **AND** a file under a user's master password keeps that password
 - **AND** a file under the legacy default key keeps that key
 - **AND** the level is not raised
+- **AND** a file left under the legacy default key is stated to be protected by a key published in the application's source
+
+#### Scenario: A declined store that is not under the legacy default key
+
+- **WHEN** the user declines and the store carries a master password
+- **THEN** nothing is said about a published key
+
+The statement is worth making only where it is true. A classic store with a master password is
+encrypted under that password, so telling its owner their key is published would be false — and a
+warning that turns out to be false is worth less to the person reading the next one than no warning
+at all.
 
 A classic file is not always under the legacy default key: it carries a master password whenever the
 user set one. Describing every declined migration as remaining under the default key would either
@@ -213,6 +224,11 @@ machine it is carried to.
 - **WHEN** the portable edition saves and no recovery password is set
 - **THEN** the legacy default key is used
 - **AND** the user is told the file is protected by a key published in the application's source
+
+The statement itself is not a portable behaviour and is specified above, for either edition. It
+belongs here as well because portable is where declining is least recoverable: the installed edition
+can offer a machine protector as the easy answer and portable has no account to bind to, so a
+portable user who declines has nothing protecting the file but a password they chose not to set.
 
 ### Requirement: Files are interchangeable between editions
 

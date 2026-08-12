@@ -178,4 +178,72 @@ public class ConnectionFileMigrationTests
 
         Assert.That(portable, Does.Not.Contain(Language.RecoveryPasswordSharedStore));
     }
+
+    [Test]
+    public void DecliningIsToldPlainlyThatTheKeyIsPublishedInOurSource()
+    {
+        // Task 7.2, and the sentence this application has never said. A user who declines keeps a
+        // file encrypted under mR3m and until now heard nothing back — and silence after a security
+        // question reads as reassurance, which here is the exact opposite of the truth.
+        string declined = StorageFormatUpgrade.BuildDeclineExplanation(
+            recoveryPasswordDeclined: false, storeIsKeyedOnThePublishedDefault: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declined, Does.Contain(Language.StorageFormatDeclined));
+            Assert.That(declined, Does.Contain(Language.StorageFormatDeclinedLegacyKey));
+        });
+    }
+
+    [Test]
+    public void DecliningOnlyTheRecoveryPasswordIsToldTheSameThing()
+    {
+        // The two ways to end up with an unhardened store differ in what the user thought they were
+        // answering, and not at all in what they are left holding. Someone who accepted the format
+        // and then declined the password may well believe they hardened it.
+        string declined = StorageFormatUpgrade.BuildDeclineExplanation(
+            recoveryPasswordDeclined: true, storeIsKeyedOnThePublishedDefault: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(declined, Does.Contain(Language.RecoveryPasswordDeclined));
+            Assert.That(declined, Does.Contain(Language.StorageFormatDeclinedLegacyKey));
+        });
+    }
+
+    [Test]
+    public void AStoreWithAMasterPasswordIsNotToldItsKeyIsPublished()
+    {
+        // Because it is not. A warning that turns out to be false is worth less than no warning, and
+        // this one would be read by exactly the users who did take the existing advice.
+        string declined = StorageFormatUpgrade.BuildDeclineExplanation(
+            recoveryPasswordDeclined: false, storeIsKeyedOnThePublishedDefault: false);
+
+        Assert.That(declined, Does.Not.Contain(Language.StorageFormatDeclinedLegacyKey));
+    }
+
+    [Test]
+    public void WhetherTheKeyIsThePublishedOneIsReadFromTheStoreRatherThanAssumed()
+    {
+        RootNodeInfo legacy = new(RootNodeType.Connection);
+        RootNodeInfo withMasterPassword = new(RootNodeType.Connection) { PasswordString = "hunter2" };
+
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+        RootNodeInfo hardened = new(RootNodeType.Connection)
+        {
+            KeyProtection = ConnectionFileKeyProtection.Create(
+                fileKey, Password("recovery"), iterations: FastIterations)
+        };
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(StorageFormatUpgrade.StoreIsKeyedOnThePublishedDefault(legacy),
+                "no master password means mR3m, which is the case this whole change exists for");
+            Assert.That(StorageFormatUpgrade.StoreIsKeyedOnThePublishedDefault(withMasterPassword), Is.False);
+
+            // PasswordString still returns the default for a hardened store, so reading it alone
+            // would call a store keyed on its own random key a store keyed on a published constant.
+            Assert.That(StorageFormatUpgrade.StoreIsKeyedOnThePublishedDefault(hardened), Is.False);
+        });
+    }
 }
