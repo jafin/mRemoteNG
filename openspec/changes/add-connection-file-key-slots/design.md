@@ -20,7 +20,9 @@ except the password is theirs rather than `mR3m`.
 
 ## Goals
 
-- Every member of a team opens a shared file without a prompt, after the first time.
+- Every member of a team opens a shared file without a prompt, after their first save. Not after
+  their first open — a slot is earned by saving, for the reasons under "A slot is added on save"
+  below, so a member who opens and never saves keeps being prompted.
 - No file written by the preceding change needs migrating.
 - Nothing in the file identifies who has opened it.
 - Removing a member is possible and is honest about what it requires.
@@ -41,19 +43,44 @@ The root's attributes are read before anything is decrypted, which is what a pro
 child element cannot be: when `FullFileEncryption` is on, the root's content *is* the ciphertext, so
 anything nested there is inside the encrypted region and unreadable at the point the key is needed.
 
-So the slots go in `KeyProtectorMachine` as a separated list. Base64 uses `A–Z a–z 0–9 + / =`, so a
-space is unambiguous as a separator and survives XML attribute round-tripping.
+So the slots go in `KeyProtectorMachine` as a separated list.
 
-The shape this gives is the useful part: **a file with one slot is byte-identical to what the
-preceding change writes.** There is no old form and no new form, no version flag on the attribute,
-and no migration — a build that knows about slots reads a one-element list, and the concept extends
-rather than replaces.
+**The separator is `|`, not a space.** `Convert.FromBase64String` *ignores* whitespace, so a
+space-separated list read by a build that expects a single blob would sometimes silently concatenate
+into a longer blob rather than failing — the outcome depending on whether the entries happen to carry
+`=` padding. `|` is outside the base64 alphabet and is not whitespace, so an older build fails
+deterministically with `FormatException` on every multi-slot value. Deterministic failure is the
+whole requirement here; which exception it is matters less than that it is always the same one.
 
-### Unwrapping tries every slot
+The shape this gives is the useful part. **A file with one slot is byte-identical to what the
+preceding change writes**, so there is no old form and no new form, no version flag on the attribute,
+and no migration. Note the qualifier: R3 also writes files with *no* machine protector at all — a
+portable file, and any file outside the user profile — and those are unchanged here too, but they are
+an absent attribute rather than a one-element list.
+
+An older build meeting a genuine multi-slot value therefore fails to read the machine protector and
+falls through to the recovery password, which is precisely what that build would have done before
+this change existed. That is why multi-slot writing does **not** need a new storage-format level: the
+level exists to stop a store becoming unreadable by something that used to read it, and here the
+degradation is one prompt on a file that already prompted. Adding a level would mean a second opt-in
+confirmation for users who have already opted in, to protect against an outcome that is not a loss.
+
+### Unwrapping tries every slot, and validates what it gets
 
 There is no index and no way to know which slot is yours without attempting it. `ProtectedData.Unprotect`
-on a foreign blob throws quickly and asks the user for nothing, so the search is silent and bounded
-by team size.
+on a foreign blob throws quickly and asks the user for nothing, so the search is silent.
+
+Two constraints on the search, both because a DPAPI unwrap succeeding proves less than it appears to:
+
+- **The slot count is bounded**, and a value carrying more than the bound is refused before any of
+  them is tried. Otherwise a file with a hundred thousand slots is a file that takes minutes to
+  refuse to open.
+- **An unwrapped key is accepted only once it decrypts the root sentinel.** `Unprotect` succeeding
+  means the blob was protected by this account — not that it belongs to *this file*. A slot copied
+  from another file the same user owns unwraps perfectly and yields the wrong key, and the file then
+  opens onto contents that do not decrypt, with no prompt and nothing reported. The sentinel already
+  exists for exactly this: it is the one ciphertext in the file whose plaintext is known in advance.
+  So the search continues past a slot that unwrapped but did not authenticate.
 
 The slot that worked is remembered for the session, alongside the recovery password
 (`replace-default-connection-file-key` task 5.6), so the search happens once per run rather than once
@@ -91,14 +118,28 @@ themselves on their next save, which is exactly the first-open flow they already
 Stating this in the UI matters more than implementing a slot list. A user who deletes a slot and
 believes they have revoked access is worse off than one who was told what revocation costs.
 
-### Losing a slot is self-healing
+### Losing a slot is harmless; losing a rekey is not
 
 Two members saving at once loses one of the writes, as it does today for the whole file. If the lost
-write carried a slot, that member is prompted for the recovery password on their next open and their
-slot is rewritten on their next save.
+write carried a slot, that member is prompted for the recovery password on their next open, and
+their slot is rewritten when they next save. The worst outcome is one extra prompt and a second trip
+through a flow they have already seen, so slots need no locking of their own.
 
-This is why slots need no locking. The worst outcome of a race is one extra prompt, and the state
-converges without anyone doing anything.
+**A rekey is a different matter and last-writer-wins is not acceptable for it.** A member who had the
+file open before the rekey still holds the old file key and the old recovery password. Their next
+save writes the contents back under the old key and the old protectors — silently restoring access
+for the person the rekey was performed to remove. That is not an extra prompt; it is the security
+operation being undone by someone who never knew it happened, and there is no signal that it has
+occurred.
+
+So the file records a **key generation**: a counter, or a random identifier, in a root attribute
+beside the protectors, changed only by a rekey. A save compares the generation it read against the
+one on disk and refuses if they differ, telling the user the file was rekeyed and their session must
+re-open it. Refusing a save is unpleasant; silently reinstating a revoked member is worse, and only
+one of the two is recoverable by the person it happens to.
+
+This applies to the rekey path alone. Ordinary saves stay last-writer-wins, exactly as they are
+today, because nothing about them is a security boundary.
 
 ## Portable edition
 
@@ -112,8 +153,10 @@ machine visited would grow without bound and serve nobody.
 |---|---|
 | Slot count reveals team size | Accepted, and stated in the proposal. It reveals no identities, which is the part that matters |
 | A departed member's slot is assumed to be revocable | Slot deletion is not offered; rekey is, and says what it does |
-| Search cost on the open path | Failed DPAPI unwraps are cheap and silent; the successful slot is cached for the session |
-| A concurrent save drops a slot | Self-healing — one extra prompt, then rewritten |
+| Search cost on the open path | Bounded slot count; failed DPAPI unwraps are cheap and silent; the successful slot is cached for the session |
+| A concurrent save drops a slot | One extra prompt, then rewritten on the next save |
+| **A stale session's save undoes a rekey** | **The file records a key generation; a save against a changed generation is refused** |
+| A wrapper from another file unwraps to a wrong key | The unwrapped key is validated against the sentinel before it is accepted |
 | A shared file that nobody can write | A read-only member is prompted every open; they were before this change too |
 
 ## Open Questions

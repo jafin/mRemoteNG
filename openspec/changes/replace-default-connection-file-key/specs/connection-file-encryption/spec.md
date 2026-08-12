@@ -57,6 +57,24 @@ profile. Both are stated as their own requirements below.
 - **THEN** no connection is decrypted
 - **AND** the message distinguishes this from a corrupt file
 
+#### Scenario: A protector that unwraps to a key this file was not written with
+
+- **WHEN** a protector yields a key that does not decrypt the file's protection declaration
+- **THEN** that key is not accepted
+- **AND** the remaining protector is tried
+
+A protector unwrapping proves only that the reader may use it, not that it belongs to this file. A
+machine protector left over from an earlier key, or copied from another file the same account owns,
+unwraps perfectly and yields the wrong key — and the store then opens onto contents that cannot be
+decrypted, with no prompt and nothing reported. The protection declaration is the one ciphertext
+whose plaintext is known in advance, so it is what separates a usable protector from a right one.
+
+#### Scenario: A protector that cannot be used is told apart from a wrong secret
+
+- **WHEN** a protector is absent, truncated, or records parameters outside the range this build writes
+- **THEN** the recovery password is not requested repeatedly against it
+- **AND** the failure is reported as a property of the file rather than of the password
+
 ### Requirement: A recovery password is required before a per-file key is written
 
 The system SHALL obtain a recovery password before writing a per-file key for the first time, and
@@ -253,8 +271,9 @@ way costs every other member of a team a prompt they can never remove.
 The system SHALL retain a recovery password for the lifetime of the session once it has opened a
 file, SHALL request it again after a restart, and SHALL discard it whenever the store is locked.
 
-Where the machine protector is absent — a shared file, the portable edition, a restored backup — the
-recovery password is what opens the store, and the store is re-read more than once per session:
+Where the machine protector is absent or cannot be used — a shared file, the portable edition, a
+backup restored on another machine or under another account — the recovery password is what opens the
+store, and the store is re-read more than once per session:
 after an external change, and on the automatic recovery path. Prompting each time would turn a
 password meant to be typed rarely into one typed constantly, which is how a user ends up choosing a
 short one.

@@ -14,9 +14,9 @@ Teams sharing a connection file on a share or a synced folder are a normal deplo
 application, not an edge case. The SQL backend exists for them and many of them do not use it.
 
 The arrangement that fits is the one BitLocker and LUKS use, and it is not exotic: several
-protectors, any of which unwraps the same key. Each member's first open uses the recovery password;
-their own protector is added; every open after that is silent — for all of them, rather than for
-whoever happened to migrate the file.
+protectors, any of which unwraps the same key. A member opens with the recovery password, and their
+own protector is written when they next save; every open after that is silent — for all of them,
+rather than for whoever happened to migrate the file.
 
 Not from the upstream audit ([mRemoteNG#3416](https://github.com/mRemoteNG/mRemoteNG/issues/3416)).
 It closes a usability regression that the fix for H-1 introduces for shared files.
@@ -24,10 +24,14 @@ It closes a usability regression that the fix for H-1 introduces for shared file
 ## What Changes
 
 - The machine protector becomes **a set of slots** rather than a single value. `KeyProtectorMachine`
-  holds a separated list of wrapped keys; unwrapping tries each in turn and takes the first that
-  succeeds.
+  holds a `|`-separated list of wrapped keys; unwrapping tries each in turn and takes the first that
+  both unwraps **and** decrypts the root sentinel. A DPAPI unwrap succeeding proves the blob belongs
+  to this account, not that it belongs to this file.
 - **The existing single-value form is a one-element list**, so no file written by
-  `replace-default-connection-file-key` needs migrating and no reader has to tell the two apart.
+  `replace-default-connection-file-key` needs migrating and no reader has to tell the two apart. The
+  files that change hold one protector; the ones it writes with *no* machine protector — portable,
+  and anything outside the user profile — are equally unaffected, as an absent attribute.
+- **The slot count is bounded**, and an over-long list is refused before any slot is tried.
 - A member who opened a file using the recovery password gets **their own slot added on the next
   save**, not on open. Rewriting a file that was only read is the behaviour that change already
   rejected, and on a shared file it would also mean every open is a write.
@@ -40,15 +44,23 @@ It closes a usability regression that the fix for H-1 introduces for shared file
 - **Rekeying is the removal operation.** A new file key, a new recovery password, contents
   re-encrypted, every slot dropped and the current user's re-added. This is what actually removes a
   departed member's access, because they already know the recovery password and hold copies of the
-  file. Offered as an explicit action, not implied by anything else.
+  file. Offered as an explicit action, not implied by anything else. In the portable edition a rekey
+  writes no slot at all, as every other portable write does.
+- **The file records a key generation, and a save against a changed one is refused.** Without it, a
+  member who had the file open before a rekey writes the contents back under the old key and the old
+  password on their next save, silently reinstating the access the rekey removed.
 
 ### Why slots are additive and losing one is harmless
 
 Two members saving a shared file at once is last-writer-wins today, for the whole file. Slots
 inherit that and nothing worse: a slot can be lost when one save overwrites another. The member whose
-slot vanished is prompted for the recovery password once more, and their slot is written again on
-their next save. The failure mode is self-healing and costs one prompt, which is why it does not need
-locking to be correct.
+slot vanished is prompted for the recovery password once more, and their slot is written again when
+they next save. That costs one prompt and one repeat of a flow they have already seen, which is why
+ordinary saves need no locking.
+
+A rekey is the exception, and the reason for the key generation above. Losing a *slot* to a race
+costs a prompt; losing a *rekey* to a race undoes the revocation without anyone noticing, and the
+person it protects against is the one person who benefits.
 
 ## Capabilities
 

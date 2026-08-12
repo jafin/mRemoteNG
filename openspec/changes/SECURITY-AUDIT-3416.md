@@ -77,8 +77,11 @@ shared password.
 
 Deliberately last, and deliberately not folded into R3. It turns a root attribute into a set on top
 of a format change that is already in flight, and it needs the rekey operation to be honest about
-revocation. Nothing breaks by waiting: a file written in R3 is a one-element slot list, so R6 needs
-no migration.
+revocation.
+
+Nothing breaks by waiting, because both forms R3 writes carry over unchanged: a file with one machine
+protector is a one-element slot list, and a file with none — portable, or anything outside the user
+profile under R3's task 5.5 — is an absent attribute either way. R6 needs no migration for either.
 
 The one ordering constraint is the obvious direction — **R6 must not precede R3.** A build that
 writes a slot list alongside one that reads a single blob produces files its own contemporaries
