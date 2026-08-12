@@ -32,7 +32,7 @@ namespace mRemoteNG.Security.SymmetricEncryption;
 /// element by <c>XmlRootNodeSerializer</c>, where they describe nothing this provider does.
 /// </para>
 /// </remarks>
-public sealed class PerFileKeyCryptographyProvider : ICryptographyProvider
+public sealed class PerFileKeyCryptographyProvider : IThreadSafeCryptographyProvider
 {
     private const byte CurrentVersion = 1;
     private const int NonceLength = 12;

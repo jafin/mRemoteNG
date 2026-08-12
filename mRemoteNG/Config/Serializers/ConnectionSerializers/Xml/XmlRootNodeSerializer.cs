@@ -61,8 +61,18 @@ public static class XmlRootNodeSerializer
             using System.Security.SecureString encryptionPassword = rootNodeInfo.PasswordString.ConvertToSecureString();
             element.Add(new XAttribute(XName.Get("TotpSecret"), cryptographyProvider.Encrypt(rootNodeInfo.TotpSecret, encryptionPassword)));
         }
-        element.Add(CreateProtectedAttribute(rootNodeInfo, cryptographyProvider));
+        // A per-file key applies only at the hardened level, and only to the store itself. An export
+        // overrides the level to classic precisely so it stays readable by upstream mRemoteNG, and
+        // that has to take the protectors off with it: a copy carrying a machine-bound protector is
+        // a copy that opens on one machine, which is the opposite of what an escape route is for.
+        // Reading the effective level rather than the root's own is what makes that automatic.
+        bool usePerFileKey = effectiveLevel == StorageFormatLevel.Hardened && rootNodeInfo.KeyProtection is not null;
+
+        element.Add(CreateProtectedAttribute(rootNodeInfo, cryptographyProvider, usePerFileKey));
         element.Add(new XAttribute(XName.Get("ConfVersion"), version.ToString(2)));
+
+        if (usePerFileKey)
+            rootNodeInfo.KeyProtection!.WriteTo(element);
 
         // Written only when hardened. A classic file has to come out byte-compatible with what
         // upstream mRemoteNG writes, because it reads this same file from this same path — so
@@ -75,10 +85,20 @@ public static class XmlRootNodeSerializer
         return element;
     }
 
-    private static XAttribute CreateProtectedAttribute(RootNodeInfo rootNodeInfo, ICryptographyProvider cryptographyProvider)
+    /// <param name="usePerFileKey">
+    /// Whether the store is keyed on itself. The sentinel is the only ciphertext in the file whose
+    /// plaintext is known in advance, so it is what the reader checks an unwrapped key against — which
+    /// makes writing the right one of the three values load-bearing rather than descriptive.
+    /// </param>
+    private static XAttribute CreateProtectedAttribute(RootNodeInfo rootNodeInfo, ICryptographyProvider cryptographyProvider, bool usePerFileKey)
     {
         XAttribute attribute = new(XName.Get("Protected"), "");
-        string plainText = (rootNodeInfo.PasswordString != rootNodeInfo.DefaultPassword) ? ConnectionFileDefaults.ProtectedSentinel : ConnectionFileDefaults.NotProtectedSentinel;
+
+        string plainText = usePerFileKey
+            ? ConnectionFileDefaults.PerFileKeySentinel
+            : (rootNodeInfo.PasswordString != rootNodeInfo.DefaultPassword) ? ConnectionFileDefaults.ProtectedSentinel : ConnectionFileDefaults.NotProtectedSentinel;
+
+        // Ignored by the per-file provider, which is keyed on the file rather than on this string.
         using System.Security.SecureString encryptionPassword = rootNodeInfo.PasswordString.ConvertToSecureString();
         attribute.Value = cryptographyProvider.Encrypt(plainText, encryptionPassword);
         return attribute;

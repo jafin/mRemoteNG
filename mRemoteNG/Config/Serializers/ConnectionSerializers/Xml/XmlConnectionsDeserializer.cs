@@ -17,6 +17,8 @@ using mRemoteNG.Container;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Security;
+using mRemoteNG.Security.FileProtection;
+using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
@@ -67,6 +69,14 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
             // file", reporting a newer-format store as a corrupt one. Reading the declaration off
             // the raw text first is what stops that misdiagnosis, and is what makes "refused before
             // any decryption is attempted" true rather than nearly true.
+            //
+            // The same hazard reaches a per-file-key store, and is not fixed here. Such a file would
+            // be mangled by the decrypt attempt before TryOpenWithPerFileKey ever read its
+            // protectors, and reported as corrupt. It cannot arise from a file this application
+            // wrote — XmlConnectionsDocumentCompiler emits exactly that declaration — so what it
+            // costs is a file some other tool rewrote. Moving the whole per-file detection ahead of
+            // the legacy path would fix it and would restructure the load order every existing
+            // format depends on; that is worth doing deliberately, not as a side effect.
             RefuseUnrecognisedStorageFormat(xml);
 
             phaseSw.Restart();
@@ -77,17 +87,25 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
             XmlElement rootXmlElement = _xmlDocument.DocumentElement
                                         ?? throw new XmlException("Failed to parse XML connection file.");
             InitializeRootNode(rootXmlElement);
-            CreateDecryptor(_rootNodeInfo, rootXmlElement);
             _connectionTreeModel = new ConnectionTreeModel();
             _connectionTreeModel.AddRootNode(_rootNodeInfo);
 
             phaseSw.Restart();
-            if (_confVersion > 1.3)
+
+            // A store keyed on itself proves its key by decrypting the sentinel, so it needs neither
+            // the password-derived provider nor the authentication prompt below — and must not reach
+            // them, because PasswordString is not what it is keyed on.
+            if (!TryOpenWithPerFileKey(rootXmlElement))
             {
-                string protectedString = _xmlDocument.DocumentElement?.Attributes["Protected"]?.Value ?? string.Empty;
-                if (!_decryptor.ConnectionsFileIsAuthentic(protectedString, _rootNodeInfo.PasswordString.ConvertToSecureString()))
+                CreateDecryptor(_rootNodeInfo, rootXmlElement);
+
+                if (_confVersion > 1.3)
                 {
-                    return null;
+                    string protectedString = _xmlDocument.DocumentElement?.Attributes["Protected"]?.Value ?? string.Empty;
+                    if (!_decryptor.ConnectionsFileIsAuthentic(protectedString, _rootNodeInfo.PasswordString.ConvertToSecureString()))
+                    {
+                        return null;
+                    }
                 }
             }
             long authMs = phaseSw.ElapsedMilliseconds;
@@ -282,6 +300,83 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
         Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, message);
 
         throw new NotSupportedException(message);
+    }
+
+    /// <summary>
+    /// Opens a store protected by its own random key, or reports that this is not one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The machine protector is tried first and silently; the recovery password is asked for only
+    /// when it cannot help, and the reason it could not is reported before the prompt appears — a
+    /// prompt on its own reads as "your password is wrong" when the cause is that the file came from
+    /// another account.
+    /// </para>
+    /// <para>
+    /// An unwrapped key is accepted only once it decrypts the sentinel. A protector unwrapping proves
+    /// this account may use it, not that it belongs to this file: one left over from an earlier key,
+    /// or copied from another of the same user's files, unwraps perfectly and yields a different key.
+    /// Without the check the store would open onto contents that cannot be decrypted, with no prompt
+    /// and nothing reported — the failure mode this whole format exists to make impossible.
+    /// </para>
+    /// </remarks>
+    /// <returns><see langword="false"/> when the file declares no per-file key, so the caller falls
+    /// back to the password-derived paths that every classic store uses.</returns>
+    private bool TryOpenWithPerFileKey(XmlElement rootXmlElement)
+    {
+        ConnectionFileKeyProtection? protection = ConnectionFileKeyProtection.Read(
+            rootXmlElement.Attributes?[ConnectionFileKeyProtection.MachineProtectorAttributeName]?.Value,
+            rootXmlElement.Attributes?[ConnectionFileKeyProtection.RecoveryProtectorAttributeName]?.Value);
+
+        if (protection is null)
+            return false;
+
+        // The two are written together, in one element, by one method — a store never carries
+        // protectors without also declaring the hardened level. A file where they disagree was
+        // altered after it was written.
+        //
+        // Refused rather than read as hardened after all. Promoting it would let an edited file
+        // change the level the user consented to, and reading it as classic is worse still: the
+        // loader would keep the protectors, the saver would key the next write on the file key, and
+        // classic serialization would drop the protectors that unwrap it — producing a file nothing
+        // can reopen. That is the failure this whole format exists to make impossible.
+        if (_rootNodeInfo.StorageFormat != StorageFormatLevel.Hardened)
+            throw new NotSupportedException(
+                "This connection file carries a per-file key but does not declare the hardened " +
+                "storage format. The two are always written together, so the file has been altered " +
+                "and was not loaded. Its contents are unchanged.");
+
+        string protectedString = rootXmlElement.Attributes?["Protected"]?.Value ?? string.Empty;
+        if (string.IsNullOrEmpty(protectedString))
+            throw new NotSupportedException(
+                "This connection file declares a per-file key but carries no protection declaration, " +
+                "so there is nothing to check an unwrapped key against. It is not a file this " +
+                "application wrote.");
+
+        ConnectionFileKey fileKey = protection.Unwrap(
+            AuthenticationRequestor,
+            failure => Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, failure.Message),
+            candidate => DecryptsTheSentinel(candidate, protectedString));
+
+        _rootNodeInfo.KeyProtection = protection;
+        _rootNodeInfo.FileKey = fileKey;
+        _decryptor = new XmlConnectionsDecryptor(new PerFileKeyCryptographyProvider(fileKey), _rootNodeInfo);
+        return true;
+    }
+
+    private static bool DecryptsTheSentinel(ConnectionFileKey candidate, string protectedString)
+    {
+        try
+        {
+            using SecureString unused = new();
+            PerFileKeyCryptographyProvider probe = new(candidate);
+            return string.Equals(probe.Decrypt(protectedString, unused),
+                                 ConnectionFileDefaults.PerFileKeySentinel, StringComparison.Ordinal);
+        }
+        catch (EncryptionException)
+        {
+            return false;
+        }
     }
 
     private void CreateDecryptor(RootNodeInfo rootNodeInfo, XmlElement? connectionsRootElement = null)

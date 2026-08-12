@@ -8,6 +8,7 @@ using mRemoteNG.Config.DataProviders;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
+using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
 using mRemoteNG.Security.KeyDerivation;
@@ -34,18 +35,11 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
         {
             ThrowIfExistingFileLevelIsUnrecognised();
 
-            ICryptographyProvider cryptographyProvider = new CryptoProviderFactoryFromSettings().Build();
-
             RootNodeInfo? rootNode = connectionTreeModel.RootNodes.OfType<RootNodeInfo>().FirstOrDefault();
             if (rootNode == null)
                 throw new InvalidOperationException("Connection tree has no root node");
 
-            // The only place that knows both the provider and the store's format level. A classic
-            // store keeps deriving with SHA-1 so upstream mRemoteNG, which reads this same file from
-            // this same path, can still open it; the stronger function is what being hardened buys.
-            cryptographyProvider.KeyDerivationPrf = rootNode.StorageFormat == StorageFormatLevel.Hardened
-                ? KeyDerivationPrf.Hardened
-                : KeyDerivationPrf.Default;
+            ICryptographyProvider cryptographyProvider = BuildProvider(rootNode);
 
             Serializers.ISerializer<Connection.ConnectionInfo, string> xmlConnectionsSerializer = XmlConnectionSerializerFactory.Build(cryptographyProvider, connectionTreeModel, _saveFilter, Properties.OptionsSecurityPage.Default.EncryptCompleteConnectionsFile);
             string xml = xmlConnectionsSerializer.Serialize(rootNode);
@@ -63,6 +57,54 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
             Runtime.MessageCollector?.AddExceptionStackTrace("SaveToXml failed", ex);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Chooses what the store is keyed on: its own random key, or a key derived from a password.
+    /// </summary>
+    /// <remarks>
+    /// The only place that knows both the provider and the store's protection, which is why the
+    /// choice is made here rather than in the serializers underneath it.
+    /// </remarks>
+    private static ICryptographyProvider BuildProvider(RootNodeInfo rootNode)
+    {
+        if (rootNode.KeyProtection is not null)
+        {
+            // The second lock on the same door the reader shuts, and here for what one bypass costs.
+            // XmlRootNodeSerializer writes the sentinel and the protectors only at the hardened
+            // level, so keying a classic write on the file key would produce a file with no
+            // protectors and contents nothing can decrypt — and FileDataProviderWithRollingBackup
+            // copies before writing, so it would destroy the original and spend a backup slot on the
+            // result.
+            if (rootNode.StorageFormat != StorageFormatLevel.Hardened)
+                throw new InvalidOperationException(
+                    "This store is protected by a per-file key but is not at the hardened storage " +
+                    "format, so saving it would write a file that could not be reopened.");
+
+            // A store that declares a per-file key and cannot produce it must not be written. Falling
+            // through to the settings provider would encrypt the contents under the master password
+            // while the root still declared the per-file sentinel and carried protectors wrapping a
+            // key nothing was encrypted with — a file that passes every structural check and decrypts
+            // to nothing.
+            if (rootNode.FileKey is null)
+                throw new InvalidOperationException(
+                    "This store is protected by a per-file key that is no longer available, so it " +
+                    "cannot be saved. Re-open it and try again.");
+
+            // Deriving nothing, so the settings' engine, mode and iteration count do not apply. The
+            // key is 256 random bits; there is nothing to stretch.
+            return new PerFileKeyCryptographyProvider(rootNode.FileKey);
+        }
+
+        ICryptographyProvider cryptographyProvider = new CryptoProviderFactoryFromSettings().Build();
+
+        // A classic store keeps deriving with SHA-1 so upstream mRemoteNG, which reads this same file
+        // from this same path, can still open it; the stronger function is what being hardened buys.
+        cryptographyProvider.KeyDerivationPrf = rootNode.StorageFormat == StorageFormatLevel.Hardened
+            ? KeyDerivationPrf.Hardened
+            : KeyDerivationPrf.Default;
+
+        return cryptographyProvider;
     }
 
     /// <summary>

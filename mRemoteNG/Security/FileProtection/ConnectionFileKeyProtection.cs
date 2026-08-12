@@ -82,22 +82,50 @@ public sealed class ConnectionFileKeyProtection
     /// prompt on its own reads as "your password is wrong"; the cause — this file was protected by
     /// another account or another machine — is the part that lets someone act on it.
     /// </param>
+    /// <param name="keyValidator">
+    /// Decides whether an unwrapped key is <i>this file's</i> key. A protector unwrapping proves only
+    /// that this reader may use it: a machine protector left over from an earlier key, or copied from
+    /// another file the same account owns, unwraps perfectly and yields a different key. Without this
+    /// the store opens onto contents that cannot be decrypted, with no prompt and nothing reported.
+    /// The caller supplies it because only the caller holds the file's protection declaration, which
+    /// is the one ciphertext whose plaintext is known in advance.
+    /// </param>
     /// <exception cref="KeyProtectionException">
     /// Neither protector produced the key. Neither can produce a <i>wrong</i> key: DPAPI and AES-GCM
     /// both authenticate, so failure is an exception rather than plausible bytes.
     /// </exception>
     public ConnectionFileKey Unwrap(Func<Optional<SecureString>>? recoveryPasswordRequestor,
-                                    Action<KeyProtectionException>? onMachineProtectorFailed = null)
+                                    Action<KeyProtectionException>? onMachineProtectorFailed = null,
+                                    Func<ConnectionFileKey, bool>? keyValidator = null)
     {
         if (HasMachineProtector)
         {
+            ConnectionFileKey? candidate = null;
             try
             {
-                return DpapiKeyProtector.Unwrap(MachineProtector);
+                candidate = DpapiKeyProtector.Unwrap(MachineProtector);
+                if (Accepts(candidate, keyValidator))
+                {
+                    ConnectionFileKey opened = candidate;
+                    candidate = null;
+                    return opened;
+                }
+
+                // Usable protector, wrong key. Reported the same way an unusable one is, because the
+                // user's situation is identical — this protector is not going to open the file — and
+                // falls through to the recovery password rather than failing outright.
+                onMachineProtectorFailed?.Invoke(new KeyProtectionException(
+                    KeyProtector.Machine, KeyProtectionFailure.Unusable,
+                    "The machine protector on this connection file belongs to a different key, so it " +
+                    "was left over from an earlier one or copied from another file."));
             }
             catch (KeyProtectionException ex)
             {
                 onMachineProtectorFailed?.Invoke(ex);
+            }
+            finally
+            {
+                candidate?.Dispose();
             }
         }
 
@@ -116,13 +144,31 @@ public sealed class ConnectionFileKeyProtection
             if (password is null || password.Length == 0)
                 break;
 
+            ConnectionFileKey? candidate = null;
             try
             {
-                return RecoveryPasswordKeyProtector.Unwrap(RecoveryProtector, password);
+                candidate = RecoveryPasswordKeyProtector.Unwrap(RecoveryProtector, password);
+                if (Accepts(candidate, keyValidator))
+                {
+                    ConnectionFileKey opened = candidate;
+                    candidate = null;
+                    return opened;
+                }
+
+                // The password was right and the key is not this file's, so the protector belongs to
+                // another file. Re-asking would spend the remaining attempts on a password that has
+                // already been shown to be correct.
+                throw new KeyProtectionException(KeyProtector.RecoveryPassword, KeyProtectionFailure.Unusable,
+                    "The recovery password opened this file's protector, but the key it holds does " +
+                    "not belong to this file.");
             }
             catch (KeyProtectionException ex) when (ex.IsRetryable)
             {
                 lastFailure = ex;
+            }
+            finally
+            {
+                candidate?.Dispose();
             }
 
             // A non-retryable failure escapes the loop uncaught, deliberately. Those describe the
@@ -135,6 +181,13 @@ public sealed class ConnectionFileKeyProtection
             KeyProtectionFailure.NotSupplied,
             "This connection file was not opened: no recovery password was given.");
     }
+
+    /// <summary>
+    /// Whether an unwrapped key is accepted. No validator means any key that unwrapped is taken,
+    /// which is only correct for a caller that has nothing to check it against.
+    /// </summary>
+    private static bool Accepts(ConnectionFileKey key, Func<ConnectionFileKey, bool>? keyValidator) =>
+        keyValidator is null || keyValidator(key);
 
     /// <summary>
     /// Sets or replaces the recovery password, leaving the machine protector and the file's contents
