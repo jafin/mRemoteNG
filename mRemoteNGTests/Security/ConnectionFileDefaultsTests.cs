@@ -1,4 +1,4 @@
-using System.Security;
+﻿using System.Security;
 using mRemoteNG.Security;
 using mRemoteNG.Security.Authentication;
 using mRemoteNG.Security.SymmetricEncryption;
@@ -18,7 +18,12 @@ public class ConnectionFileDefaultsTests
     [TestCase(null)]
     [TestCase("thisisprotected")]
     [TestCase("ThisIsProtected ")]
-    [TestCase("")]
+    // Four literal EOT bytes, written as escapes and given a name of their own. Pasted in raw
+    // they rendered as an empty string, read as a duplicate of the "" case above, and — because
+    // the generated test name carried the control characters into the fully-qualified name — no
+    // --filter expression could match this case. It ran only in unfiltered runs, which is to say
+    // never in a grouped one.
+    [TestCase("\u0004\u0004\u0004\u0004", TestName = "AnythingElseIsNot_ControlCharacters")]
     public void AnythingElseIsNot(string? value) =>
         Assert.That(ConnectionFileDefaults.IsKnownSentinel(value), Is.False);
 
