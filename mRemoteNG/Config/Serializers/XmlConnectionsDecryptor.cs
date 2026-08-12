@@ -169,15 +169,40 @@ public class XmlConnectionsDecryptor
             _ = 0; // Intentionally empty — file is not encrypted
         }
 
-        return connectionsFileIsNotEncrypted || Authenticate(protectedString, GetDecryptionKey());
+        // The sentinel is the one ciphertext whose plaintext is known in advance, so it is the one
+        // that can be validated. Without this, any password whose decryption merely completed was
+        // accepted: the legacy provider is AES-CBC with PKCS7 and no authentication tag, so a wrong
+        // key yields valid padding about once in 256 and returns arbitrary bytes rather than
+        // failing — and those arbitrary bytes were taken as proof of the password.
+        //
+        // It is also what stops an unrecognised sentinel falling through to the legacy key: a value
+        // this build does not know is not ThisIsNotProtected, and guessing that it is would open a
+        // store under the wrong assumption about how it is protected.
+        return connectionsFileIsNotEncrypted ||
+               Authenticate(protectedString, GetDecryptionKey(), ConnectionFileDefaults.IsKnownSentinel);
     }
 
-    private bool Authenticate(string cipherText, SecureString password)
+    /// <param name="plaintextValidator">
+    /// Optional check on what the decryption produced. Supplied only by the sentinel path, which is
+    /// the one caller that knows what it encrypted.
+    /// <para>
+    /// It must not be applied to <see cref="LegacyFullFileDecrypt"/>, whose ciphertext is the whole
+    /// connection file: the plaintext there is an XML document, never a sentinel, so validating it
+    /// against the sentinel set would refuse every fully-encrypted legacy file that has a custom
+    /// password — which is exactly what it did before this parameter existed.
+    /// </para>
+    /// </param>
+    private bool Authenticate(string cipherText, SecureString password,
+                              Func<string, bool>? plaintextValidator = null)
     {
         if (AuthenticationRequestor is null)
             return false;
 
-        PasswordAuthenticator authenticator = new(_cryptographyProvider, cipherText, AuthenticationRequestor);
+        PasswordAuthenticator authenticator = new(_cryptographyProvider, cipherText, AuthenticationRequestor)
+        {
+            PlaintextValidator = plaintextValidator
+        };
+
         bool authenticated = authenticator.Authenticate(password);
 
         if (!authenticated || authenticator.LastAuthenticatedPassword is null)

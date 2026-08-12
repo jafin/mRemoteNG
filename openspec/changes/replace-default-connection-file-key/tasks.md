@@ -7,15 +7,27 @@ parameters and provides the KDF that stretches the recovery password. Do not sta
 
 ## 1. Export first
 
-- [ ] 1.1 Provide an export of the current connection file to a password-protected file, reachable before any migration prompt appears.
-- [ ] 1.2 Tests: an exported file opens on another machine with its password; it carries no machine-bound protector.
-- [ ] 1.3 This is task 1 deliberately. Even with the recovery protector making migration survivable, a user must have a way out that does not depend on the new format being correct.
+- [x] 1.1 Provide an export of the current connection file to a password-protected file, reachable before any migration prompt appears. — **Already delivered by `add-storage-format-opt-in` §1** and not rebuilt here. `Export.SaveExportFile` writes `SaveFormat.mRXML` under a caller-supplied password with `StorageFormatOverride = StorageFormatLevel.Classic`, so the export states its level rather than inheriting the store's. It is reachable from the File menu independently of any migration.
+- [ ] 1.2 Tests: an exported file opens on another machine with its password; it carries no machine-bound protector. — The first half is covered by the existing export tests. The second half cannot be asserted until §3 exists: there is no machine-bound protector yet for the export to be free of. Deferred to §3 rather than written as a test that passes for the wrong reason.
+- [x] 1.3 This is task 1 deliberately. Even with the recovery protector making migration survivable, a user must have a way out that does not depend on the new format being correct. — Holds: the way out predates this change and does not depend on any of it.
 
 ## 2. Protection declaration
 
-- [ ] 2.1 Add a third sentinel value for the per-file-key case alongside `ThisIsProtected` and `ThisIsNotProtected` in `XmlRootNodeSerializer.cs:41`.
-- [ ] 2.2 Make the reader refuse an unrecognised sentinel with a message naming the likely cause, rather than falling through to the legacy key.
-- [ ] 2.3 Tests: each of the three values round-trips; an unknown value loads nothing and reports; the two existing values behave exactly as before.
+- [x] 2.1 Add a third sentinel value for the per-file-key case alongside `ThisIsProtected` and `ThisIsNotProtected` in `XmlRootNodeSerializer.cs:41`. — `ConnectionFileDefaults.PerFileKeySentinel` = `ThisIsDpapiProtected`, and `IsKnownSentinel` now covers all three. Nothing writes it yet; §3 does.
+- [x] 2.2 Make the reader refuse an unrecognised sentinel with a message naming the likely cause, rather than falling through to the legacy key. — The XML read path now supplies `IsKnownSentinel` as the `PlaintextValidator` that `require-sql-master-password` §1 added to `PasswordAuthenticator` but deliberately left the XML side without. **This closes a defect wider than the task describes:** the XML path previously accepted *any* plaintext whose decryption completed, and the legacy provider is AES-CBC with PKCS7 and no authentication tag, so a wrong key yields valid padding roughly once in 256 and returns arbitrary bytes rather than failing. Those arbitrary bytes were taken as proof of the password. The message itself is still to come — see the note below.
+- [x] 2.3 Tests: each of the three values round-trips; an unknown value loads nothing and reports; the two existing values behave exactly as before. — `ConnectionFileSentinelTests`. The unknown-value case supplies an authentication requestor deliberately: without one the authenticator returns false before it ever decrypts, and the assertion would hold whether or not the validator existed. Confirmed non-vacuous by mutation — removing the validator fails that case alone.
+
+**Regression caught while doing 2.2, worth recording.** The validator was first set inside
+`XmlConnectionsDecryptor.Authenticate`, which is shared by two callers with different ciphertexts:
+the sentinel check, and `LegacyFullFileDecrypt`, whose ciphertext is the *entire encrypted file*.
+Validating the latter against the sentinel set refused every fully-encrypted legacy file with a
+custom password — nine tests on `confCons v2.5 custompassword,fullencryption`. The validator is now
+a parameter supplied only by the sentinel path, which is the one caller that knows what it
+encrypted, and the reason is recorded on the parameter.
+
+**Still open from 2.2:** the *message* naming the likely cause. A refusal today is silent — the load
+simply fails. Wiring the message belongs with §3, where an unrecognised sentinel becomes reachable
+in practice (a file written by a build that knows a fourth value) rather than hypothetical.
 
 ## 3. Two protectors
 
