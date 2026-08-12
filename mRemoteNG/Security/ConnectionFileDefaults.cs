@@ -36,6 +36,25 @@ public static class ConnectionFileDefaults
     public const string NotProtectedSentinel = "ThisIsNotProtected";
 
     /// <summary>
+    /// Sentinel written when the store is protected by a random per-file key, wrapped both by DPAPI
+    /// and by a recovery password.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A third value on the sentinel rather than a new attribute beside it. The sentinel is already
+    /// read first and already discriminates protection; a parallel attribute would give two sources
+    /// of truth about the same question, and the first disagreement between them would be a file
+    /// that decrypts under one reading and not the other.
+    /// </para>
+    /// <para>
+    /// Written only by the XML connection file. A per-user wrapped key is meaningless for a SQL
+    /// store several people read, so that backend stays on the two values above — see
+    /// <c>SqlConnectionsLoader</c> and the <c>require-sql-master-password</c> change.
+    /// </para>
+    /// </remarks>
+    public const string PerFileKeySentinel = "ThisIsDpapiProtected";
+
+    /// <summary>
     /// Whether decrypting the stored sentinel produced one of the values the format defines.
     /// </summary>
     /// <remarks>
@@ -46,5 +65,6 @@ public static class ConnectionFileDefaults
     /// </remarks>
     public static bool IsKnownSentinel(string? plainText) =>
         string.Equals(plainText, ProtectedSentinel, System.StringComparison.Ordinal) ||
-        string.Equals(plainText, NotProtectedSentinel, System.StringComparison.Ordinal);
+        string.Equals(plainText, NotProtectedSentinel, System.StringComparison.Ordinal) ||
+        string.Equals(plainText, PerFileKeySentinel, System.StringComparison.Ordinal);
 }
