@@ -93,6 +93,39 @@ public class XmlConnectionsDeserializerStorageFormatTests
         });
     }
 
+    [Test]
+    public void ADoctypeStoreIsRejectedOutrightRatherThanReadAsClassic()
+    {
+        // The preflight reader prohibits DTD, exactly as SecureXmlHelper does, so a DOCTYPE throws
+        // and the preflight declines to judge the file. That is deliberate: such a file cannot load
+        // at all — the real parser rejects it too (see SecureXmlHelperTests' XXE cases) — so
+        // reporting it as "written by a newer version" would send the user to upgrade something
+        // that still would not open. Loosening the preflight to DtdProcessing.Ignore would make it
+        // more permissive than the parser it runs ahead of.
+        //
+        // What must hold regardless of which message wins: the store is never read, and never
+        // silently treated as classic.
+        string confCons = WithStorageFormat(Resources.confCons_v2_6, UnknownLevel);
+        int declEnd = confCons.IndexOf("?>", StringComparison.Ordinal) + 2;
+        string rebuilt = confCons[..declEnd] +
+                         "\n<!DOCTYPE Connections [<!ENTITY x \"y\">]>" +
+                         confCons[declEnd..];
+
+        int requests = 0;
+        XmlConnectionsDeserializer deserializer = new("", () =>
+        {
+            requests++;
+            return "irrelevant".ConvertToSecureString();
+        });
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(() => deserializer.Deserialize(rebuilt), Throws.Exception,
+                "a DTD-bearing store is refused rather than opened");
+            Assert.That(requests, Is.Zero, "and no password is requested for it");
+        });
+    }
+
     [TestCase("")]
     [TestCase("Hardened")]
     public void TheTwoLevelsThatExistStillOpen(string level)
