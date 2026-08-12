@@ -99,6 +99,12 @@ public class SqlConnectionsLoader : IConnectionsLoader
 
         // If Protected is empty, the database has no master password set.
         // Return the default password directly without authentication.
+        //
+        // This stays on the legacy default key deliberately, and is the one place that still does.
+        // The connection file replaced it with a random per-file key wrapped for the Windows account
+        // that wrote it; a database is read by several people from several machines, so a per-user
+        // wrapped key would lock out everyone but whoever migrated it. Fixing this needs a shared
+        // secret rather than a per-user one, which is `require-sql-master-password`, not here.
         if (string.IsNullOrEmpty(cipherText))
             return new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString();
 

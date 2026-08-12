@@ -106,6 +106,31 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
     public Security.StorageFormatLevel StorageFormat { get; set; } = Security.StorageFormatLevel.Classic;
 
     /// <summary>
+    /// The two wrapped copies of this store's own key, when it has one.
+    /// </summary>
+    /// <remarks>
+    /// Null for every store that is not protected by a per-file key, which is every classic store and
+    /// every store written before this existed. Set by the reader from the file's root attributes and
+    /// by migration; it is what tells the writer to key the file on itself rather than on
+    /// <see cref="PasswordString"/>.
+    /// </remarks>
+    [Browsable(false)]
+    public Security.FileProtection.ConnectionFileKeyProtection? KeyProtection { get; set; }
+
+    /// <summary>
+    /// The unwrapped key, held for as long as the store is open.
+    /// </summary>
+    /// <remarks>
+    /// Kept because a save has to encrypt under the same key the load decrypted with, and unwrapping
+    /// again would mean a DPAPI call or a recovery-password prompt on every write. Null whenever
+    /// <see cref="KeyProtection"/> is null; a <see cref="KeyProtection"/> without one is a store that
+    /// was opened but whose key is no longer available, and the writer refuses it rather than
+    /// falling back to a key the file does not declare.
+    /// </remarks>
+    [Browsable(false)]
+    public Security.FileProtection.ConnectionFileKey? FileKey { get; set; }
+
+    /// <summary>
     /// The level, shown where the store's other security settings already are.
     /// </summary>
     /// <remarks>

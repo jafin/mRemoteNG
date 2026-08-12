@@ -23,6 +23,20 @@ public static class ConnectionFileDefaults
     /// <summary>
     /// The legacy default encryption key used when no master password is set.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Read-only for the connection file.</b> A store protected by a per-file key never reaches
+    /// this: <c>XmlConnectionsSaver</c> keys such a store on its own random key, and refuses to save
+    /// at all if that key is unavailable rather than falling back here. It stays reachable, and must,
+    /// because it is still what a <i>classic</i> store is written under — that is what keeps the file
+    /// readable by upstream mRemoteNG, and what keeps fifteen years of existing files opening.
+    /// </para>
+    /// <para>
+    /// The one other live write path is the SQL backend, which cannot use a per-user key for a store
+    /// several people share. See <c>SqlConnectionsLoader.GetDecryptionKey</c> and
+    /// <c>require-sql-master-password</c>.
+    /// </para>
+    /// </remarks>
     public const string LegacyEncryptionKey = "mR3m";
 
     /// <summary>

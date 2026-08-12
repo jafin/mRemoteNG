@@ -19,6 +19,7 @@ public class XmlConnectionsDecryptor
     private readonly RootNodeInfo _rootNodeInfo;
     private readonly BlockCipherEngines? _cipherEngine;
     private readonly BlockCipherModes? _cipherMode;
+    private readonly bool _providerIsShareable;
     private SecureString? _cachedDecryptionKey;
 
     public Func<Optional<SecureString>>? AuthenticationRequestor { get; set; }
@@ -48,6 +49,23 @@ public class XmlConnectionsDecryptor
     {
         _cryptographyProvider = new LegacyRijndaelCryptographyProvider();
         _rootNodeInfo = rootNodeInfo;
+    }
+
+    /// <summary>
+    /// Decrypts with a provider the caller has already built.
+    /// </summary>
+    /// <remarks>
+    /// For a store keyed on its own random key, where the engine, mode and iteration count recorded
+    /// on the root describe nothing this provider does — there is no derivation to configure. The
+    /// caller is the only thing holding the unwrapped key, so it is the only thing that can build the
+    /// provider.
+    /// </remarks>
+    public XmlConnectionsDecryptor(ICryptographyProvider cryptographyProvider, RootNodeInfo rootNodeInfo)
+    {
+        ArgumentNullException.ThrowIfNull(cryptographyProvider);
+        _cryptographyProvider = cryptographyProvider;
+        _rootNodeInfo = rootNodeInfo;
+        _providerIsShareable = true;
     }
 
     public XmlConnectionsDecryptor(BlockCipherEngines blockCipherEngine, BlockCipherModes blockCipherMode,
@@ -105,6 +123,13 @@ public class XmlConnectionsDecryptor
 
     private ICryptographyProvider CreateThreadLocalProvider()
     {
+        // A supplied provider derives no key, so it holds no per-call state to race on and there is
+        // nothing for a copy to be given: it is shared across the batch rather than duplicated. It
+        // also could not be rebuilt here even if that were wanted, because the key it holds is not
+        // recorded anywhere this class can reach.
+        if (_providerIsShareable)
+            return _cryptographyProvider;
+
         if (_cipherEngine == null)
             return new LegacyRijndaelCryptographyProvider();
 
