@@ -1057,8 +1057,13 @@ public partial class FrmMain : IMessageFilter
     // message is never consumed: the click still reaches the control normally.
     // TEMP diagnostic for #118 (RDP text boxes unresponsive). Remove once the trace
     // shows which branch fails. Logs to %LOCALAPPDATA%\mRemoteNG\mRemoteNG.log.
+    //
+    // Debug, not information: this runs on every WM_LBUTTONDOWN in the main window, so at
+    // information it wrote several lines per click to every user's log permanently. Asking
+    // someone chasing #118 to tick the debug option costs one checkbox; the alternative
+    // costs everyone else a log they cannot read.
     private static void Diag118(string msg) =>
-        Runtime.MessageCollector?.AddMessage(MessageClass.InformationMsg, $"[#118-diag] {msg}", true);
+        Runtime.MessageCollector?.AddMessage(MessageClass.DebugMsg, $"[#118-diag] {msg}", true);
 
     private void RedirectClickToInputControl()
     {
