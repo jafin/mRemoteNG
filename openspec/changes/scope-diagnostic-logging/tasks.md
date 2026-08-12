@@ -26,9 +26,13 @@
 - [x] 4.3 `openspec validate scope-diagnostic-logging --strict`. — Done 2026-08-12 — valid.
 - [x] 4.4 Manual: fresh profile, run, confirm the log holds startup information and no debug noise. — Done 2026-08-12 against a renamed-aside profile. Zero DEBUG lines; the log holds the `[Startup]` timings and the startup facts.
 - [x] 4.5 Manual: switch to verbose, confirm debug messages appear without restarting, switch back, confirm they stop. — Done 2026-08-12. Confirmed with the options dialog's own `[BtnOK_Click]`/`[SaveOptions]` traces, which go straight to `Logger.Instance.Log` and so depend on nothing but the level switch. **Worth knowing for the next person:** the Notifications page carries three checkboxes all labelled "Debug" — notification panel, logging, popup — and only the one in the Logging group drives the log level. The first attempt here ticked the wrong one and read as a broken switch.
-- [ ] 4.6 Manual: launch with `-qc:user@host`, confirm the logged command line is redacted the same way the debug report renders it.
+- [x] 4.6 Manual: launch with `-qc:user@host`, confirm the logged command line is redacted the same way the debug report renders it. — Done 2026-08-12, confirmed by the maintainer. **The task as written was stale on two counts, and what was checked is this instead:** the `Command Line:` line shows `%USERPROFILE%` in place of the profile path, and leaves `user@host` intact. (1) The two redactions deliberately differ — task 2.2 routes the startup log through `RedactUserPaths` only, while `DebugReportBuilder` applies the full `Redact` that also strips hostnames; asking them to match would undo that decision. (2) There is no debug report to compare against from a running application: `DebugReportBuilder.BuildReport` has no caller anywhere in the repo. The equivalence of the two strengths is covered by `DiagnosticTextSanitizerTests`. Note that the exe must be launched with an argument under the profile — `-cons:"%APPDATA%\mRemoteNG\confCons.xml"` — or there is nothing on the command line to redact.
 
-4.6 is the only work left in this change.
+All tasks are complete. Two things this change's verification turned up, both handled:
+`frmMain.Diag118` logged at information from `WM_LBUTTONDOWN` (fixed, then removed outright once
+#118 was confirmed fixed), and `DebugReportBuilder.BuildReport` is unreachable from the running
+application — noted here rather than fixed, since giving the debug report an entry point is a
+feature, not part of scoping the log.
 
 The 4.4 run turned up one defect, fixed separately: `frmMain.Diag118`, a temporary trace for #118,
 ran from `WM_LBUTTONDOWN` at information severity — several lines per left-click, permanently, in
