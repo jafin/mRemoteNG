@@ -1,13 +1,13 @@
 {
   "metadata": {
-    "total_expected": 6266,
-    "min_total_threshold": 5601,
-    "last_updated": "2026-07-02",
+    "total_expected": 4019,
+    "min_total_threshold": 3800,
+    "last_updated": "2026-08-12",
     "stats": {
       "unique_methods": 1249,
       "static_test_cases": 1337,
       "dynamic_source_methods": 22,
-      "note": "static_test_cases counts [Test] as 1, each [TestCase] as 1. dynamic_source_methods use [TestCaseSource] generating N cases at runtime. total_expected = static + dynamic_runtime_cases, updated after each test run."
+      "note": "static_test_cases counts [Test] as 1, each [TestCase] as 1. dynamic_source_methods use [TestCaseSource] generating N cases at runtime. total_expected = the sum of the runner's groups plus the isolated tests, and the groups partition the assembly: every test belongs to exactly one. Before 2026-08-12 the negated clauses carried a literal backslash (\\!~), which VSTest silently treats as matching everything rather than excluding, so Remaining re-ran the whole assembly and the reported total was roughly double the real test count."
     }
   },
   "runner": {
@@ -15,42 +15,42 @@
       {
         "name": "Connection",
         "filter": "FullyQualifiedName~mRemoteNGTests.Connection",
-        "expected": 1113
+        "expected": 1320
       },
       {
         "name": "Config.Xml",
         "filter": "FullyQualifiedName~mRemoteNGTests.Config.Serializers.ConnectionSerializers.Xml",
-        "expected": 124
+        "expected": 137
       },
       {
         "name": "Config.Other",
-        "filter": "FullyQualifiedName~mRemoteNGTests.Config&FullyQualifiedName\\!~Serializers.ConnectionSerializers.Xml",
-        "expected": 779
+        "filter": "FullyQualifiedName~mRemoteNGTests.Config&FullyQualifiedName!~Serializers.ConnectionSerializers.Xml",
+        "expected": 678
       },
       {
         "name": "UI",
         "filter": "FullyQualifiedName~mRemoteNGTests.UI&Name!=FormBehavior&Name!=AllPagesExistWithIconsAndLoadCorrectSettings",
-        "expected": 374
+        "expected": 421
       },
       {
         "name": "Tools",
         "filter": "FullyQualifiedName~mRemoteNGTests.Tools",
-        "expected": 391
+        "expected": 494
       },
       {
         "name": "Security",
         "filter": "FullyQualifiedName~mRemoteNGTests.Security",
-        "expected": 166
+        "expected": 389
       },
       {
         "name": "Tree+Container+Cred",
         "filter": "FullyQualifiedName~mRemoteNGTests.Tree|FullyQualifiedName~mRemoteNGTests.Container|FullyQualifiedName~mRemoteNGTests.Credential",
-        "expected": 178
+        "expected": 184
       },
       {
         "name": "Remaining",
-        "filter": "FullyQualifiedName\\!~mRemoteNGTests.Connection&FullyQualifiedName\\!~mRemoteNGTests.Config&FullyQualifiedName\\!~mRemoteNGTests.UI&FullyQualifiedName\\!~mRemoteNGTests.Tools&FullyQualifiedName\\!~mRemoteNGTests.Security&FullyQualifiedName\\!~mRemoteNGTests.Tree&FullyQualifiedName\\!~mRemoteNGTests.Container&FullyQualifiedName\\!~mRemoteNGTests.Credential&FullyQualifiedName\\!~mRemoteNGTests.IntegrationTests&Name!=FormBehavior&Name!=AllPagesExistWithIconsAndLoadCorrectSettings",
-        "expected": 3103
+        "filter": "FullyQualifiedName!~mRemoteNGTests.Connection&FullyQualifiedName!~mRemoteNGTests.Config&FullyQualifiedName!~mRemoteNGTests.UI&FullyQualifiedName!~mRemoteNGTests.Tools&FullyQualifiedName!~mRemoteNGTests.Security&FullyQualifiedName!~mRemoteNGTests.Tree&FullyQualifiedName!~mRemoteNGTests.Container&FullyQualifiedName!~mRemoteNGTests.Credential&FullyQualifiedName!~mRemoteNGTests.IntegrationTests&Name!=FormBehavior&Name!=AllPagesExistWithIconsAndLoadCorrectSettings",
+        "expected": 336
       },
       {
         "name": "Integration",

@@ -11,15 +11,39 @@ public class StorageFormatTests
     [TestCase("")]
     [TestCase("   ")]
     [TestCase("Classic")]
-    [TestCase("something this build has never heard of")]
-    public void AnythingButHardenedReadsAsClassic(string? recorded) =>
-        Assert.That(StorageFormat.Parse(recorded), Is.EqualTo(StorageFormatLevel.Classic));
+    public void AnAbsentOrClassicDeclarationReadsAsClassic(string? recorded) =>
+        Assert.That(StorageFormat.Resolve(recorded), Is.EqualTo(StorageFormatLevel.Classic));
 
     [TestCase("Hardened")]
     [TestCase("hardened")]
     [TestCase("HARDENED")]
     public void HardenedIsRecognisedWhateverItsCase(string recorded) =>
-        Assert.That(StorageFormat.Parse(recorded), Is.EqualTo(StorageFormatLevel.Hardened));
+        Assert.That(StorageFormat.Resolve(recorded), Is.EqualTo(StorageFormatLevel.Hardened));
+
+    [TestCase("Quantum")]
+    [TestCase("something this build has never heard of")]
+    [TestCase("Hardened2")]
+    public void ADeclarationThisBuildDoesNotKnowResolvesToNoLevelAtAll(string recorded)
+    {
+        // Not classic. A level that is present but unrecognised says a build that knew more than
+        // this one wrote the file deliberately; reading it as classic discards that statement and
+        // the next ordinary save writes the file back without it.
+        Assert.That(StorageFormat.Resolve(recorded), Is.Null);
+    }
+
+    [Test]
+    public void AbsenceIsRecognisedAndAnUnknownValueIsNot()
+    {
+        // The distinction the whole change turns on: absent is a classic declaration, not a missing
+        // one, and must keep opening every file upstream mRemoteNG has ever written.
+        Assert.Multiple(() =>
+        {
+            Assert.That(StorageFormat.IsRecognised(null), "absence is how classic is declared");
+            Assert.That(StorageFormat.IsRecognised(""), "so is an empty declaration");
+            Assert.That(StorageFormat.IsRecognised("Hardened"));
+            Assert.That(StorageFormat.IsRecognised("Quantum"), Is.False);
+        });
+    }
 
     [Test]
     public void ClassicRecordsNothing()
@@ -37,7 +61,7 @@ public class StorageFormatTests
         Assert.Multiple(() =>
         {
             Assert.That(recorded, Is.Not.Null);
-            Assert.That(StorageFormat.Parse(recorded), Is.EqualTo(StorageFormatLevel.Hardened));
+            Assert.That(StorageFormat.Resolve(recorded), Is.EqualTo(StorageFormatLevel.Hardened));
         });
     }
 

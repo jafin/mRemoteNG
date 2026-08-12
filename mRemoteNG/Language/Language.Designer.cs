@@ -2193,7 +2193,16 @@ namespace mRemoteNG.Resources.Language {
                 return ResourceManager.GetString("ErrorDatabaseVersionNewerThanClient", resourceCulture);
             }
         }
-        
+
+        /// <summary>
+        ///   Looks up a localized string similar to The connection file declares storage format &quot;{0}&quot;, which this copy of {1} does not recognise, so it was written by a newer version. No connections were loaded and the file has not been changed. Upgrade {1} on this computer to open it..
+        /// </summary>
+        internal static string ErrorConnectionFileFormatNewerThanClient {
+            get {
+                return ResourceManager.GetString("ErrorConnectionFileFormatNewerThanClient", resourceCulture);
+            }
+        }
+
         /// <summary>
         ///   Looks up a localized string similar to PuTTY could not be launched..
         /// </summary>
