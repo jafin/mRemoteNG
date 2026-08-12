@@ -87,19 +87,32 @@ public static class StorageFormatUpgradePrompt
             Language.RecoveryPasswordTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
 
         Optional<SecureString> supplied = PasswordPrompt(Language.RecoveryPasswordName);
-        if (!supplied.Any() || supplied.First() is not { Length: > 0 } recoveryPassword)
+        SecureString? recoveryPassword = supplied.Any() ? supplied.First() : null;
+
+        // Disposed on every path, including the declined one where an empty SecureString still came
+        // back. Nothing downstream keeps it: the protector derives a key from it and discards it, and
+        // RecoveryPasswordSession copies. Leaving it to a finalizer would keep a password the user
+        // may well have reused elsewhere alive for no reason at all.
+        try
         {
-            MessageBox.Show(owner, Language.RecoveryPasswordDeclined, Language.RecoveryPasswordTitle,
-                MessageBoxButtons.OK, MessageBoxIcon.Information);
-            return false;
+            if (recoveryPassword is not { Length: > 0 })
+            {
+                MessageBox.Show(owner, Language.RecoveryPasswordDeclined, Language.RecoveryPasswordTitle,
+                    MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return false;
+            }
+
+            ConnectionFileMigration.Establish(rootNode, recoveryPassword, machineProtector,
+                Properties.OptionsSecurityPage.Default.EncryptionKeyDerivationIterations);
+
+            // Remembered so the store does not ask for it again this run — it was just typed twice.
+            RecoveryPasswordSession.Remember(recoveryPassword);
+            return true;
         }
-
-        ConnectionFileMigration.Establish(rootNode, recoveryPassword, machineProtector,
-            Properties.OptionsSecurityPage.Default.EncryptionKeyDerivationIterations);
-
-        // Remembered so the store does not ask for it again this run — it was just typed twice.
-        RecoveryPasswordSession.Remember(recoveryPassword);
-        return true;
+        finally
+        {
+            recoveryPassword?.Dispose();
+        }
     }
 
     /// <summary>

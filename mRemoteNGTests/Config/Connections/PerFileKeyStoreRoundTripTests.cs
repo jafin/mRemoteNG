@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security;
@@ -90,6 +91,58 @@ public class PerFileKeyStoreRoundTripTests
         Reopen(Supply);
 
         Assert.That(prompts, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void EveryPasswordSuppliedToOpenTheStoreIsReleasedAfterwards()
+    {
+        // The session keeps a copy, so the instances handed over have no further use. Leaving them
+        // to a finalizer keeps a password the user may well have reused elsewhere alive for the rest
+        // of the run, for nothing.
+        (ConnectionTreeModel model, _) = ProtectedStore("server", "hunter2", machineProtector: false);
+        new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(model);
+        RecoveryPasswordSession.Clear();
+
+        List<SecureString> handedOver = [];
+        Reopen(() =>
+        {
+            SecureString password = "recovery".ConvertToSecureString();
+            handedOver.Add(password);
+            return password;
+        });
+
+        Assert.That(handedOver, Is.Not.Empty);
+        Assert.Multiple(() =>
+        {
+            foreach (SecureString password in handedOver)
+                Assert.Throws<ObjectDisposedException>(() => _ = password.Length);
+        });
+    }
+
+    [Test]
+    public void APasswordThatDidNotWorkIsReleasedAlongsideTheOneThatDid()
+    {
+        // A remembered password that has stopped working, followed by a typed one that succeeds, is
+        // the case where tracking only the last would leave the first alive.
+        (ConnectionTreeModel model, _) = ProtectedStore("server", "hunter2", machineProtector: false);
+        new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(model);
+        RecoveryPasswordSession.Clear();
+
+        List<SecureString> handedOver = [];
+        int attempt = 0;
+        Reopen(() =>
+        {
+            SecureString password = (attempt++ == 0 ? "wrong" : "recovery").ConvertToSecureString();
+            handedOver.Add(password);
+            return password;
+        });
+
+        Assert.That(handedOver, Has.Count.EqualTo(2), "the wrong password was tried before the right one");
+        Assert.Multiple(() =>
+        {
+            foreach (SecureString password in handedOver)
+                Assert.Throws<ObjectDisposedException>(() => _ = password.Length);
+        });
     }
 
     [Test]

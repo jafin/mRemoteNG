@@ -76,6 +76,12 @@ public sealed class ConnectionFileKeyProtection
     /// Asked for the recovery password, once per attempt. A null requestor, or one that returns
     /// nothing, ends the attempt — this is the same contract the master-password path already uses,
     /// so a non-interactive caller cannot be made to block.
+    /// <para>
+    /// <b>Nothing here takes ownership of what it returns.</b> A password is derived from and
+    /// discarded within the attempt that used it, so the caller is free to dispose every password it
+    /// supplied once this returns or throws — and should, since it is the only thing that knows how
+    /// many it handed over.
+    /// </para>
     /// </param>
     /// <param name="onMachineProtectorFailed">
     /// Told why the machine protector could not be used, before the user is asked for anything. The

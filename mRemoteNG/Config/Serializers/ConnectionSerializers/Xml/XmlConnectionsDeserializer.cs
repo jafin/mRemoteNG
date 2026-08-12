@@ -357,6 +357,11 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
         SecureString? supplied = null;
         bool sessionAlreadyOffered = false;
 
+        // Every password handed to Unwrap, so all of them can be released rather than only the one
+        // that worked. A remembered password that failed, followed by a typed one that succeeded,
+        // otherwise leaves the first alive for the rest of the run.
+        List<SecureString> issued = [];
+
         // The password this run has already opened the store with is offered once, ahead of the user.
         // Once, not every attempt: a remembered password that has stopped working — the file was
         // rekeyed, or replaced from a backup — must fall through to a prompt rather than fail three
@@ -370,29 +375,45 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
                 if (remembered is not null)
                 {
                     supplied = remembered;
+                    issued.Add(remembered);
                     return remembered;
                 }
             }
 
             Optional<SecureString> provided = AuthenticationRequestor?.Invoke() ?? Optional<SecureString>.Empty;
             supplied = provided.Any() ? provided.First() : null;
+            if (supplied is not null)
+                issued.Add(supplied);
             return provided;
         }
 
-        ConnectionFileKey fileKey = protection.Unwrap(
-            Request,
-            failure => Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, failure.Message),
-            candidate => DecryptsTheSentinel(candidate, protectedString));
+        try
+        {
+            ConnectionFileKey fileKey = protection.Unwrap(
+                Request,
+                failure => Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, failure.Message),
+                candidate => DecryptsTheSentinel(candidate, protectedString));
 
-        // Null whenever the machine protector opened the store, which is the case that asked for
-        // nothing and so has nothing to remember.
-        if (supplied is not null)
-            RecoveryPasswordSession.Remember(supplied);
+            // Null whenever the machine protector opened the store, which is the case that asked for
+            // nothing and so has nothing to remember. Remembered before the disposal below, because
+            // the session keeps a copy rather than the instance.
+            if (supplied is not null)
+                RecoveryPasswordSession.Remember(supplied);
 
-        _rootNodeInfo.KeyProtection = protection;
-        _rootNodeInfo.FileKey = fileKey;
-        _decryptor = new XmlConnectionsDecryptor(new PerFileKeyCryptographyProvider(fileKey), _rootNodeInfo);
-        return true;
+            _rootNodeInfo.KeyProtection = protection;
+            _rootNodeInfo.FileKey = fileKey;
+            _decryptor = new XmlConnectionsDecryptor(new PerFileKeyCryptographyProvider(fileKey), _rootNodeInfo);
+            return true;
+        }
+        finally
+        {
+            // Safe to release here and nowhere earlier: the protector derives from a password and
+            // discards it, so once Unwrap has returned or thrown nothing downstream holds one. This
+            // is unlike the master-password path, where PasswordAuthenticator deliberately keeps
+            // what the requestor gave it.
+            foreach (SecureString password in issued)
+                password.Dispose();
+        }
     }
 
     private static bool DecryptsTheSentinel(ConnectionFileKey candidate, string protectedString)
