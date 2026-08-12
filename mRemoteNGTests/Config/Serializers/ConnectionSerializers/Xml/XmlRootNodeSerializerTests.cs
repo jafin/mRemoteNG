@@ -49,7 +49,7 @@ public class XmlRootNodeSerializerTests
         var element = XmlRootNodeSerializer.SerializeRootNodeInfo(_rootNodeInfo, _cryptographyProvider, _version);
         string? recorded = element.Attribute(XName.Get(StorageFormat.AttributeName))?.Value;
 
-        Assert.That(StorageFormat.Parse(recorded), Is.EqualTo(StorageFormatLevel.Hardened));
+        Assert.That(StorageFormat.Resolve(recorded), Is.EqualTo(StorageFormatLevel.Hardened));
     }
 
     [Test]

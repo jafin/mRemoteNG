@@ -201,8 +201,29 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
         // Absent means classic, which is every file written before this existed and every file
         // upstream mRemoteNG has ever written. Read from the file rather than from configuration so
         // that opening a store in a newer build cannot change what it is.
-        _rootNodeInfo.StorageFormat = StorageFormat.Parse(
-            connectionsRootElement.Attributes?[StorageFormat.AttributeName]?.Value);
+        string? recordedLevel = connectionsRootElement.Attributes?[StorageFormat.AttributeName]?.Value;
+        StorageFormatLevel? level = StorageFormat.Resolve(recordedLevel);
+
+        // A level this build does not know says a newer build wrote the file deliberately. Reading
+        // it as classic would discard that, and the next ordinary save would write the file back
+        // without it. Refused here — before CreateDecryptor, and so before any password is asked
+        // for — because a prompt on a file that was never going to open teaches the user their
+        // password is wrong. Same treatment the SQL store already gives a database newer than it
+        // understands.
+        if (level is null)
+        {
+            // Reported through the message collector rather than a task dialog, which is where the
+            // SQL store's refusal of a newer database goes. The throw reaches Runtime.LoadConnections,
+            // which already owns the dialog for a load that failed.
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg,
+                string.Format(CultureInfo.InvariantCulture, Language.ErrorConnectionFileFormatNewerThanClient,
+                    recordedLevel, App.Info.GeneralAppInfo.ProductName));
+
+            throw new NotSupportedException(
+                $"Connection file declares storage format '{recordedLevel}', which this build does not recognise.");
+        }
+
+        _rootNodeInfo.StorageFormat = level.Value;
     }
 
     private void CreateDecryptor(RootNodeInfo rootNodeInfo, XmlElement? connectionsRootElement = null)

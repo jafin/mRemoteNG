@@ -62,14 +62,46 @@ public static class StorageFormat
     /// Reads the level from a connection file's recorded value.
     /// </summary>
     /// <remarks>
-    /// An absent, empty or unrecognised value is classic. Unrecognised is deliberately not an error:
-    /// the value only says how to treat the file, and a file this build cannot make sense of is
-    /// refused by the protection sentinel, which is read before anything is decrypted.
+    /// <para>
+    /// Absent, empty and whitespace are classic: that is every file written before the level existed
+    /// and every file upstream mRemoteNG writes. A value this build does not recognise resolves to
+    /// nothing at all — see <see cref="Resolve"/> — because it says a build that knew more than this
+    /// one wrote the file deliberately, and reading it as classic discards that statement.
+    /// </para>
+    /// <para>
+    /// An earlier version of this collapsed unrecognised into classic, on the grounds that such a
+    /// file is refused by the protection sentinel before anything is decrypted. That is true of the
+    /// SQL store, where <c>SqlConnectionsLoader</c> sets
+    /// <c>PlaintextValidator = ConnectionFileDefaults.IsKnownSentinel</c>. It was never true of the
+    /// connection file, which builds its authenticator through <c>XmlConnectionsDecryptor</c> and
+    /// sets no validator — so <c>PasswordAuthenticator</c> accepts any plaintext that decrypts
+    /// without throwing, and nothing downstream would have caught the unknown level.
+    /// </para>
     /// </remarks>
-    public static StorageFormatLevel Parse(string? recordedValue) =>
-        string.Equals(recordedValue, HardenedValue, StringComparison.OrdinalIgnoreCase)
-            ? StorageFormatLevel.Hardened
-            : StorageFormatLevel.Classic;
+    /// <returns>
+    /// The level, or <see langword="null"/> when the value is present but unrecognised. A caller that
+    /// cannot resolve a level must refuse the store rather than assume one.
+    /// </returns>
+    public static StorageFormatLevel? Resolve(string? recordedValue)
+    {
+        if (string.IsNullOrWhiteSpace(recordedValue))
+            return StorageFormatLevel.Classic;
+
+        if (string.Equals(recordedValue, HardenedValue, StringComparison.OrdinalIgnoreCase))
+            return StorageFormatLevel.Hardened;
+
+        return string.Equals(recordedValue, ClassicValue, StringComparison.OrdinalIgnoreCase)
+            ? StorageFormatLevel.Classic
+            : null;
+    }
+
+    /// <summary>
+    /// Whether a recorded value names a level this build understands.
+    /// </summary>
+    /// <remarks>
+    /// Absence counts as recognised: it is the classic declaration, not a missing one.
+    /// </remarks>
+    public static bool IsRecognised(string? recordedValue) => Resolve(recordedValue) is not null;
 
     /// <summary>The value to record for a level, or null when nothing should be written.</summary>
     public static string? ToRecordedValue(StorageFormatLevel level) =>

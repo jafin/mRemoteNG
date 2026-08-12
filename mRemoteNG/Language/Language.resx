@@ -598,6 +598,9 @@ Starting with new connections file.</value>
   <data name="ErrorDatabaseVersionNewerThanClient" xml:space="preserve">
     <value>The database is at version {0}, which is newer than this copy of {1} supports (up to version {2}). No connections were loaded. Upgrade {1} on this computer to open it.</value>
   </data>
+  <data name="ErrorConnectionFileFormatNewerThanClient" xml:space="preserve">
+    <value>The connection file declares storage format "{0}", which this copy of {1} does not recognise, so it was written by a newer version. No connections were loaded and the file has not been changed. Upgrade {1} on this computer to open it.</value>
+  </data>
   <data name="ErrorCouldNotLaunchPutty" xml:space="preserve">
     <value>PuTTY could not be launched.</value>
   </data>

@@ -1,0 +1,175 @@
+using System;
+using System.IO;
+using System.Security;
+using System.Text;
+using mRemoteNG.Config.Connections;
+using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
+using mRemoteNG.Security;
+using mRemoteNG.Tools;
+using mRemoteNG.Tree;
+using mRemoteNGTests.Properties;
+using NUnit.Framework;
+
+namespace mRemoteNGTests.Config.Serializers.ConnectionSerializers.Xml;
+
+/// <summary>
+/// A store declaring a format level this build does not recognise is refused rather than read.
+/// </summary>
+/// <remarks>
+/// The failure this guards against is silent: reading an unrecognised level as classic discards a
+/// statement a newer build made deliberately, and the next ordinary save writes the file back
+/// without it. Nothing writes such a level today, which is exactly why the rule has to ship now —
+/// it must be in the build that precedes the one introducing a level, or the first store written at
+/// that level meets an older build that flattens it.
+/// </remarks>
+[TestFixture]
+public class XmlConnectionsDeserializerStorageFormatTests
+{
+    private const string UnknownLevel = "Quantum";
+
+    [Test]
+    public void AnUnrecognisedLevelIsRefusedRatherThanReadAsClassic()
+    {
+        string confCons = WithStorageFormat(Resources.confCons_v2_6, UnknownLevel);
+        XmlConnectionsDeserializer deserializer = new("", NeverCalled);
+
+        NotSupportedException? thrown = Assert.Throws<NotSupportedException>(
+            () => deserializer.Deserialize(confCons));
+
+        Assert.That(thrown!.Message, Does.Contain(UnknownLevel),
+            "the refusal names the level it could not resolve");
+    }
+
+    [Test]
+    public void NoPasswordIsRequestedForAStoreThatWasNeverGoingToOpen()
+    {
+        // The point of refusing before CreateDecryptor. A prompt on a file that cannot open teaches
+        // the user their password is wrong — the same misdiagnosis a hardened file produces in
+        // upstream mRemoteNG, and the reason that failure mode is worth avoiding here.
+        int requests = 0;
+
+        XmlConnectionsDeserializer deserializer = new("", () =>
+        {
+            requests++;
+            return "irrelevant".ConvertToSecureString();
+        });
+
+        Assert.Throws<NotSupportedException>(
+            () => deserializer.Deserialize(WithStorageFormat(Resources.confCons_v2_6, UnknownLevel)));
+
+        Assert.That(requests, Is.Zero, "the authentication requestor was never invoked");
+    }
+
+    [TestCase("")]
+    [TestCase("Hardened")]
+    public void TheTwoLevelsThatExistStillOpen(string level)
+    {
+        // The property the change must not disturb. An absent declaration is every file upstream
+        // mRemoteNG has ever written; if this check reached those, it would lock users out of their
+        // own connections rather than protect them.
+        string confCons = level.Length == 0
+            ? Resources.confCons_v2_6
+            : WithStorageFormat(Resources.confCons_v2_6, level);
+
+        XmlConnectionsDeserializer deserializer = new("", NeverCalled);
+
+        ConnectionTreeModel model = deserializer.Deserialize(confCons);
+
+        Assert.That(model.RootNodes, Is.Not.Empty);
+    }
+
+    [Test]
+    public void ARefusedStoreIsNotWrittenOver()
+    {
+        // Belt and braces for the save side. FileDataProviderWithRollingBackup copies the file
+        // before writing, so a save that should not have happened destroys the original *and*
+        // spends a backup slot on the result — neither is recoverable.
+        string directory = Path.Combine(Path.GetTempPath(), "mRemoteNGTests-fmt-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string file = Path.Combine(directory, "confCons.xml");
+
+        try
+        {
+            File.WriteAllText(file, WithStorageFormat(Resources.confCons_v2_6, UnknownLevel), Encoding.UTF8);
+            byte[] before = File.ReadAllBytes(file);
+
+            XmlConnectionsSaver saver = new(file, new SaveFilter());
+
+            Assert.Throws<NotSupportedException>(() => saver.Save(new ConnectionTreeModel()));
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(File.ReadAllBytes(file), Is.EqualTo(before), "the file on disk is byte-identical");
+                Assert.That(Directory.GetFiles(directory), Has.Length.EqualTo(1), "no backup slot was spent");
+            });
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // A leftover temp directory is not worth failing a green test over.
+            }
+        }
+    }
+
+    [Test]
+    public void AStoreAtARecognisedLevelIsStillWritable()
+    {
+        // The guard must not turn into "saving is refused", which would be a far worse defect than
+        // the one it prevents.
+        string directory = Path.Combine(Path.GetTempPath(), "mRemoteNGTests-fmt-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        string file = Path.Combine(directory, "confCons.xml");
+
+        try
+        {
+            File.WriteAllText(file, Resources.confCons_v2_6, Encoding.UTF8);
+
+            XmlConnectionsDeserializer deserializer = new("", NeverCalled);
+            ConnectionTreeModel model = deserializer.Deserialize(Resources.confCons_v2_6);
+
+            XmlConnectionsSaver saver = new(file, new SaveFilter());
+
+            Assert.DoesNotThrow(() => saver.Save(model));
+        }
+        finally
+        {
+            try
+            {
+                Directory.Delete(directory, recursive: true);
+            }
+            catch (IOException)
+            {
+                // A leftover temp directory is not worth failing a green test over.
+            }
+        }
+    }
+
+    /// <summary>Stamps a level onto the root element of a real connection file.</summary>
+    private static string WithStorageFormat(string confCons, string level)
+    {
+        // Upstream writes a bare <Connections>; this fork writes it namespaced as
+        // <mrng:Connections>. Both shapes have to be stampable or the fixture silently tests nothing.
+        int rootStart = confCons.IndexOf("<mrng:Connections", StringComparison.Ordinal);
+        if (rootStart < 0)
+            rootStart = confCons.IndexOf("<Connections", StringComparison.Ordinal);
+
+        Assert.That(rootStart, Is.GreaterThan(0), "the fixture's root element was not found");
+
+        int rootEnd = confCons.IndexOf('>', rootStart);
+
+        return confCons[..rootEnd] +
+               $" {StorageFormat.AttributeName}=\"{level}\"" +
+               confCons[rootEnd..];
+    }
+
+    private static Optional<SecureString> NeverCalled()
+    {
+        Assert.Fail("no password should have been requested");
+        return new SecureString();
+    }
+}
