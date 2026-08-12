@@ -35,9 +35,12 @@ backups are byte-identical copies of the encrypted file, it makes every backup u
 recovery protector travels with every copy, so confidentiality improves without recoverability
 getting worse.
 
+Two cases write the recovery protector alone: the portable edition, and a file outside the user
+profile. Both are stated as their own requirements below.
+
 #### Scenario: Opening on the machine that wrote the file
 
-- **WHEN** a protected file is opened by the account that saved it
+- **WHEN** a protected file with a machine protector is opened by the account that saved it
 - **THEN** the key is unwrapped using per-user data protection
 - **AND** the user is not prompted
 
@@ -53,6 +56,24 @@ getting worse.
 - **WHEN** per-user data protection cannot unwrap the key and the recovery password is not supplied
 - **THEN** no connection is decrypted
 - **AND** the message distinguishes this from a corrupt file
+
+#### Scenario: A protector that unwraps to a key this file was not written with
+
+- **WHEN** a protector yields a key that does not decrypt the file's protection declaration
+- **THEN** that key is not accepted
+- **AND** the remaining protector is tried
+
+A protector unwrapping proves only that the reader may use it, not that it belongs to this file. A
+machine protector left over from an earlier key, or copied from another file the same account owns,
+unwraps perfectly and yields the wrong key — and the store then opens onto contents that cannot be
+decrypted, with no prompt and nothing reported. The protection declaration is the one ciphertext
+whose plaintext is known in advance, so it is what separates a usable protector from a right one.
+
+#### Scenario: A protector that cannot be used is told apart from a wrong secret
+
+- **WHEN** a protector is absent, truncated, or records parameters outside the range this build writes
+- **THEN** the recovery password is not requested repeatedly against it
+- **AND** the failure is reported as a property of the file rather than of the password
 
 ### Requirement: A recovery password is required before a per-file key is written
 
@@ -212,3 +233,66 @@ presence of the machine-bound protector differs.
 - **WHEN** a file written by the portable edition is opened by the installed edition
 - **THEN** the recovery password decrypts it
 - **AND** a machine-bound protector may be added when it is next saved
+
+### Requirement: A connection file outside the user profile writes no machine-bound protector
+
+The system SHALL detect a connection file whose location is outside the user's profile and SHALL
+protect it with the recovery password alone.
+
+The file carries one machine-bound protector, so on a file several people share it can serve exactly
+one of them. Everyone else fails it on every open, is told the file was protected by a different
+account, and has no way to make that stop — the protector they would need a slot for does not have
+one. A protector only one member of a team can use costs the others a prompt and buys nothing.
+
+The detection cannot be exact: a redirected Documents folder is a share its owner does not know they
+have, and a personal file on a NAS is not a team file. It does not need to be. Being wrong in this
+direction costs one prompt on a file that would not otherwise have prompted; being wrong the other
+way costs every other member of a team a prompt they can never remove.
+
+#### Scenario: Saving a file that lives outside the user profile
+
+- **WHEN** a protected connection file outside the user profile is saved
+- **THEN** only the recovery-password protector is written
+
+#### Scenario: A shared file opened by someone who did not write it
+
+- **WHEN** a protected connection file outside the user profile is opened by another account
+- **THEN** the recovery password decrypts it
+- **AND** no failure of a machine-bound protector is reported, because none was written
+
+#### Scenario: A file inside the user profile is unaffected
+
+- **WHEN** a protected connection file in the user's own profile is saved
+- **THEN** both protectors are written
+- **AND** the account that saved it is not prompted when it opens it
+
+### Requirement: A recovery password supplied in a session is not requested again
+
+The system SHALL retain a recovery password for the lifetime of the session once it has opened a
+file, SHALL request it again after a restart, and SHALL discard it whenever the store is locked.
+
+Where the machine protector is absent or cannot be used — a shared file, the portable edition, a
+backup restored on another machine or under another account — the recovery password is what opens the
+store, and the store is re-read more than once per session:
+after an external change, and on the automatic recovery path. Prompting each time would turn a
+password meant to be typed rarely into one typed constantly, which is how a user ends up choosing a
+short one.
+
+Discarding it on lock is what keeps this from defeating `AutoLockOnMinimize`, whose entire purpose is
+that walking away requires re-authentication.
+
+#### Scenario: The store is re-read during a session
+
+- **WHEN** the recovery password has opened the store and the store is read again in the same session
+- **THEN** the password is not requested again
+
+#### Scenario: The application is restarted
+
+- **WHEN** the application is restarted and the store is opened
+- **THEN** the recovery password is requested
+
+#### Scenario: The store is locked
+
+- **WHEN** the store is locked
+- **THEN** the retained recovery password is discarded
+- **AND** opening the store again requests it

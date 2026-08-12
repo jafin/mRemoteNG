@@ -1,9 +1,10 @@
 ﻿# Security audit mRemoteNG#3416 — implementation order
 
-Eight proposals answer the upstream audit
-([mRemoteNG#3416](https://github.com/mRemoteNG/mRemoteNG/issues/3416)). They are not independent, and
-**two of them must be split across releases** — one task each has to be in users' hands a release
-before the rest of its own proposal can safely ship.
+Nine proposals sit under the upstream audit
+([mRemoteNG#3416](https://github.com/mRemoteNG/mRemoteNG/issues/3416)) — seven answering findings,
+two answering problems the answers create. They are not independent, and **two of them must be split
+across releases** — one task each has to be in users' hands a release before the rest of its own
+proposal can safely ship.
 
 Read this before starting any of them. Each proposal states its own dependencies; this is the only
 place the cross-release constraints are written down.
@@ -64,6 +65,28 @@ version-refusal lead time.
 It shortens an exposure window. Everything above decides whether the encryption means anything at
 all, and its §1 tests may already have shipped in R1.
 
+### R6 — after the dust settles
+
+`add-connection-file-key-slots`.
+
+Not from the audit. It repairs a regression R3 introduces for teams: a connection file carries one
+machine-bound protector, so on a shared file it serves one member and costs every other member a
+prompt at every open. `replace-default-connection-file-key` handles that by writing no machine
+protector at all for a file outside the user profile — correct, and it leaves the whole team on a
+shared password.
+
+Deliberately last, and deliberately not folded into R3. It turns a root attribute into a set on top
+of a format change that is already in flight, and it needs the rekey operation to be honest about
+revocation.
+
+Nothing breaks by waiting, because both forms R3 writes carry over unchanged: a file with one machine
+protector is a one-element slot list, and a file with none — portable, or anything outside the user
+profile under R3's task 5.5 — is an absent attribute either way. R6 needs no migration for either.
+
+The one ordering constraint is the obvious direction — **R6 must not precede R3.** A build that
+writes a slot list alongside one that reads a single blob produces files its own contemporaries
+cannot open.
+
 ## Hard constraints
 
 These are the ones that cause damage if ignored, rather than merely rework:
@@ -100,6 +123,7 @@ consumed, and should leave it that way rather than inventing a second marker.
 | `retire-legacy-rijndael-for-settings` | L-1 | Applies, and wider than reported — live write paths, not legacy reads |
 | `scope-diagnostic-logging` | L-2 | The cited file is gone; the substance partly survives |
 | `narrow-connection-password-exposure` | H-2 | Mostly already fixed here; the audit's evidence is against upstream's model |
+| `add-connection-file-key-slots` | — | Not from the audit. Repairs what H-1's fix costs a team sharing one connection file |
 
 Two findings needed no proposal. **H-3**, the RDP `NoAuth` default, is already `WarnOnFailedAuth`.
 The iteration half of **M-1** — the 1000/10000 counts and the constructor-versus-settings mismatch —

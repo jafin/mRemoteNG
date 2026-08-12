@@ -141,6 +141,71 @@ The old draft had portable and installed producing mutually unreadable files. Th
 model removes that split; both editions write the same format and differ only in whether the DPAPI
 protector is present.
 
+## Several people, one file
+
+A team sharing one `confCons.xml` — on a network share, in a synced folder — is not the case this
+design was drawn for, and it does not fall out of it cleanly. Recorded here because the answer is a
+deliberate restriction rather than something a reader would predict from the rest.
+
+The file holds **one** machine protector. Whoever migrates it writes their own DPAPI blob; every
+other member fails that blob and falls back to the recovery password on every open, permanently.
+There is no second slot, so nothing they do makes the prompt stop. Their saves write the first
+person's blob back unchanged, so the arrangement is at least stable — it is simply wrong for
+everyone but one member of the team.
+
+That makes the recovery password a de-facto shared master password. For a team that already sets
+one, nothing changes. For a team sharing an unprotected file — the group this change exists to help,
+since their file is readable today by anyone who copies it off the share — it is a new prompt on
+every open, for everyone.
+
+### A shared file gets no machine protector
+
+A protector only one member can use is worse than no protector at all: it costs every other member a
+prompt, and the message before that prompt tells them the file was protected by a different account,
+which is true and useless. So a connection file that does not live under the user's profile is
+written with the recovery protector alone.
+
+This is the same shape as the portable edition and reuses the same switch. Task 5.3 already detects
+the location in order to *inform* the user; this makes the detection load-bearing.
+
+The detection cannot be exact — a redirected Documents folder is a share the user does not know they
+have, and a personal file on a NAS is not a team file. It does not need to be exact. Being wrong in
+the "no machine protector" direction costs one prompt per open on a file that would otherwise not
+have prompted; being wrong the other way costs every other member of a team a prompt they can never
+get rid of. The asymmetry decides it.
+
+### What a shared file does and does not get
+
+Worth stating plainly, because the summary "your connection file is now encrypted under a key that
+is not published in our source" is true for a shared file and means less than it sounds.
+
+| | Single user | Shared file |
+|---|---|---|
+| Readable by whoever copies it off the disk | No | Not without the shared secret |
+| Readable by a member who has left the team | No | **Yes**, until the file is rekeyed |
+| Prompt on daily use | None | One, for everyone |
+
+The middle row is the honest limit. A shared secret cannot be taken away from someone who has
+already learnt it, so removing a member means choosing a new recovery password *and* a new file key,
+and re-encrypting the contents under it. That is a real operation this change does not provide.
+
+It is still strictly better than what it replaces, where the secret is `mR3m` and every member of
+every team already has it, along with everybody else.
+
+### Key slots are the answer, and are not here
+
+The arrangement that actually fits a team is the one BitLocker and LUKS use: several protectors, any
+of which opens the same key. Each member's first open uses the recovery password, their own DPAPI
+blob is added as a slot, and every open after that is silent — for all of them, not one of them.
+
+It is deliberately not in this change. It turns a single root attribute into a set, which is a format
+change on top of a format change, and it needs a revocation story — removing a slot is only
+meaningful together with the rekey described above, or the departed member's copy of the file still
+opens. Both belong in `add-connection-file-key-slots`, sequenced after this.
+
+Until then a team is in the position described at the top of this section, which is a working
+position and a documented one.
+
 ## Why this changed
 
 The first version of this design wrapped the file key with DPAPI only and offered a one-time export
@@ -175,3 +240,7 @@ improvement. The second protector costs one prompt and removes the class.
   bundling it here.
 - What happens on a shared workstation where two people use one Windows account? Nothing; DPAPI
   cannot help there. Worth stating in the docs rather than pretending otherwise.
+- **Answered:** what happens to a team sharing one file. See "Several people, one file" above. The
+  short version is that they get the recovery password as a shared secret and no machine protector,
+  and that key slots — the arrangement that would actually serve them — are deferred to their own
+  change.

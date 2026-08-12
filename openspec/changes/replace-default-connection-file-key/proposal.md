@@ -46,6 +46,14 @@ Raised as H-1 in the upstream security audit ([mRemoteNG#3416](https://github.co
 - **The portable edition uses the recovery password alone**, with no DPAPI protector. A key bound to
   one Windows account defeats a build whose purpose is to run from a USB stick on someone else's
   machine. Portable therefore produces files the installed edition can also open, and vice versa.
+- **A connection file outside the user profile also uses the recovery password alone.** The file
+  carries one DPAPI protector, so on a file a team shares it serves exactly one member and costs
+  every other one a prompt they have no way to remove. For those users the recovery password is a
+  shared secret and the improvement over `mR3m` is that it is theirs rather than published — a real
+  improvement and a smaller one than the single-user case gets. Several protectors, one per member,
+  is the arrangement that actually fits a team; it is deferred to `add-connection-file-key-slots`
+  because it turns a root attribute into a set and needs a revocation story. See design.md,
+  "Several people, one file".
 
 ### Why two protectors rather than DPAPI alone
 
