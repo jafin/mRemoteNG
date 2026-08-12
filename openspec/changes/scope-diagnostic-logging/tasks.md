@@ -24,9 +24,14 @@
 - [x] 4.1 Full build; zero new analyzer warnings. — Done 2026-08-12. Clean; the only warnings in the build are the pre-existing MA0002/MA0006 in the SFTP integration tests, untouched by this change.
 - [x] 4.2 Full test suite; zero failures, no `[Ignore]`. — Done 2026-08-12. 7,800 passed, 0 failed, 0 crashes across all nine groups plus the isolated `FrmOptions` phase.
 - [x] 4.3 `openspec validate scope-diagnostic-logging --strict`. — Done 2026-08-12 — valid.
-- [ ] 4.4 Manual: fresh profile, run, confirm the log holds startup information and no debug noise.
-- [ ] 4.5 Manual: switch to verbose, confirm debug messages appear without restarting, switch back, confirm they stop.
+- [x] 4.4 Manual: fresh profile, run, confirm the log holds startup information and no debug noise. — Done 2026-08-12 against a renamed-aside profile. Zero DEBUG lines; the log holds the `[Startup]` timings and the startup facts.
+- [x] 4.5 Manual: switch to verbose, confirm debug messages appear without restarting, switch back, confirm they stop. — Done 2026-08-12. Confirmed with the options dialog's own `[BtnOK_Click]`/`[SaveOptions]` traces, which go straight to `Logger.Instance.Log` and so depend on nothing but the level switch. **Worth knowing for the next person:** the Notifications page carries three checkboxes all labelled "Debug" — notification panel, logging, popup — and only the one in the Logging group drives the log level. The first attempt here ticked the wrong one and read as a broken switch.
 - [ ] 4.6 Manual: launch with `-qc:user@host`, confirm the logged command line is redacted the same way the debug report renders it.
 
-4.4–4.6 are the only work left in this change. They need the application on a desktop and 4.6 opens a
-connection, so they were not run from the automated session that closed 3.1 and 4.1–4.3.
+4.6 is the only work left in this change.
+
+The 4.4 run turned up one defect, fixed separately: `frmMain.Diag118`, a temporary trace for #118,
+ran from `WM_LBUTTONDOWN` at information severity — several lines per left-click, permanently, in
+every user's log. It is exactly what this change exists to stop, and it survived review because the
+hardcoded `Verbose()` minimum made it indistinguishable from everything else being written. Now at
+debug.
