@@ -29,10 +29,9 @@ quietly flattens it. Landing it afterwards does not recover the files already do
 - [x] 4.3 `openspec validate refuse-unknown-storage-format-level --strict`. — Done 2026-08-12 — valid.
 - [x] 4.4 Manual: hand-write `StorageFormat="Quantum"` onto a copy of a real connection file, open it, confirm the refusal names a newer build and that no password is asked for. — Done 2026-08-12, confirmed by the maintainer against a real connection file. The refusal is shown as an error dialog reading "The connection file declares storage format "Quantum", which this copy of mRemoteNG Connection Manager does not recognise, so it was written by a newer version. No connections were loaded and the file has not been changed." **No password prompt appeared** — which is the half of this task that could have failed, and the reason the check sits before `CreateDecryptor`. Incidentally confirms the resx/Designer wiring resolves at runtime and that a collector `ErrorMsg` does reach the user, via the popup writer.
 - [x] 4.5 Manual: confirm the file is untouched afterwards — same bytes, no new backup. — Done 2026-08-12. File hash unchanged, no backup file created.
-- [ ] 4.6 Manual: confirm a classic file and a hardened file both still open, so the check has not been applied to the two levels that exist.
+- [x] 4.6 Manual: confirm a classic file and a hardened file both still open, so the check has not been applied to the two levels that exist. — Done 2026-08-12. Both open normally. This is the counterweight to 4.4: a refusal that leaked onto the two levels that exist would lock users out of their own connections, which is a worse defect than the silent downgrade the change prevents.
 
-4.6 is the only work left. It needs the application on a desktop and both a classic and a hardened
-store to hand.
+All tasks complete.
 
 ## Note on the reasoning this replaces
 
