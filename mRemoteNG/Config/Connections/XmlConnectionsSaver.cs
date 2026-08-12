@@ -70,6 +70,17 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
     {
         if (rootNode.KeyProtection is not null)
         {
+            // The second lock on the same door the reader shuts, and here for what one bypass costs.
+            // XmlRootNodeSerializer writes the sentinel and the protectors only at the hardened
+            // level, so keying a classic write on the file key would produce a file with no
+            // protectors and contents nothing can decrypt — and FileDataProviderWithRollingBackup
+            // copies before writing, so it would destroy the original and spend a backup slot on the
+            // result.
+            if (rootNode.StorageFormat != StorageFormatLevel.Hardened)
+                throw new InvalidOperationException(
+                    "This store is protected by a per-file key but is not at the hardened storage " +
+                    "format, so saving it would write a file that could not be reopened.");
+
             // A store that declares a per-file key and cannot produce it must not be written. Falling
             // through to the settings provider would encrypt the contents under the master password
             // while the root still declared the per-file sentinel and carried protectors wrapping a

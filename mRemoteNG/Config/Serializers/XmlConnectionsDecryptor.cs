@@ -55,12 +55,21 @@ public class XmlConnectionsDecryptor
     /// Decrypts with a provider the caller has already built.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// For a store keyed on its own random key, where the engine, mode and iteration count recorded
     /// on the root describe nothing this provider does — there is no derivation to configure. The
     /// caller is the only thing holding the unwrapped key, so it is the only thing that can build the
     /// provider.
+    /// </para>
+    /// <para>
+    /// <b>The provider must be safe to share.</b> <see cref="DecryptBatch"/> runs it across threads
+    /// and cannot build a copy per thread here, because the key it holds is recorded nowhere this
+    /// class can reach. Passing something with mutable per-call state — the AEAD provider caches
+    /// derived keys and salts in fields — would produce intermittent wrong answers rather than a
+    /// clean failure, so it is refused at construction instead of documented and hoped for.
+    /// </para>
     /// </remarks>
-    public XmlConnectionsDecryptor(ICryptographyProvider cryptographyProvider, RootNodeInfo rootNodeInfo)
+    public XmlConnectionsDecryptor(IThreadSafeCryptographyProvider cryptographyProvider, RootNodeInfo rootNodeInfo)
     {
         ArgumentNullException.ThrowIfNull(cryptographyProvider);
         _cryptographyProvider = cryptographyProvider;

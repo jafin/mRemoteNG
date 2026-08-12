@@ -19,6 +19,7 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
     private bool _autoLockOnMinimize;
     private bool _totpEnabled;
     private string _totpSecret = "";
+    private Security.FileProtection.ConnectionFileKey? _fileKey;
 
     public RootNodeInfo(RootNodeType rootType)
         : this(rootType, Guid.NewGuid().ToString())
@@ -128,7 +129,23 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
     /// falling back to a key the file does not declare.
     /// </remarks>
     [Browsable(false)]
-    public Security.FileProtection.ConnectionFileKey? FileKey { get; set; }
+    public Security.FileProtection.ConnectionFileKey? FileKey
+    {
+        get => _fileKey;
+
+        // Replacing the key disposes the one it replaces, so the bytes are zeroed rather than left
+        // for the garbage collector. ConnectionFileKey has no finalizer on purpose — key material
+        // should be cleared at a point the code chooses, not whenever a collection happens to run —
+        // which makes this the only place that can do it for a key the root owns.
+        set
+        {
+            if (ReferenceEquals(_fileKey, value))
+                return;
+
+            _fileKey?.Dispose();
+            _fileKey = value;
+        }
+    }
 
     /// <summary>
     /// The level, shown where the store's other security settings already are.

@@ -183,6 +183,57 @@ public class PerFileKeyStoreRoundTripTests
     }
 
     [Test]
+    public void ProtectorsWithoutTheHardenedDeclarationAreRefusedOnLoad()
+    {
+        // The two are written together by one method, so a file where they disagree was altered.
+        // Reading it as classic would be the worst outcome available: the loader keeps the
+        // protectors, the saver keys the next write on the file key, and classic serialization drops
+        // the protectors that unwrap it — leaving a file nothing can reopen.
+        (ConnectionTreeModel model, _) = ProtectedStore("server", "hunter2");
+        new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(model);
+
+        XElement root = XElement.Load(_storePath);
+        root.Attribute(StorageFormat.AttributeName)!.Remove();
+        root.Save(_storePath);
+
+        NotSupportedException thrown = Assert.Throws<NotSupportedException>(() => Reopen(NeverAsked))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(thrown.Message, Does.Contain("altered"));
+            Assert.That(File.Exists(_storePath), "and the file is left where it was");
+        });
+    }
+
+    [Test]
+    public void AProtectedStoreThatIsNotHardenedRefusesToSave()
+    {
+        // The second lock on the same door, and here for what one bypass costs: the rolling backup
+        // copies before writing, so a save that should not have happened destroys the original and
+        // spends a backup slot on the result.
+        (ConnectionTreeModel model, _) = ProtectedStore("server", "hunter2");
+        model.RootNodes.OfType<RootNodeInfo>().First().StorageFormat = StorageFormatLevel.Classic;
+
+        Assert.Throws<InvalidOperationException>(
+            () => new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(model));
+    }
+
+    [Test]
+    public void ReplacingTheStoresKeyZeroesTheOneItReplaces()
+    {
+        // The root owns the key, so it is the only thing that can clear it. ConnectionFileKey has no
+        // finalizer on purpose — key material should be cleared at a chosen point, not whenever a
+        // collection happens to run.
+        RootNodeInfo root = new(RootNodeType.Connection);
+        ConnectionFileKey first = ConnectionFileKey.Generate();
+        root.FileKey = first;
+
+        root.FileKey = ConnectionFileKey.Generate();
+
+        Assert.Throws<ObjectDisposedException>(() => _ = first.Bytes.Length);
+    }
+
+    [Test]
     public void AStoreWhoseKeyIsNoLongerAvailableRefusesToSave()
     {
         // Falling back to the settings provider here would encrypt the contents under the master

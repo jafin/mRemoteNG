@@ -69,6 +69,14 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
             // file", reporting a newer-format store as a corrupt one. Reading the declaration off
             // the raw text first is what stops that misdiagnosis, and is what makes "refused before
             // any decryption is attempted" true rather than nearly true.
+            //
+            // The same hazard reaches a per-file-key store, and is not fixed here. Such a file would
+            // be mangled by the decrypt attempt before TryOpenWithPerFileKey ever read its
+            // protectors, and reported as corrupt. It cannot arise from a file this application
+            // wrote — XmlConnectionsDocumentCompiler emits exactly that declaration — so what it
+            // costs is a file some other tool rewrote. Moving the whole per-file detection ahead of
+            // the legacy path would fix it and would restructure the load order every existing
+            // format depends on; that is worth doing deliberately, not as a side effect.
             RefuseUnrecognisedStorageFormat(xml);
 
             phaseSw.Restart();
@@ -322,6 +330,21 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
 
         if (protection is null)
             return false;
+
+        // The two are written together, in one element, by one method — a store never carries
+        // protectors without also declaring the hardened level. A file where they disagree was
+        // altered after it was written.
+        //
+        // Refused rather than read as hardened after all. Promoting it would let an edited file
+        // change the level the user consented to, and reading it as classic is worse still: the
+        // loader would keep the protectors, the saver would key the next write on the file key, and
+        // classic serialization would drop the protectors that unwrap it — producing a file nothing
+        // can reopen. That is the failure this whole format exists to make impossible.
+        if (_rootNodeInfo.StorageFormat != StorageFormatLevel.Hardened)
+            throw new NotSupportedException(
+                "This connection file carries a per-file key but does not declare the hardened " +
+                "storage format. The two are always written together, so the file has been altered " +
+                "and was not loaded. Its contents are unchanged.");
 
         string protectedString = rootXmlElement.Attributes?["Protected"]?.Value ?? string.Empty;
         if (string.IsNullOrEmpty(protectedString))
