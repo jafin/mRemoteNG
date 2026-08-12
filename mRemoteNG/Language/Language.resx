@@ -3113,6 +3113,27 @@ Accept the new key and continue connecting?</value>
   <data name="StorageFormatMenuItem" xml:space="preserve">
     <value>Storage &amp;Format...</value>
   </data>
+  <data name="RecoveryPasswordTitle" xml:space="preserve">
+    <value>Set a recovery password</value>
+  </data>
+  <data name="RecoveryPasswordWhy" xml:space="preserve">
+    <value>Your connection file will be encrypted with a key that belongs to this file alone, unlocked automatically by your Windows account. You will not be asked for anything when you open it here.
+
+A recovery password is needed for everywhere else: another computer, another Windows account, or a backup restored after this profile is rebuilt. Without one, none of those copies could ever be opened again.
+
+Keep it somewhere other than this computer. It is the only way back if this Windows account is lost.</value>
+  </data>
+  <data name="RecoveryPasswordName" xml:space="preserve">
+    <value>Recovery password</value>
+  </data>
+  <data name="RecoveryPasswordDeclined" xml:space="preserve">
+    <value>No recovery password was set, so the storage format was not changed. The connection file is unchanged and still opens as it did before.</value>
+  </data>
+  <data name="RecoveryPasswordSharedStore" xml:space="preserve">
+    <value>This connection file is outside your user profile, so it may be shared with other people or kept on a network location.
+
+It will be protected by the recovery password alone. The automatic unlock is tied to a single Windows account, and on a shared file it would work for one person and ask everyone else for the password on every open. Everyone who uses this file will need the recovery password.</value>
+  </data>
   <data name="StorageFormatUpgradeTitle" xml:space="preserve">
     <value>Harden Storage Format</value>
   </data>
