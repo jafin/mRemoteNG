@@ -915,6 +915,10 @@ public partial class FrmMain : IMessageFilter
         _isAutoLocked = true;
         Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, $"Autolock engaged ({reason}).");
 
+        // A lock whose purpose is that walking away requires re-authentication cannot leave the
+        // recovery password sitting in memory ready to reopen the store without one.
+        Security.FileProtection.RecoveryPasswordSession.Clear();
+
         if (WindowState != FormWindowState.Minimized)
         {
             PreviousWindowState = WindowState;

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Diagnostics; // Added
 using System.Globalization;
 using System.IO;
+using System.Linq;
 using System.Runtime.Versioning;
 using System.Security;
 using System.Windows.Forms;
@@ -353,10 +354,40 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
                 "so there is nothing to check an unwrapped key against. It is not a file this " +
                 "application wrote.");
 
+        SecureString? supplied = null;
+        bool sessionAlreadyOffered = false;
+
+        // The password this run has already opened the store with is offered once, ahead of the user.
+        // Once, not every attempt: a remembered password that has stopped working — the file was
+        // rekeyed, or replaced from a backup — must fall through to a prompt rather than fail three
+        // times against itself and report that the user got it wrong.
+        Optional<SecureString> Request()
+        {
+            if (!sessionAlreadyOffered)
+            {
+                sessionAlreadyOffered = true;
+                SecureString? remembered = RecoveryPasswordSession.Peek();
+                if (remembered is not null)
+                {
+                    supplied = remembered;
+                    return remembered;
+                }
+            }
+
+            Optional<SecureString> provided = AuthenticationRequestor?.Invoke() ?? Optional<SecureString>.Empty;
+            supplied = provided.Any() ? provided.First() : null;
+            return provided;
+        }
+
         ConnectionFileKey fileKey = protection.Unwrap(
-            AuthenticationRequestor,
+            Request,
             failure => Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, failure.Message),
             candidate => DecryptsTheSentinel(candidate, protectedString));
+
+        // Null whenever the machine protector opened the store, which is the case that asked for
+        // nothing and so has nothing to remember.
+        if (supplied is not null)
+            RecoveryPasswordSession.Remember(supplied);
 
         _rootNodeInfo.KeyProtection = protection;
         _rootNodeInfo.FileKey = fileKey;

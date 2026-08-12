@@ -1,7 +1,13 @@
+using System;
+using System.Linq;
 using System.Runtime.Versioning;
+using System.Security;
 using System.Windows.Forms;
+using mRemoteNG.App;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Security;
+using mRemoteNG.Security.FileProtection;
+using mRemoteNG.Tools;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
 using mRemoteNG.UI.TaskDialog;
@@ -38,12 +44,74 @@ public static class StorageFormatUpgradePrompt
         {
             StorageFormatUpgradeChoice choice = Ask(owner, storeKind);
 
-            if (choice != StorageFormatUpgradeChoice.ExportClassicCopy)
-                return StorageFormatUpgrade.Apply(rootNode, choice);
+            if (choice == StorageFormatUpgradeChoice.ExportClassicCopy)
+            {
+                App.Export.ExportToFile(null, connectionTreeModel);
+                continue;
+            }
 
-            App.Export.ExportToFile(null, connectionTreeModel);
+            // The recovery password is part of hardening a connection file, not a step after it. A
+            // store raised to the hardened level without one would be encrypted under a key bound to
+            // this Windows account and nothing else — and its entire backup history would go with the
+            // profile, silently, with no signal until the day a backup was needed.
+            if (choice == StorageFormatUpgradeChoice.Harden &&
+                storeKind == StorageFormatStoreKind.ConnectionFile &&
+                !EstablishProtection(owner, rootNode))
+            {
+                return false;
+            }
+
+            return StorageFormatUpgrade.Apply(rootNode, choice);
         }
     }
+
+    /// <summary>
+    /// Explains why a recovery password is needed, collects it, and gives the store its own key.
+    /// </summary>
+    /// <remarks>
+    /// Declining is an answer and leaves the store exactly as it was: still classic, still under
+    /// whatever key it already had. That is why this runs <em>before</em>
+    /// <see cref="StorageFormatUpgrade.Apply"/> rather than after — a level raised and then abandoned
+    /// would leave a store that claims to be hardened and is not.
+    /// </remarks>
+    private static bool EstablishProtection(Control owner, RootNodeInfo rootNode)
+    {
+        if (ConnectionFileMigration.IsAlreadyProtected(rootNode))
+            return true;
+
+        bool machineProtector = MachineProtectorPolicy.ShouldWriteMachineProtector(
+            Runtime.ConnectionsService.ConnectionFileName, Runtime.IsPortableEdition);
+
+        MessageBox.Show(owner,
+            StorageFormatUpgrade.BuildRecoveryPasswordExplanation(machineProtector, Runtime.IsPortableEdition),
+            Language.RecoveryPasswordTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
+
+        Optional<SecureString> supplied = PasswordPrompt(Language.RecoveryPasswordName);
+        if (!supplied.Any() || supplied.First() is not { Length: > 0 } recoveryPassword)
+        {
+            MessageBox.Show(owner, Language.RecoveryPasswordDeclined, Language.RecoveryPasswordTitle,
+                MessageBoxButtons.OK, MessageBoxIcon.Information);
+            return false;
+        }
+
+        ConnectionFileMigration.Establish(rootNode, recoveryPassword, machineProtector,
+            Properties.OptionsSecurityPage.Default.EncryptionKeyDerivationIterations);
+
+        // Remembered so the store does not ask for it again this run — it was just typed twice.
+        RecoveryPasswordSession.Remember(recoveryPassword);
+        return true;
+    }
+
+    /// <summary>
+    /// Collects the recovery password. Replaceable so a test can drive the decision without a modal
+    /// dialog, exactly as <see cref="MasterPasswordGate.PasswordPrompt"/> is.
+    /// </summary>
+    /// <remarks>
+    /// Verified by re-entry, because it is typed once and needed years later, on a day when the
+    /// machine it was set on is gone. A typo here is not recoverable by anything.
+    /// </remarks>
+    internal static Func<string, Optional<SecureString>> PasswordPrompt { get; set; } =
+        name => MiscTools.PasswordDialog(name, verify: true);
 
     public static StorageFormatUpgradeChoice Ask(Control owner, StorageFormatStoreKind storeKind)
     {

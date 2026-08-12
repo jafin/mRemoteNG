@@ -8753,6 +8753,51 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string similar to Set a recovery password.
+        /// </summary>
+        internal static string RecoveryPasswordTitle {
+            get {
+                return ResourceManager.GetString("RecoveryPasswordTitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string explaining why a recovery password is needed.
+        /// </summary>
+        internal static string RecoveryPasswordWhy {
+            get {
+                return ResourceManager.GetString("RecoveryPasswordWhy", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Recovery password.
+        /// </summary>
+        internal static string RecoveryPasswordName {
+            get {
+                return ResourceManager.GetString("RecoveryPasswordName", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to No recovery password was set, so the storage format was not changed.
+        /// </summary>
+        internal static string RecoveryPasswordDeclined {
+            get {
+                return ResourceManager.GetString("RecoveryPasswordDeclined", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string explaining that a shared store gets the recovery protector alone.
+        /// </summary>
+        internal static string RecoveryPasswordSharedStore {
+            get {
+                return ResourceManager.GetString("RecoveryPasswordSharedStore", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Storage &amp;Format....
         /// </summary>
         internal static string StorageFormatMenuItem {

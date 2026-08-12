@@ -79,6 +79,36 @@ public static class StorageFormatUpgrade
     }
 
     /// <summary>
+    /// What the user is told before being asked for a recovery password.
+    /// </summary>
+    /// <remarks>
+    /// Here rather than at the dialog for the same reason <see cref="BuildMessage"/> is: a test can
+    /// only assert what a security warning says if assembling it does not need a window.
+    /// <para>
+    /// The shared-store paragraph is said <i>before</i> the password is asked for, never after. A
+    /// user who learns only afterwards that everyone sharing this file will need the password has
+    /// already chosen one on the assumption that they alone would use it.
+    /// </para>
+    /// </remarks>
+    /// <param name="willWriteMachineProtector">
+    /// From <see cref="FileProtection.MachineProtectorPolicy.ShouldWriteMachineProtector"/>.
+    /// </param>
+    /// <param name="isPortableEdition">
+    /// Kept apart from the parameter above because they suppress the machine protector for different
+    /// reasons and only one of them is about sharing. Telling a portable user their file might be
+    /// shared with colleagues would be a guess presented as a fact.
+    /// </param>
+    public static string BuildRecoveryPasswordExplanation(bool willWriteMachineProtector, bool isPortableEdition)
+    {
+        string explanation = Language.RecoveryPasswordWhy;
+
+        if (!willWriteMachineProtector && !isPortableEdition)
+            explanation += Environment.NewLine + Environment.NewLine + Language.RecoveryPasswordSharedStore;
+
+        return explanation;
+    }
+
+    /// <summary>
     /// The confirmation's command buttons, in the order <see cref="StorageFormatUpgradeChoice"/>
     /// reads them back, as the pipe-delimited list the task dialog expects.
     /// </summary>

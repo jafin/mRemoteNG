@@ -46,8 +46,79 @@ public class PerFileKeyStoreRoundTripTests
     [TearDown]
     public void Teardown()
     {
+        RecoveryPasswordSession.Clear();
         if (Directory.Exists(_directory))
             Directory.Delete(_directory, true);
+    }
+
+    [Test]
+    public void ASharedStoreOpensOnTheRememberedPasswordWithoutAskingAgain()
+    {
+        // A store with no machine protector is opened by the recovery password every time, and it is
+        // re-read more often than a user would expect — after an external change, and on the backup
+        // recovery path. Asking each time is how a password meant to be typed rarely becomes short.
+        (ConnectionTreeModel model, _) = ProtectedStore("server", "hunter2", machineProtector: false);
+        new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(model);
+
+        RecoveryPasswordSession.Clear();
+
+        int prompts = 0;
+        Reopen(() => { prompts++; return "recovery".ConvertToSecureString(); });
+        ConnectionTreeModel again = Reopen(NeverAsked);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompts, Is.EqualTo(1), "asked once, on the first open of the run");
+            Assert.That(again.RootNodes.OfType<RootNodeInfo>().First().Children.First().Password,
+                Is.EqualTo("hunter2"));
+        });
+    }
+
+    [Test]
+    public void AfterTheStoreLocksTheRecoveryPasswordIsAskedForAgain()
+    {
+        // What stops the session cache defeating AutoLockOnMinimize, whose whole purpose is that
+        // walking away requires re-authentication.
+        (ConnectionTreeModel model, _) = ProtectedStore("server", "hunter2", machineProtector: false);
+        new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(model);
+
+        int prompts = 0;
+        Optional<SecureString> Supply() { prompts++; return "recovery".ConvertToSecureString(); }
+
+        Reopen(Supply);
+        RecoveryPasswordSession.Clear();
+        Reopen(Supply);
+
+        Assert.That(prompts, Is.EqualTo(2));
+    }
+
+    [Test]
+    public void DecliningLeavesTheFileExactlyAsItWas()
+    {
+        // Task 5.2. Declining the recovery password is declining the migration: the level is not
+        // raised, so the next save writes the same classic file upstream mRemoteNG still reads.
+        ConnectionTreeModel model = new();
+        RootNodeInfo root = new(RootNodeType.Connection);
+        root.AddChild(new ConnectionInfo { Name = "server", Password = "hunter2" });
+        model.AddRootNode(root);
+
+        XmlConnectionsSaver saver = new(_storePath, new SaveFilter());
+        saver.Save(model);
+        string before = File.ReadAllText(_storePath);
+
+        // Exactly what the prompt does when no password is supplied: nothing at all.
+        saver.Save(model);
+
+        XElement after = XElement.Load(_storePath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(root.StorageFormat, Is.EqualTo(StorageFormatLevel.Classic));
+            Assert.That(root.KeyProtection, Is.Null);
+            Assert.That(after.Attribute(StorageFormat.AttributeName), Is.Null);
+            Assert.That(after.Attribute(ConnectionFileKeyProtection.RecoveryProtectorAttributeName), Is.Null);
+            Assert.That(before, Does.Not.Contain(ConnectionFileDefaults.PerFileKeySentinel));
+        });
     }
 
     [Test]
@@ -248,7 +319,8 @@ public class PerFileKeyStoreRoundTripTests
             () => new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(model));
     }
 
-    private static (ConnectionTreeModel Model, ConnectionFileKey Key) ProtectedStore(string name, string password)
+    private static (ConnectionTreeModel Model, ConnectionFileKey Key) ProtectedStore(
+        string name, string password, bool machineProtector = true)
     {
         ConnectionFileKey fileKey = ConnectionFileKey.Generate();
         ConnectionTreeModel model = new();
@@ -257,7 +329,7 @@ public class PerFileKeyStoreRoundTripTests
             StorageFormat = StorageFormatLevel.Hardened,
             FileKey = fileKey,
             KeyProtection = ConnectionFileKeyProtection.Create(
-                fileKey, "recovery".ConvertToSecureString(), iterations: FastIterations)
+                fileKey, "recovery".ConvertToSecureString(), machineProtector, FastIterations)
         };
         root.AddChild(new ConnectionInfo { Name = name, Password = password });
         model.AddRootNode(root);
