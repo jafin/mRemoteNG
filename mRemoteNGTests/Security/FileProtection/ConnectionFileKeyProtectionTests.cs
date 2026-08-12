@@ -1,4 +1,5 @@
 using System;
+using System.Buffers.Binary;
 using System.Security;
 using System.Security.Cryptography;
 using System.Xml.Linq;
@@ -382,6 +383,137 @@ public class ConnectionFileKeyProtectionTests
     }
 
     [Test]
+    public void WritingAPortableProtectionRemovesAMachineProtectorThatWasAlreadyThere()
+    {
+        // The worst possible leftover. A stale machine protector still unwraps — to the *previous*
+        // file key — and Unwrap prefers it over the recovery protector, so the file would open with
+        // no prompt onto contents that no longer decrypt. Reachable whenever an element that already
+        // carried one is written by an instance that has none: a portable edition re-saving an
+        // installed file, or a rekey.
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+        ConnectionFileKeyProtection installed =
+            ConnectionFileKeyProtection.Create(fileKey, Password("recovery"), iterations: FastIterations);
+        ConnectionFileKeyProtection portable = ConnectionFileKeyProtection.Create(
+            fileKey, Password("recovery"), includeMachineProtector: false, iterations: FastIterations);
+
+        XElement root = new("Connections");
+        installed.WriteTo(root);
+        portable.WriteTo(root);
+
+        Assert.That(root.Attribute(ConnectionFileKeyProtection.MachineProtectorAttributeName), Is.Null,
+            "the machine protector attribute is removed, not left behind");
+    }
+
+    [Test]
+    public void AnUnusableRecoveryProtectorIsNotAskedAboutThreeTimes()
+    {
+        // A truncated or foreign protector is a property of the file, not of the password. Burning
+        // three prompts on it teaches the user their password is wrong when no password opens it —
+        // the same misdiagnosis the storage-format refusal exists to avoid.
+        ConnectionFileKeyProtection protection =
+            ConnectionFileKeyProtection.Read(null, Convert.ToBase64String(new byte[10]))!;
+
+        int prompts = 0;
+        KeyProtectionException ex = Assert.Throws<KeyProtectionException>(
+            () => protection.Unwrap(Supplies("anything", () => prompts++)))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(prompts, Is.EqualTo(1), "asked once, then stopped");
+            Assert.That(ex.Failure, Is.EqualTo(KeyProtectionFailure.Unusable));
+            Assert.That(ex.IsRetryable, Is.False);
+        });
+    }
+
+    [Test]
+    public void AWrongPasswordIsRetryableAndAnUnreadableProtectorIsNot()
+    {
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+        ConnectionFileKeyProtection protection = ConnectionFileKeyProtection.Create(
+            fileKey, Password("recovery"), includeMachineProtector: false, iterations: FastIterations);
+
+        KeyProtectionException wrongPassword = Assert.Throws<KeyProtectionException>(
+            () => RecoveryPasswordKeyProtector.Unwrap(protection.RecoveryProtector, Password("wrong")))!;
+        KeyProtectionException unreadable = Assert.Throws<KeyProtectionException>(
+            () => RecoveryPasswordKeyProtector.Unwrap(Convert.ToBase64String(new byte[10]), Password("x")))!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(wrongPassword.Failure, Is.EqualTo(KeyProtectionFailure.WrongSecret));
+            Assert.That(unreadable.Failure, Is.EqualTo(KeyProtectionFailure.Unusable));
+        });
+    }
+
+    [Test]
+    public void AnIterationCountOutsideTheWrittenRangeIsRefusedBeforeAnythingIsDerived()
+    {
+        // The count decides how long the derivation runs, and the tag that would expose it as forged
+        // cannot be checked until the derivation has finished. Without a ceiling a hostile file makes
+        // opening it take hours, which presents as the application having hung.
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+        byte[] blob = Convert.FromBase64String(
+            RecoveryPasswordKeyProtector.Wrap(fileKey, Password("recovery"), FastIterations));
+
+        BinaryPrimitives.WriteInt32BigEndian(blob.AsSpan(2, 4), int.MaxValue);
+
+        System.Diagnostics.Stopwatch clock = System.Diagnostics.Stopwatch.StartNew();
+        KeyProtectionException ex = Assert.Throws<KeyProtectionException>(
+            () => RecoveryPasswordKeyProtector.Unwrap(Convert.ToBase64String(blob), Password("recovery")))!;
+        clock.Stop();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(ex.Failure, Is.EqualTo(KeyProtectionFailure.Unusable));
+            Assert.That(clock.ElapsedMilliseconds, Is.LessThan(1000),
+                "refused without deriving — the point of the ceiling");
+        });
+    }
+
+    [Test]
+    public void WrapRefusesACountItsOwnUnwrapWouldReject()
+    {
+        // Otherwise a caller can write a protector that can never be opened, and if the machine
+        // protector is later lost the file key is gone with it.
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+
+        Assert.Multiple(() =>
+        {
+            Assert.Throws<ArgumentOutOfRangeException>(
+                () => RecoveryPasswordKeyProtector.Wrap(fileKey, Password("recovery"), 999));
+            Assert.Throws<ArgumentOutOfRangeException>(() => RecoveryPasswordKeyProtector.Wrap(
+                fileKey, Password("recovery"), RecoveryPasswordKeyProtector.MaximumIterations + 1));
+            Assert.That(RecoveryPasswordKeyProtector.DefaultIterations,
+                Is.InRange(RecoveryPasswordKeyProtector.MinimumIterations,
+                           RecoveryPasswordKeyProtector.MaximumIterations));
+        });
+    }
+
+    [Test]
+    public void TheProtectionScopeIsAWriteTimePropertyThatUnwrappingCannotCheck()
+    {
+        // Pinned because it is surprising and because the obvious defensive check does nothing.
+        //
+        // The scope is carried inside the blob and Win32's CryptUnprotectData takes no scope
+        // argument, so the DataProtectionScope passed to Unprotect is ignored: a LocalMachine blob
+        // unwraps perfectly through a CurrentUser call. Choosing CurrentUser therefore binds what
+        // *this* build writes; it is not something the reader can enforce, and adding a check that
+        // appears to enforce it would be worse than the honest absence of one.
+        //
+        // That also fixes the limit of what this fixture can cover. Every test here runs as one
+        // account on one machine, where a LocalMachine-scoped protector behaves identically to a
+        // CurrentUser one. Only a second account tells them apart, which is manual task 8.5.
+        byte[] machineScoped = ProtectedData.Protect(
+            new byte[ConnectionFileKey.SizeInBytes],
+            "mRemoteNG.ConnectionFileKey.v1"u8.ToArray(),
+            DataProtectionScope.LocalMachine);
+
+        using ConnectionFileKey unwrapped = DpapiKeyProtector.Unwrap(Convert.ToBase64String(machineScoped));
+
+        Assert.That(unwrapped.Bytes.SequenceEqual(new byte[ConnectionFileKey.SizeInBytes]),
+            "the scope argument on Unprotect is inert — see the comment above before adding a check for it");
+    }
+
+    [Test]
     public void ADisposedKeyCannotBeReadAgain()
     {
         ConnectionFileKey fileKey = ConnectionFileKey.Generate();
@@ -395,8 +527,11 @@ public class ConnectionFileKeyProtectionTests
 
     /// <summary>
     /// A DPAPI blob this account cannot unprotect, standing in for a file that arrived from
-    /// somewhere else. Built by protecting under <see cref="DataProtectionScope.CurrentUser"/> with
-    /// entropy the protector does not use, which is the same failure a foreign blob produces.
+    /// somewhere else. Built with entropy the protector does not use, which produces the same
+    /// failure a foreign blob does — it stands in for the scope rather than demonstrating it.
+    /// Demonstrating it is not possible from one account: see
+    /// <see cref="TheProtectionScopeIsAWriteTimePropertyThatUnwrappingCannotCheck"/>, and manual
+    /// task 8.5 for the coverage that needs a second account.
     /// </summary>
     private static string ForeignMachineProtector() =>
         Convert.ToBase64String(ProtectedData.Protect(

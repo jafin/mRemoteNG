@@ -102,7 +102,7 @@ public sealed class ConnectionFileKeyProtection
         }
 
         if (recoveryPasswordRequestor is null)
-            throw new KeyProtectionException(KeyProtector.RecoveryPassword,
+            throw new KeyProtectionException(KeyProtector.RecoveryPassword, KeyProtectionFailure.NotSupplied,
                 "This connection file needs its recovery password, and nothing was available to ask for it.");
 
         KeyProtectionException? lastFailure = null;
@@ -120,13 +120,19 @@ public sealed class ConnectionFileKeyProtection
             {
                 return RecoveryPasswordKeyProtector.Unwrap(RecoveryProtector, password);
             }
-            catch (KeyProtectionException ex)
+            catch (KeyProtectionException ex) when (ex.IsRetryable)
             {
                 lastFailure = ex;
             }
+
+            // A non-retryable failure escapes the loop uncaught, deliberately. Those describe the
+            // protector — truncated, a format this build does not know, parameters outside the range
+            // it writes — not the password, so spending the remaining attempts on it would ask twice
+            // more for something no password opens and leave the user believing they typed it wrong.
         }
 
         throw lastFailure ?? new KeyProtectionException(KeyProtector.RecoveryPassword,
+            KeyProtectionFailure.NotSupplied,
             "This connection file was not opened: no recovery password was given.");
     }
 
@@ -183,7 +189,7 @@ public sealed class ConnectionFileKeyProtection
             return null;
 
         if (!hasRecovery)
-            throw new KeyProtectionException(KeyProtector.RecoveryPassword,
+            throw new KeyProtectionException(KeyProtector.RecoveryPassword, KeyProtectionFailure.Unusable,
                 "This connection file carries a machine protector but no recovery protector, so it " +
                 "could never be opened anywhere else. It was not written by this application.");
 
@@ -194,8 +200,13 @@ public sealed class ConnectionFileKeyProtection
     {
         ArgumentNullException.ThrowIfNull(rootElement);
 
-        if (HasMachineProtector)
-            rootElement.SetAttributeValue(XName.Get(MachineProtectorAttributeName), MachineProtector);
+        // Unconditional, because passing null is what *removes* an attribute. Writing only when
+        // present would leave a stale protector on an element that already carried one — and a stale
+        // machine protector is the worst possible leftover: it still unwraps, but to the previous
+        // file key, and Unwrap prefers it over the recovery protector. The file would open onto
+        // contents that no longer decrypt, with no prompt and nothing reported.
+        rootElement.SetAttributeValue(XName.Get(MachineProtectorAttributeName),
+                                      HasMachineProtector ? MachineProtector : null);
 
         rootElement.SetAttributeValue(XName.Get(RecoveryProtectorAttributeName), RecoveryProtector);
     }

@@ -36,6 +36,30 @@ public static class RecoveryPasswordKeyProtector
     /// </remarks>
     public const int DefaultIterations = 600_000;
 
+    /// <summary>
+    /// The lowest count this will write or accept, matching the floor <see cref="Pkcs5S2KeyGenerator"/>
+    /// already enforces.
+    /// </summary>
+    /// <remarks>
+    /// Named here rather than left as two coincidentally equal literals. <c>Wrap</c> checks it so the
+    /// failure names the parameter the caller got wrong, instead of surfacing from inside the key
+    /// generator after the header has already been laid out.
+    /// </remarks>
+    public const int MinimumIterations = 1000;
+
+    /// <summary>The highest count this will write or accept.</summary>
+    /// <remarks>
+    /// The iteration count is an input to the derivation, so it has to be read out of the blob
+    /// <i>before</i> the tag can be checked — there is no ordering that avoids this. Without a
+    /// ceiling, a file carrying <c>int.MaxValue</c> makes opening it take hours, and the application
+    /// is unresponsive for all of them. A ceiling is the only thing standing between "this file is
+    /// hostile" and "this application has hung".
+    ///
+    /// Set well above <see cref="DefaultIterations"/> so raising the configured count stays possible,
+    /// and low enough that the worst case is seconds rather than hours.
+    /// </remarks>
+    public const int MaximumIterations = 10_000_000;
+
     private const byte CurrentVersion = 1;
     private const byte PrfSha256 = 1;
     private const byte PrfSha512 = 2;
@@ -68,6 +92,9 @@ public static class RecoveryPasswordKeyProtector
         if (!IsSupportedPrf(function))
             throw new ArgumentOutOfRangeException(nameof(prf), function,
                 "A recovery protector must be derived with SHA-256 or SHA-512.");
+
+        ArgumentOutOfRangeException.ThrowIfLessThan(iterations, MinimumIterations);
+        ArgumentOutOfRangeException.ThrowIfGreaterThan(iterations, MaximumIterations);
 
         if (recoveryPassword.Length == 0)
             throw new ArgumentException("A recovery password is required.", nameof(recoveryPassword));
@@ -114,7 +141,7 @@ public static class RecoveryPasswordKeyProtector
         ArgumentNullException.ThrowIfNull(recoveryPassword);
 
         if (string.IsNullOrWhiteSpace(wrappedKey))
-            throw new KeyProtectionException(KeyProtector.RecoveryPassword,
+            throw new KeyProtectionException(KeyProtector.RecoveryPassword, KeyProtectionFailure.Unusable,
                 "This connection file carries no recovery-password protector.");
 
         byte[] blob;
@@ -124,12 +151,12 @@ public static class RecoveryPasswordKeyProtector
         }
         catch (FormatException ex)
         {
-            throw new KeyProtectionException(KeyProtector.RecoveryPassword,
+            throw new KeyProtectionException(KeyProtector.RecoveryPassword, KeyProtectionFailure.Unusable,
                 "The recovery protector on this connection file is not readable.", ex);
         }
 
         if (blob.Length != BlobLength || blob[0] != CurrentVersion)
-            throw new KeyProtectionException(KeyProtector.RecoveryPassword,
+            throw new KeyProtectionException(KeyProtector.RecoveryPassword, KeyProtectionFailure.Unusable,
                 "The recovery protector on this connection file is in a format this version does not " +
                 "recognise, so it was written by a newer one.");
 
@@ -140,15 +167,17 @@ public static class RecoveryPasswordKeyProtector
         }
         catch (ArgumentOutOfRangeException ex)
         {
-            throw new KeyProtectionException(KeyProtector.RecoveryPassword,
+            throw new KeyProtectionException(KeyProtector.RecoveryPassword, KeyProtectionFailure.Unusable,
                 "The recovery protector names a key derivation function this version does not know.", ex);
         }
 
+        // Checked before deriving, never after: this value decides how long the derivation runs, and
+        // the tag that would reveal it as forged cannot be checked until the derivation has finished.
         int iterations = BinaryPrimitives.ReadInt32BigEndian(blob.AsSpan(2, 4));
-        if (iterations < 1000)
-            throw new KeyProtectionException(KeyProtector.RecoveryPassword,
-                "The recovery protector records an iteration count too low to have been written by " +
-                "this application.");
+        if (iterations is < MinimumIterations or > MaximumIterations)
+            throw new KeyProtectionException(KeyProtector.RecoveryPassword, KeyProtectionFailure.Unusable,
+                "The recovery protector records an iteration count outside the range this application " +
+                "writes, so it was not written by this application.");
 
         byte[] keyEncryptionKey = DeriveKeyEncryptionKey(recoveryPassword, blob.AsSpan(6, SaltLength),
                                                          iterations, function);
@@ -166,7 +195,10 @@ public static class RecoveryPasswordKeyProtector
         }
         catch (CryptographicException ex)
         {
-            throw new KeyProtectionException(KeyProtector.RecoveryPassword,
+            // The only retryable outcome here. Everything above is a property of the blob rather
+            // than of the password, so re-asking would spend the user's attempts on a protector no
+            // password opens.
+            throw new KeyProtectionException(KeyProtector.RecoveryPassword, KeyProtectionFailure.WrongSecret,
                 "The recovery password did not open this connection file.", ex);
         }
         finally

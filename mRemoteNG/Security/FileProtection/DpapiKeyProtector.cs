@@ -17,6 +17,13 @@ namespace mRemoteNG.Security.FileProtection;
 /// <c>LocalMachine</c> would have covered, without the exposure.
 /// </para>
 /// <para>
+/// <b>The scope binds what this writes and cannot be checked on read.</b> It is carried inside the
+/// blob, and Win32's <c>CryptUnprotectData</c> takes no scope argument, so the value passed to
+/// <see cref="ProtectedData.Unprotect"/> is inert — a <c>LocalMachine</c> blob unwraps perfectly
+/// through a <c>CurrentUser</c> call. Do not add a check that appears to enforce the scope on the
+/// read side; there is nothing to enforce it against, and the appearance is worse than the absence.
+/// </para>
+/// <para>
 /// This is the protector that is absent in the portable edition, which is why it is a separate type
 /// from the one that always exists.
 /// </para>
@@ -32,7 +39,7 @@ public static class DpapiKeyProtector
     /// separation: a blob this application produced cannot be unprotected by another program running
     /// as the same user that merely calls <c>Unprotect</c> with no entropy.
     /// </remarks>
-    private static ReadOnlySpan<byte> Entropy => "mRemoteNG.ConnectionFileKey.v1"u8;
+    private static readonly byte[] Entropy = "mRemoteNG.ConnectionFileKey.v1"u8.ToArray();
 
     public static string Wrap(ConnectionFileKey fileKey)
     {
@@ -42,7 +49,7 @@ public static class DpapiKeyProtector
         try
         {
             return Convert.ToBase64String(
-                ProtectedData.Protect(plaintext, Entropy.ToArray(), DataProtectionScope.CurrentUser));
+                ProtectedData.Protect(plaintext, Entropy, DataProtectionScope.CurrentUser));
         }
         finally
         {
@@ -58,7 +65,7 @@ public static class DpapiKeyProtector
     public static ConnectionFileKey Unwrap(string? wrappedKey)
     {
         if (string.IsNullOrWhiteSpace(wrappedKey))
-            throw new KeyProtectionException(KeyProtector.Machine,
+            throw new KeyProtectionException(KeyProtector.Machine, KeyProtectionFailure.Unusable,
                 "This connection file carries no machine protector.");
 
         byte[] blob;
@@ -68,26 +75,28 @@ public static class DpapiKeyProtector
         }
         catch (FormatException ex)
         {
-            throw new KeyProtectionException(KeyProtector.Machine,
+            throw new KeyProtectionException(KeyProtector.Machine, KeyProtectionFailure.Unusable,
                 "The machine protector on this connection file is not readable.", ex);
         }
 
         byte[]? plaintext = null;
         try
         {
-            plaintext = ProtectedData.Unprotect(blob, Entropy.ToArray(), DataProtectionScope.CurrentUser);
+            plaintext = ProtectedData.Unprotect(blob, Entropy, DataProtectionScope.CurrentUser);
             return ConnectionFileKey.FromBytes(plaintext);
         }
         catch (CryptographicException ex)
         {
-            throw new KeyProtectionException(KeyProtector.Machine,
+            // Retryable in the sense that a different account could open it — which is why the
+            // caller falls through to the recovery password rather than stopping here.
+            throw new KeyProtectionException(KeyProtector.Machine, KeyProtectionFailure.WrongSecret,
                 "This connection file was protected by a different Windows account or machine.", ex);
         }
         catch (ArgumentException ex)
         {
             // Unprotected to something that is not a file key. Reported as a protector failure
             // rather than allowed to surface as an argument fault from deep in the load path.
-            throw new KeyProtectionException(KeyProtector.Machine,
+            throw new KeyProtectionException(KeyProtector.Machine, KeyProtectionFailure.Unusable,
                 "The machine protector on this connection file did not yield a file key.", ex);
         }
         finally
