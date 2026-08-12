@@ -213,10 +213,15 @@ as the escape route. Checking it against the backup feature showed the export do
 weight:
 
 - `FileBackupCreator` copies the encrypted bytes, so every rolling backup inherits the DPAPI binding.
-- `BackupLocation` is configurable and users point it at shares and synced folders **specifically so
-  backups survive the machine** — the exact case DPAPI breaks.
 - The failure is silent. The copy succeeds and the file looks normal; only an attempted restore on
   another machine reveals that nothing in the backup set can be opened.
+
+A third bullet used to sit between these, claiming `BackupLocation` lets users direct backups at
+shares so they survive the machine. **It is wrong about this fork.** `BackupLocation` holds the
+connection file's own path, is read only as a file dialog's initial directory, and
+`FileBackupCreator` never looks at it — backups are always written beside the connection file. The
+argument survives without it: ten copies beside the file die with the profile just as surely as ten
+on a share.
 
 A change that improves confidentiality by reducing recoverability, without telling anyone, is not an
 improvement. The second protector costs one prompt and removes the class.

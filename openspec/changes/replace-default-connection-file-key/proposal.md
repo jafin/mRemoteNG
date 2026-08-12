@@ -67,8 +67,17 @@ where today every one of them is recoverable, precisely because the key is publi
 have **reduced** recoverability while claiming to improve protection, and done it silently: the copy
 succeeds, the file looks normal, and only an attempted restore reveals the loss.
 
-`BackupLocation` makes it sharper. Users point it at a network share or a synced folder specifically
-so that backups outlive the machine, and DPAPI defeats that exact intent with no error.
+**A sharpening argument this originally made is wrong, and is corrected rather than deleted.** It
+claimed `BackupLocation` lets users point backups at a share or synced folder so they outlive the
+machine, and that DPAPI defeats that intent. In this fork `BackupLocation` is not a backup
+destination at all: it records the *connection file's* path — written by `CommandLineParser`,
+`ConnectionsService` and the File menu, read only as a file dialog's initial directory — and
+`FileBackupCreator` never consults it. Backups always land beside the connection file, named by
+`BackupFileNameFormat`.
+
+The conclusion is untouched, because it never depended on where the backups sit. A rolling set of ten
+copies beside the file is exactly as unopenable after a profile rebuild as ten copies on a share.
+What the correction removes is a claim about user intent that this codebase does not support.
 
 A second protector costs one prompt at migration and removes the whole class of problem.
 
