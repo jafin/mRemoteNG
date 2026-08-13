@@ -1,0 +1,28 @@
+/**
+ * Global styles. Docusaurus uses Infima (https://infima.dev) under the hood, so
+ * overriding these CSS variables is enough to re-theme the whole site.
+ */
+
+/* Primary is the blue of the "m" in the mRemoteNG wordmark. */
+:root {
+  --ifm-color-primary: #2562b6;
+  --ifm-color-primary-dark: #235ba9;
+  --ifm-color-primary-darker: #2156a1;
+  --ifm-color-primary-darkest: #1b4683;
+  --ifm-color-primary-light: #2868c3;
+  --ifm-color-primary-lighter: #2a6dcb;
+  --ifm-color-primary-lightest: #4180d8;
+  --ifm-code-font-size: 95%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.1);
+}
+
+[data-theme='dark'] {
+  --ifm-color-primary: #6799e0;
+  --ifm-color-primary-dark: #5a91dd;
+  --ifm-color-primary-darker: #518bdb;
+  --ifm-color-primary-darkest: #3477d5;
+  --ifm-color-primary-light: #73a2e2;
+  --ifm-color-primary-lighter: #7ca7e4;
+  --ifm-color-primary-lightest: #99bbea;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 0, 0, 0.3);
+}
