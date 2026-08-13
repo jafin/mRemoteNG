@@ -14,12 +14,18 @@ analyzer warnings, full suite 4117 passed / 0 failed, `openspec validate --stric
 one irreversibly. Do not point any of this at the file you actually use.
 
 ```powershell
+# Set these two once, in the shell you will use throughout. Every command below uses them, so
+# nothing depends on which directory you happen to be standing in.
+$repo  = "D:\Data\_CodeOS\mremoteng-robertpopa22\mRemoteNG"     # your checkout
+$check = "$repo\openspec\changes\replace-default-connection-file-key\verification\check-legacy-key.py"
+$exe   = "$repo\mRemoteNG\bin\x64\Release\mRemoteNG.exe"
+
 # A scratch store and a scratch settings location, so nothing touches your real profile.
 mkdir C:\mrng-verify
 copy $env:APPDATA\mRemoteNG\confCons.xml C:\mrng-verify\confCons.xml
 
 # Launch against them. The colon form is REQUIRED — see the warning below.
-.\mRemoteNG.exe --cons:C:\mrng-verify\confCons.xml --cfg:C:\mrng-verify\settings
+& $exe --cons:C:\mrng-verify\confCons.xml --cfg:C:\mrng-verify\settings
 ```
 
 > **Do not use the space-separated form with an absolute path.**
@@ -57,9 +63,10 @@ message that is written there rather than shown in a dialog. `%APPDATA%\mRemoteN
 **Proves:** the change did the one thing it exists to do. Everything else in §8 is about not having
 broken something on the way.
 
-The check runs `openspec\changes\replace-default-connection-file-key\verification\check-legacy-key.py`,
-which reimplements the classic format from scratch — PBKDF2 → AES-256-GCM — and shares no code with
-mRemoteNG. Asking mRemoteNG whether mRemoteNG still uses `mR3m` would prove very little.
+The check runs `$check` — set above, and living at
+`openspec\changes\replace-default-connection-file-key\verification\check-legacy-key.py` in the
+checkout. It reimplements the classic format from scratch — PBKDF2 → AES-256-GCM — and shares no
+code with mRemoteNG. Asking mRemoteNG whether mRemoteNG still uses `mR3m` would prove very little.
 
 ```powershell
 pip install cryptography            # once
@@ -68,7 +75,7 @@ pip install cryptography            # once
 **Step 1 — prove the script works before trusting a failure.**
 
 ```powershell
-python openspec\changes\replace-default-connection-file-key\verification\check-legacy-key.py --self-test
+python $check --self-test
 ```
 
 It opens a real mRemoteNG file from the test resources and must print
@@ -80,7 +87,7 @@ real file, with no secret involved.)*
 **Step 2 — confirm your scratch file is currently readable.**
 
 ```powershell
-python ...\check-legacy-key.py C:\mrng-verify\confCons.xml
+python $check C:\mrng-verify\confCons.xml
 ```
 
 Expect `OPEN`. If it says `shut`, your file already has a master password — take it off, or start
@@ -92,7 +99,7 @@ from a file without one, or 8.4 proves nothing.
 **Step 4 — check again.**
 
 ```powershell
-python ...\check-legacy-key.py C:\mrng-verify\confCons.xml
+python $check C:\mrng-verify\confCons.xml
 ```
 
 **Pass:** `RESULT: the published key mR3m does not open this file`, `StorageFormat: Hardened`, and
@@ -120,7 +127,8 @@ it does not need to be an administrator.
 1. From the first account, copy the migrated `C:\mrng-verify\confCons.xml` somewhere both accounts
    can read — `C:\Users\Public\mrng-verify\` works.
 2. Sign in as the second account. Copy the file to a folder that account owns.
-3. Run mRemoteNG there: `.\mRemoteNG.exe --cons <that copy> --cfg <a scratch settings folder>`
+3. Run mRemoteNG there — colon form, as above:
+   `.\mRemoteNG.exe --cons:<that copy> --cfg:<a scratch settings folder>`
 
 **Pass:**
 - You are asked for a password.
@@ -186,7 +194,7 @@ Copy `mRemoteNG\bin\x64\Portable\` to a USB stick. It is self-contained; the tar
 store, add a connection, harden it, set a recovery password. Then:
 
 ```powershell
-python ...\check-legacy-key.py <the stick's confCons.xml>
+python $check <the stick's confCons.xml>
 ```
 
 **Pass:** `protectors: machine=no, recovery=yes`. A machine protector here would be the bug — it
@@ -222,13 +230,14 @@ third sentinel must not treat it as "not protected" and write over it.
 
 1. Download the **v1.82.0** release. Install or unpack it somewhere separate.
 2. Copy the 8.4 migrated file to a scratch path.
-3. Open it with v1.82.0: `mRemoteNG.exe --cons <copy> --cfg <scratch settings>`
+3. Open it with v1.82.0: `mRemoteNG.exe --cons:<copy> --cfg:<scratch settings>`
+   (v1.82.0 has the same argument defect, so the colon form is required there too.)
 
 **Pass:** it refuses to load. **The critical part is what it does next** — check the file
 afterwards:
 
 ```powershell
-python ...\check-legacy-key.py <the copy>
+python $check <the copy>
 ```
 
 It must still report `StorageFormat: Hardened` with both protectors, and the current build must
@@ -253,7 +262,7 @@ A second local account is enough. No share is needed; only a path outside both p
 1. As account A, put a classic connection file at `C:\mrng-shared\confCons.xml` and grant both
    accounts access (`icacls C:\mrng-shared /grant Users:(OI)(CI)M`).
 2. Open it as A and harden it, setting a recovery password.
-3. Check it: `python ...\check-legacy-key.py C:\mrng-shared\confCons.xml`
+3. Check it: `python $check C:\mrng-shared\confCons.xml`
 
 **Pass:** `protectors: machine=no, recovery=yes` — even though A is the account that migrated it and
 could have used a machine protector.
