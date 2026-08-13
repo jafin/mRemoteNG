@@ -4,23 +4,35 @@ using System.Runtime.Versioning;
 namespace mRemoteNG.Config.Settings.Providers;
 
 /// <summary>
-/// Forces all Properties settings classes to use ChooseProvider (PortableSettingsProvider
-/// when PORTABLE is defined). This bypasses SettingsProviderAttribute which may fail
-/// silently in .NET Core/5+/10 due to AssemblyQualifiedName resolution issues.
+/// Forces all Properties settings classes onto one settings provider, chosen from the edition.
+/// This bypasses SettingsProviderAttribute which may fail silently in .NET Core/5+/10 due to
+/// AssemblyQualifiedName resolution issues.
 /// Must be called BEFORE any settings class .Default property is accessed.
 /// </summary>
+/// <remarks>
+/// <b>This is where the edition stops being a compile-time property.</b> The provider used to be
+/// selected by which base class <see cref="ChooseProvider"/> inherited, which is a decision only a
+/// compiler can make. Selecting the instance here instead is what allows
+/// <see cref="App.Info.PortableEdition"/> to answer at runtime, and it works because this already
+/// ran before anything read a setting — the wiring it does was always runtime wiring.
+/// </remarks>
 [SupportedOSPlatform("windows")]
 internal static class PortableSettingsInitializer
 {
     private static bool _initialized;
-    private static ChooseProvider? _sharedProvider;
+    private static SettingsProvider? _sharedProvider;
 
     internal static void EnsureInitialized()
     {
         if (_initialized) return;
         _initialized = true;
 
-        _sharedProvider = new ChooseProvider();
+        _sharedProvider = App.Runtime.IsPortableEdition
+            ? new PortableSettingsProvider()
+            : new ChooseProvider();
+        // Its own Name, as before. PortableSettingsProvider overrides Name with a constant and
+        // ignores what it is initialised with, so passing anything else would name it one thing and
+        // register it under another — and WireProvider looks it up by Name.
         _sharedProvider.Initialize(_sharedProvider.Name, null!);
 
         WireProvider(Properties.Settings.Default);

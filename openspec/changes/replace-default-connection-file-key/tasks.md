@@ -181,8 +181,8 @@ and shares no code with this repository, because asking mRemoteNG whether mRemot
 `mR3m` establishes nothing. It carries a `--self-test` that opens a real file from the test
 resources first: a script that cannot decrypt anything would give a migrated file the same clean
 result and mean nothing by it.
-- [ ] 8.4 Manual: migrate a real file, confirm connections still open with no prompt, confirm the file no longer decrypts with `mR3m` using an independent script.
-- [ ] 8.5 Manual: copy a migrated file to a second Windows account, confirm the recovery password opens it and the message before that names the cause.
+- [x] 8.4 Manual: migrate a real file, confirm connections still open with no prompt, confirm the file no longer decrypts with `mR3m` using an independent script. — **Passed.** On a real store: six stored passwords recovered under `mR3m` before migration, none after, checked with `verification/check-legacy-key.py`, which shares no code with this repository. `machine=yes, recovery=yes`. Getting here took four attempts and each failure was worth more than the pass: the scratch store outside the user profile (correct, and not what 8.4 measures), `KdfIterations="0"` crashing the checker, a copied store keeping the protectors it was migrated with, and finally `build.ps1` producing a portable build — which is `detect-portable-edition-at-runtime`.
+- [x] 8.5 Manual: copy a migrated file to a second Windows account, confirm the recovery password opens it and the message before that names the cause. — **Passed.**
 - [ ] 8.6 Manual: let the rolling backup run, copy the backup directory to another machine, restore from it with the recovery password. **This is the scenario that changed the design; verify it by hand, not only in tests.**
 - [ ] 8.7 Manual: portable edition on two machines from one USB stick, with and without a recovery password, and a file exchanged between portable and installed.
 - [ ] 8.8 Manual: open a migrated file with the previous release and confirm it refuses with a version message rather than corrupting anything.

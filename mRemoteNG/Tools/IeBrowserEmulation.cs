@@ -39,7 +39,11 @@ public class IeBrowserEmulation
         }
     }
 
-#if PORTABLE
+    /// <remarks>
+    /// Only ever called for the portable edition, which tidies up after itself rather than leaving
+    /// registry values behind on a machine it was carried to. Compiled unconditionally now that the
+    /// edition is a runtime answer; <see cref="Unregister"/> is what decides whether it runs.
+    /// </remarks>
     private static void DeleteBrowserFeatureControlKey(string feature, string appName)
     {
         if (Environment.Is64BitOperatingSystem)
@@ -66,7 +70,6 @@ public class IeBrowserEmulation
                 key.DeleteValue(appName);
         }
     }
-#endif
 
     private static void SetBrowserFeatureControl()
     {
@@ -109,7 +112,6 @@ public class IeBrowserEmulation
         SetBrowserFeatureControlKey("FEATURE_XMLHTTP", fileName, 1);
     }
 
-#if PORTABLE
     private static void DeleteBrowserFeatureControl()
     {
         // http://msdn.microsoft.com/en-us/library/ee330720(v=vs.85).aspx
@@ -150,7 +152,6 @@ public class IeBrowserEmulation
         DeleteBrowserFeatureControlKey("FEATURE_WINDOW_RESTRICTIONS", fileName);
         DeleteBrowserFeatureControlKey("FEATURE_XMLHTTP", fileName);
     }
-#endif
 
     private static uint GetBrowserEmulationMode()
     {
@@ -233,9 +234,19 @@ public class IeBrowserEmulation
     }
 
 
+    /// <summary>
+    /// Removes the per-process browser feature-control values, for the portable edition only.
+    /// </summary>
+    /// <remarks>
+    /// Portable is carried to machines it does not own, so it takes its registry values with it when
+    /// it goes. An installed edition leaves them: it will be started again on this machine, and
+    /// removing them at every exit would only mean writing them again at every start.
+    /// </remarks>
     public static void Unregister()
     {
-#if PORTABLE
+        if (!Runtime.IsPortableEdition)
+            return;
+
         try
         {
             DeleteBrowserFeatureControl();
@@ -244,7 +255,6 @@ public class IeBrowserEmulation
         {
             Runtime.MessageCollector?.AddExceptionMessage("IeBrowserEmulation.Unregister() failed.", ex);
         }
-#endif
     }
 
     private IeBrowserEmulation()

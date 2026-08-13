@@ -75,9 +75,25 @@ message that is written there rather than shown in a dialog. `%APPDATA%\mRemoteN
 
 | For | Command | Lands in |
 |---|---|---|
-| 8.4–8.6, 8.9 | `pwsh -File build.ps1` | `mRemoteNG\bin\x64\Release\` |
-| 8.7 | `pwsh -File build.ps1 -Portable` | `mRemoteNG\bin\x64\Portable\` |
+| 8.4–8.7, 8.9 | `pwsh -File build.ps1` | `mRemoteNG\bin\x64\Release\` |
 | 8.8 | download the **v1.82.0** release from GitHub | anywhere separate |
+
+> **One build now serves both editions.** The edition is decided by a `portable.flag` file beside the
+> executable, not by how the binary was compiled, so 8.7 needs no second build:
+>
+> ```powershell
+> New-Item -ItemType File (Join-Path (Split-Path $exe) portable.flag)   # portable
+> Remove-Item (Join-Path (Split-Path $exe) portable.flag)               # installed
+> ```
+>
+> Restart after either — the edition is resolved once per run. Confirm which you have from the
+> startup line in `mRemoteNG\bin\x64\Release\mRemoteNG Connection Manager*.log`: it says
+> "Portable Edition" or it does not.
+>
+> This replaced a compile constant that **every** configuration but `Release Installer` defined, and
+> `Release Installer` was built by nothing — so every shipped artefact ran as the portable edition
+> and no machine protector was ever written for anyone. That is why 8.4 kept returning `machine=no`
+> on a store sitting inside the user profile. See `detect-portable-edition-at-runtime`.
 
 ---
 
@@ -216,11 +232,18 @@ live file is left exactly as it was.
 the original draft of the design had, so it is the one worth being fussy about.
 
 ```powershell
-pwsh -NoProfile -ExecutionPolicy Bypass -File build.ps1 -Portable
+# Same build as every other section. The marker is what makes it portable.
+New-Item -ItemType File (Join-Path (Split-Path $exe) portable.flag)
 ```
 
-Copy `mRemoteNG\bin\x64\Portable\` to a USB stick. It is self-contained; the target machine needs no
-.NET install.
+Restart afterwards and confirm the startup log now says "Portable Edition".
+
+For **7b** you need it on a stick, and there `pwsh -File build.ps1 -Portable` still helps: it
+produces a self-contained copy in `mRemoteNG\bin\x64\Portable\` that needs no .NET on the target
+machine. **Check that folder for a `portable.flag` and create one if it is missing** — `build.ps1`
+is off-limits to agents under this repository's rules, so it does not write the marker yet and
+currently relies on the transitional compile constant instead. That is task 4.1 of
+`detect-portable-edition-at-runtime`.
 
 **7a — portable, with a recovery password.** On machine A, run the portable build against a fresh
 store, add a connection, harden it, set a recovery password. Then:

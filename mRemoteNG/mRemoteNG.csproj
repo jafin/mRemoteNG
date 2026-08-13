@@ -42,28 +42,27 @@
     <NeutralLanguage>en</NeutralLanguage>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x86'">
-    <DefineConstants>DEBUG;PORTABLE</DefineConstants>
+    <DefineConstants>DEBUG</DefineConstants>
     <OutputPath>bin\x86\Debug\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <Optimize>False</Optimize>
     <WarningLevel>8</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <DefineConstants>DEBUG;PORTABLE</DefineConstants>
+    <DefineConstants>DEBUG</DefineConstants>
     <OutputPath>bin\x64\Debug\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <Optimize>False</Optimize>
     <WarningLevel>8</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|arm64'">
-    <DefineConstants>DEBUG;PORTABLE</DefineConstants>
+    <DefineConstants>DEBUG</DefineConstants>
     <OutputPath>bin\arm64\Debug\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <Optimize>False</Optimize>
     <WarningLevel>8</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x86'">
-    <DefineConstants>PORTABLE</DefineConstants>
     <Optimize>True</Optimize>
     <OutputPath>bin\x86\Release\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
@@ -71,7 +70,6 @@
     <ResolveComReferenceSilent>True</ResolveComReferenceSilent>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <DefineConstants>PORTABLE</DefineConstants>
     <Optimize>True</Optimize>
     <OutputPath>bin\x64\Release\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
@@ -79,7 +77,6 @@
     <ResolveComReferenceSilent>True</ResolveComReferenceSilent>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|arm64'">
-    <DefineConstants>PORTABLE</DefineConstants>
     <Optimize>True</Optimize>
     <OutputPath>bin\arm64\Release\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>

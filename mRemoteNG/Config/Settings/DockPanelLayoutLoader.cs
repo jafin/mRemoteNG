@@ -40,20 +40,20 @@ public class DockPanelLayoutLoader
     {
         try
         {
-#if !PORTABLE
-                string oldPath =
- Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + "\\" + GeneralAppInfo.ProductName + "\\" + SettingsFileInfo.LayoutFileName;
-#endif
+            // The pre-Settings-folder location, only ever written by an installed edition.
+            string? oldPath = App.Runtime.IsPortableEdition
+                ? null
+                : Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData) + "\\" +
+                  GeneralAppInfo.ProductName + "\\" + SettingsFileInfo.LayoutFileName;
+
             string newPath = SettingsFileInfo.SettingsPath + "\\" + SettingsFileInfo.LayoutFileName;
             if (File.Exists(newPath))
             {
                 LoadLayout(newPath);
-#if !PORTABLE
-                }
-                else if (File.Exists(oldPath))
-                {
-                    LoadLayout(oldPath);
-#endif
+            }
+            else if (oldPath is not null && File.Exists(oldPath))
+            {
+                LoadLayout(oldPath);
             }
             else
             {
