@@ -122,6 +122,12 @@ public class PortableEditionInterchangeTests
         // Task 7.4, second half. Opening is the easy part — the interesting one is that adopting the
         // file costs nothing: the installed edition wraps the same file key a second way, so the
         // contents are not re-encrypted and a backup taken before this still opens.
+        //
+        // **This exercises the API, not the application.** `WithMachineProtector` is called here
+        // directly because nothing in the save path calls it — see task 7.5. So it proves the
+        // capability is correct and proves nothing about a store ever gaining a protector in
+        // practice, a distinction that hid a real gap until 8.4 was run by hand. Reword when 7.5
+        // lands and the assertion can go through the saver instead.
         Save(machineProtector: false);
         string encryptedPasswordBefore = StoredPasswordCiphertext();
 

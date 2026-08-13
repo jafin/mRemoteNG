@@ -139,6 +139,35 @@ that honest rather than silent; it does not make it good. The reason portable ca
 the reason it has no machine protector at all — there is no account to bind to — so its only
 protection is a password, and a password nobody chose to set is no password.
 
+### Defect found running 8.4: nothing ever adds a machine protector to an existing store
+
+**My own 7.4 test hid this, and that is the part worth learning from.**
+`ConnectionFileKeyProtection.WithMachineProtector` exists, is correct, and is covered — and has **no
+caller anywhere in the application**. `APortableStoreOpensInTheInstalledEditionAndCanBeGivenAMachineProtector`
+calls it directly, so it proves the *capability* and says nothing about whether anything uses it. The
+spec scenario it was written against says "a machine-bound protector **may be added** when it is next
+saved", and nothing adds one, ever.
+
+Reachable three ways, none exotic:
+
+| Case | Today |
+|---|---|
+| A store migrated outside the profile, later moved inside | prompts on every open, forever |
+| A portable file opened by the installed edition | prompts on every open, forever |
+| A store migrated before a profile rebuild | recovery password every time, forever |
+
+Each is a store whose owner is entitled to a silent open on this machine and never gets one. The key
+is already unwrapped at that point, so adding the protector costs nothing and re-encrypts nothing —
+which is exactly what 3.4 built `WithMachineProtector` for.
+
+- [ ] 7.5 On save, add a machine protector when the store has none and `MachineProtectorPolicy` says it should. The file key is in hand by then; only the protector attribute changes, so a backup taken beforehand still opens.
+- [ ] 7.6 Decide whether that is silent. Silent is defensible — it removes a prompt and weakens nothing, since the recovery protector stays — but it writes a new attribute the user did not ask for, and the mirror case (a store moving *out* of the profile) then wants the protector removed on the same rule, which is a second behaviour and a louder one.
+- [ ] 7.7 Tests through the **saver**, not through `WithMachineProtector`. The existing coverage is what let this hide: assert that saving a recovery-only store from inside the profile produces `machine=yes` on disk, and that the contents are byte-identical.
+- [ ] 7.8 Correct the comment on `APortableStoreOpensInTheInstalledEditionAndCanBeGivenAMachineProtector` to say it exercises the API rather than the application, until 7.5 makes that untrue.
+
+The spec scenario stays as written — "may be added" is the behaviour that is wanted, and it is now
+recorded as unimplemented rather than quietly read as satisfied.
+
 ## 8. Verification
 
 - [x] 8.1 Full build; zero new analyzer warnings.
