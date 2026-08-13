@@ -195,4 +195,12 @@ result and mean nothing by it.
   precedes. That is precisely the file an older release's recovery walk would find, succeed on, and
   copy over the live store. The mixed set is normal rather than a quirk of testing, which is what
   makes 8.8 the item in §8 most worth not skipping.
-- [ ] 8.9 Manual: point two Windows accounts at one connection file outside both profiles, migrate it from the first, and confirm the second opens it on the recovery password with no message about another account — and that the first is not prompted differently from the second. A second local account is enough; a share is not needed, only a path outside the profile.
+- [x] 8.9 Manual: point two Windows accounts at one connection file outside both profiles, migrate it from the first, and confirm the second opens it on the recovery password with no message about another account — and that the first is not prompted differently from the second. A second local account is enough; a share is not needed, only a path outside the profile. — **Passed.** The store was migrated by the account that owns the machine, on a healthy profile, and still came back `machine=no, recovery=yes`: the location rule declined a protector that account was entitled to, because a protector one member of a team can use costs every other member a prompt they cannot remove. Both accounts were then prompted identically, and the second saw **no** message about a different Windows account — which is the point, since there is no machine protector to fail and therefore nothing to explain. That message appearing would have meant 5.5 had not taken effect and the second user was being told something useless about a file that was never bound to anyone.
+
+**§8 is complete except 8.8, which is deferred.** 8.1–8.3 in CI and the build, 8.4–8.7 and 8.9 by hand,
+two of them on a second physical machine. What the manual pass bought over the suite is worth
+stating: **it found four defects the tests could not.** A hardened store could never be given a
+per-file key (5.9), the save that followed would have been suppressed (5.13), the confirmation
+stacked on screen (5.14), and every shipped artefact was the portable edition
+(`detect-portable-edition-at-runtime`). None of those were reachable from a test that builds its own
+store in a temp directory — they lived in the wiring, the build, and the message pump.
