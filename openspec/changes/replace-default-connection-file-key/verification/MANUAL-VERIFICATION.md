@@ -14,19 +14,35 @@ analyzer warnings, full suite 4117 passed / 0 failed, `openspec validate --stric
 one irreversibly. Do not point any of this at the file you actually use.
 
 ```powershell
-# Set these two once, in the shell you will use throughout. Every command below uses them, so
-# nothing depends on which directory you happen to be standing in.
+# Re-run this block in EVERY new PowerShell window. Variables do not survive one.
 $repo  = "D:\Data\_CodeOS\mremoteng-robertpopa22\mRemoteNG"     # your checkout
 $check = "$repo\openspec\changes\replace-default-connection-file-key\verification\check-legacy-key.py"
 $exe   = "$repo\mRemoteNG\bin\x64\Release\mRemoteNG.exe"
+
+# Fails now rather than later, for the reason in the warning below.
+if (-not (Test-Path $check)) { throw "check-legacy-key.py not found - is `$repo right?" }
+if (-not (Test-Path $exe))   { throw "mRemoteNG.exe not found - build it first" }
 
 # A scratch store and a scratch settings location, so nothing touches your real profile.
 mkdir C:\mrng-verify
 copy $env:APPDATA\mRemoteNG\confCons.xml C:\mrng-verify\confCons.xml
 
-# Launch against them. The colon form is REQUIRED — see the warning below.
+# Launch against them. The colon form is REQUIRED — see the second warning below.
 & $exe --cons:C:\mrng-verify\confCons.xml --cfg:C:\mrng-verify\settings
 ```
+
+> **If a command reports a `SyntaxError` inside your connection file, `$check` is not set.**
+>
+> ```
+> File "C:\mrng-verify\confCons.xml", line 1
+>     <?xml version="1.0" encoding="utf-8"?>
+> SyntaxError: invalid syntax
+> ```
+>
+> PowerShell expands an unset variable to nothing rather than complaining, so
+> `python $check C:\mrng-verify\confCons.xml` becomes `python C:\mrng-verify\confCons.xml` and
+> Python tries to run your connection file as a script. Nothing is wrong with the file or the
+> script — you are in a shell that never ran the block above. Re-run it.
 
 > **Do not use the space-separated form with an absolute path.**
 > `--cons C:\mrng-verify\confCons.xml` fails with *"The connection file could not be found"* even
