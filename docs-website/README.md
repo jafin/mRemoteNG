@@ -38,8 +38,9 @@ as the site root, so there is no separate landing page under `src/pages`.
 literals such as `<user@domain>` and PowerShell hash tables that MDX would reject as JSX.
 Use a `.mdx` extension for any page that genuinely needs components.
 
-These pages were converted from the Sphinx sources in `mRemoteNGDocumentation/`. That tree
-is still the upstream copy; edits belong here now.
+These pages were converted from the Sphinx sources that used to live in
+`mRemoteNGDocumentation/`. That tree and its readthedocs config have since been removed —
+this directory is the only user documentation in the repository.
 
 ## Publishing
 

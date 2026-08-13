@@ -9,8 +9,9 @@ updates:
     labels:
       - "dependencies"
 
-  - package-ecosystem: "pip"
-    directory: "/mRemoteNGDocumentation"
+  # The documentation site replaced the Sphinx tree the pip entry used to watch.
+  - package-ecosystem: "npm"
+    directory: "/docs-website"
     schedule:
       interval: "monthly"
     open-pull-requests-limit: 5

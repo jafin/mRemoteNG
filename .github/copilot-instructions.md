@@ -47,7 +47,7 @@ dotnet test mRemoteNGTests/mRemoteNGTests.csproj
 - **mRemoteNGSpecs**: Specification tests
 - **ObjectListView.NetCore**: Custom list view control
 - **ExternalConnectors**: External protocol connector implementations
-- **mRemoteNGDocumentation**: reStructuredText documentation
+- **docs-website**: End-user documentation site (Docusaurus, Markdown)
 
 ### Key Directories in mRemoteNG Project
 - `App/`: Application startup and initialization
@@ -130,7 +130,7 @@ All user-facing strings must be localized:
    - CSV: Update `CsvConnectionsSerializerMremotengFormat.cs`
 5. **Add localization** in `Language/Language.resx`
 6. **Write tests** in `mRemoteNGTests/Connection/`
-7. **Update documentation** in `mRemoteNGDocumentation/` if user-facing
+7. **Update documentation** in `docs-website/docs/` if user-facing
 
 #### UI Controls
 - Prefer existing mRemoteNG patterns for UI controls
@@ -187,10 +187,13 @@ Mirror the main project structure in `mRemoteNGTests/`:
 ## Documentation
 
 ### User Documentation
-- Located in `mRemoteNGDocumentation/`
-- Written in reStructuredText (.rst)
-- Follows ReadTheDocs format
+- Located in `docs-website/docs/`
+- Written in Markdown (.md), parsed as CommonMark rather than MDX
+- Built with Docusaurus and published to GitHub Pages
+- A new page is invisible until it is listed in `docs-website/sidebars.ts`
+- Screenshots live in `docs-website/docs/images/` and are referenced by relative path
 - Include screenshots and examples for new features
+- See the User Documentation section of `CLAUDE.md` for when and how to write it
 
 ### Code Documentation
 - Use XML documentation comments for public APIs
@@ -209,7 +212,7 @@ Mirror the main project structure in `mRemoteNGTests/`:
 ### Adding a Theme
 1. Add theme files to `Themes/` directory
 2. Update theme manager
-3. Add documentation in `mRemoteNGDocumentation/themes/`
+3. Add documentation in `docs-website/docs/themes/` and list it in `docs-website/sidebars.ts`
 
 ### Updating Dependencies
 - Dependencies are centrally managed in `Directory.Packages.props`
