@@ -80,6 +80,32 @@ reused elsewhere living longer than it needs to.
 Fixing it means deciding what "locked" means for a store with no master password, which is a change
 to `AutoLockEnabled` affecting behaviour outside this proposal. Recorded rather than folded in.
 
+### Defect found running 8.4: a store already at the hardened level can never be given a per-file key
+
+**This blocks the change and must be fixed before it ships.** Both routes to the offer test the
+*level*, and a store raised to `Hardened` by `add-storage-format-opt-in` before this change existed
+has no per-file key:
+
+| Route | Condition | Result on such a store |
+|---|---|---|
+| Automatic | `StorageFormatOffer.ShouldOffer` requires `level == Classic` | never offered |
+| File menu | `StorageFormatCoordinator.AskOnRequest` returns early on `level == Hardened` | *"This store already uses the hardened format."* |
+
+So the users who took the **earlier** security upgrade are the only ones who cannot take this one,
+and the application tells them there is nothing left to do. Confirmed on a real store: `Hardened`,
+`KdfPrf=SHA256`, `KdfIterations=600000`, **no protectors**, and `check-legacy-key.py` recovers every
+stored password under `mR3m`. The hardened KDF stretches the published constant beautifully and
+changes nothing about who can read the file.
+
+- [ ] 5.9 Make both routes test whether the store has a per-file key, not what level it declares. `Hardened` without `KeyProtection` is an unfinished migration, not a finished one.
+- [ ] 5.10 Decide what the confirmation says in that case. The existing text trades upstream compatibility for hardening, and such a store has already spent that — the remaining decision is only about the key, so re-using the message unchanged would overstate the cost and ask for a recovery password in exchange for something the user already gave up.
+- [ ] 5.11 Fix `Language.StorageFormatAlreadyHardened`, which is the sentence that sends these users away. It is true about the level and false about what it implies.
+- [ ] 5.12 Tests: a store at `Hardened` with no `KeyProtection` is offered the per-file key by both routes; one that already has protectors is not offered again; a `Classic` store is unaffected.
+
+This is what §8 is for. Nothing in the suite covers it, because every test that builds a hardened
+store builds one **with** protectors — the combination that only exists in the wild, on files
+written by a shipped release, is the combination nothing exercised.
+
 ## 6. Backups and recovery
 
 - [x] 6.1 Leave `FileBackupCreator.CreateBackupFile` as a `File.Copy` — decided, see design.md. A copy carrying both protectors is already restorable anywhere, and rewrapping per backup would put key handling into the one mechanism whose value is that it cannot go wrong. Add a test asserting a copy restores, rather than assuming it. — Unchanged, and `APlainCopyOfAProtectedStoreStillOpens` now asserts the property the decision rests on instead of assuming it.

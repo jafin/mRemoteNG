@@ -90,6 +90,17 @@ point every copy they hold is equally unopenable.
 - **THEN** a recovery password is requested before the file is written
 - **AND** the file is written only once one is supplied
 
+#### Scenario: A store already at the hardened level with no per-file key
+
+- **WHEN** a store declares the hardened format but carries no key protectors
+- **THEN** it is offered the per-file key, by the automatic offer and on request alike
+- **AND** it is not reported as a store with nothing left to do
+
+A store hardened before per-file keys existed has a stretched KDF over the published default key,
+which stretches a constant everybody has. Deciding whether to offer from the declared *level* rather
+than from whether a key protector is present would exclude exactly the users who took the earlier
+security upgrade, and tell them so.
+
 #### Scenario: The user declines to set a recovery password
 
 - **WHEN** the user declines to supply a recovery password
