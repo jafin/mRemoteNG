@@ -31,7 +31,7 @@ Every output token costs 5x an input token. Your #1 priority after correctness i
 
 Unless the user explicitly requests a documentation or orchestrator task, issue-fix agents must:
 
-- Work only in `mRemoteNG/`, `mRemoteNGTests/`, or `mRemoteNGSpecs/`.
+- Work only in `mRemoteNG/`, `mRemoteNGTests/`, or `mRemoteNGSpecs/` — plus `docs-website/docs/` when the change is user-visible, per [User Documentation](#user-documentation).
 - Never read or modify `.project-roadmap/`.
 - Never modify `run-tests.ps1`, `build.ps1`, `mRemoteNG.sln`, `Directory.Build.props`, or `Directory.Packages.props`.
 - `.github/workflows/*` may be changed when the user explicitly asks for CI work. It stays off-limits for an ordinary issue fix — never edit a workflow as a side effect of another task.
@@ -50,6 +50,7 @@ Unless the user explicitly requests a documentation or orchestrator task, issue-
 2. **Implement only the fix:** make the smallest change that resolves the reported issue without unrelated behavior changes.
 3. **Verify proportionately:** see [Verification Effort](#verification-effort). Do not reflexively run a full build + full test suite after every edit.
 4. **Repair regressions:** fix any build or test failure caused by the change before finishing.
+5. **Document what the user can see:** if the change alters what a user does, sees, or configures, update `docs-website/docs/` in the same commit — see [User Documentation](#user-documentation).
 
 ## Verification Effort
 
@@ -57,7 +58,8 @@ Build and test runs are expensive (~70–120s build, ~140s full suite). Match th
 
 | Change | Verify with |
 |--------|-------------|
-| Docs/markdown/comments only | Nothing |
+| Code comments, or markdown outside `docs-website/` | Nothing |
+| Anything under `docs-website/` | `pnpm run typecheck && pnpm run build` in `docs-website/` |
 | Single project, small edit | Compile that project only (`msbuild mRemoteNG/mRemoteNG.csproj`) |
 | Logic change with existing tests | Compile + the **targeted** test filter (`--filter "FullyQualifiedName~<Fixture>"`) |
 | Multi-file/cross-project, or public API change | Full build + affected test group(s) |
@@ -69,6 +71,49 @@ Rules:
 - Prefer a targeted `--filter` over the whole suite; run the full suite when the blast radius is unclear.
 - A build failing only on **file-copy locks** (running mRemoteNG.exe holds `bin\`) is not a code failure — compile succeeded. Ask the user to close the app, or build to a temp `OutputPath` to verify.
 - Never skip verification for the categories that need it, and never report success for a build or test run that was not actually performed.
+
+## User Documentation
+
+The end-user documentation lives in `docs-website/docs/` (Docusaurus, published to GitHub Pages by `.github/workflows/docs.yml`). It is the manual our users actually read — treat it as part of the feature, not as follow-up work.
+
+### When to update it
+
+Update the docs **in the same commit as the code** whenever a change is user-visible:
+
+| Change | Document it |
+|--------|-------------|
+| New feature, protocol, or connection property | Yes — new page or new section |
+| Changed UI: menus, dialogs, panels, defaults | Yes — including any screenshot that is now wrong |
+| New or changed option, registry setting, CLI switch, external-tool variable | Yes — in the matching reference page |
+| Behavior a user could notice (a default flips, a shortcut moves, a workflow gains a step) | Yes |
+| Security change a user must act on (new prompt, re-auth, migration step) | Yes |
+| Internal refactor, perf work, test changes, analyzer fixes | No |
+| Bug fix restoring already-documented behavior | No — unless the docs described the bug |
+
+If a change makes an existing page wrong, fixing that page is part of the fix. Leaving stale documentation behind is an incomplete change, and outdated instructions cost users more than missing ones.
+
+### How to write it
+
+Write for someone using mRemoteNG, not someone building it. That means:
+
+- **Task-first.** Lead with what the user wants to accomplish, then the steps. Not "the `X` field was added to `ConnectionInfo`" but "To reconnect automatically after a dropped session, set…".
+- **Name what they see.** Use the exact on-screen labels and the real menu path (`**Tools → Options → Appearance**`), so the text can be followed without guessing.
+- **Concrete over abstract.** Give a worked example with real values. The How-To pages are the model.
+- **No internals.** No class names, method names, issue numbers, or implementation detail. Those belong in the code and the changelog.
+- **Short sentences, plain words.** Assume a competent sysadmin who has never seen this feature.
+- **Say the version.** New in a specific release? Open with `:::info Version` / `Added in vX.Y.Z`.
+- **Warn where it matters.** Use `:::warning` for anything that can lose data, break connections, or weaken security; `:::tip` for shortcuts; `:::note` for asides.
+
+### Mechanics
+
+- Pages are **CommonMark `.md`**, not MDX — `markdown.format` is `detect`, so `<user@domain>` and `%Variable%` literals are safe. Use `.mdx` only if a page genuinely needs components.
+- Front matter needs at least `title:`; add `sidebar_label:` when the title is long.
+- **A new page is invisible until it is listed in `docs-website/sidebars.ts`.** Add it to the right category.
+- Screenshots go in `docs-website/docs/images/` and are referenced by **relative** path (`./images/x.png`, `../images/x.png`) — a wrong path fails the build, which is the point. Always give real alt text.
+- Cross-link with relative `.md` paths (`../variables-reference.md`); `onBrokenLinks` is `throw`, so a dead link fails CI.
+- Verify with `pnpm run typecheck && pnpm run build` in `docs-website/`. Do not commit documentation you have not built.
+
+The Sphinx sources in `mRemoteNGDocumentation/` are the pre-migration upstream copy and are **no longer maintained** — never edit them, and never port a fix there.
 
 ## Build Instructions
 
@@ -129,7 +174,7 @@ Every test failure MUST be resolved before finishing a task. NO EXCEPTIONS.
 
 ## CI/CD
 - Runners: `windows-2025-vs2026` with MSBuild 18.x (VS2026)
-- Workflows: `pr_validation.yml` (build), `nightly.yml` (rolling `nightly` prerelease on push→main), `Build_mR-NB.yml` (stable release — cut by pushing a `vX.Y.Z` tag; `make_latest`), `sonarcloud.yml` (quality gate), `codeql.yml` (security)
+- Workflows: `pr_validation.yml` (build), `nightly.yml` (rolling `nightly` prerelease on push→main), `Build_mR-NB.yml` (stable release — cut by pushing a `vX.Y.Z` tag; `make_latest`), `sonarcloud.yml` (quality gate), `codeql.yml` (security), `docs.yml` (builds `docs-website/`; deploys to GitHub Pages on push→main, build-only on PRs)
 - Platforms: x86, x64, ARM64
 - Code signing: SignPath Foundation (mandatory — see `docs/CODE_SIGNING_POLICY.md`)
 - Version: read from `mRemoteNG/mRemoteNG.csproj` `<Version>` element
