@@ -50,15 +50,14 @@ public static class PortableEdition
     private static bool? _overrideForTests;
 
     /// <summary>
-    /// True when the marker is present beside the executable, or when the assembly was compiled with
-    /// the legacy <c>PORTABLE</c> constant.
+    /// True when the marker is present beside the executable.
     /// </summary>
     /// <remarks>
-    /// The compiled constant is kept deliberately, and only as a transition. `build.ps1 -Portable`
-    /// and the `Release Portable` configuration still define it, so dropping it here before
-    /// packaging learns to write the marker would turn every portable artefact into an installed one
-    /// — silently, and in the direction that moves a user's settings out from under them. It comes
-    /// out once a portable zip ships with <see cref="MarkerFileName"/> in it.
+    /// There is no compile-time path left. <c>PORTABLE</c> is defined by no configuration and
+    /// <c>build.ps1 -Portable</c> writes <see cref="MarkerFileName"/> into its output instead, so
+    /// this file is the only thing that answers the question — which is the property the change was
+    /// for. A second answer living in a csproj is exactly how every shipped artefact came to be the
+    /// portable edition without anyone meaning it.
     /// </remarks>
     public static bool IsPortable => _overrideForTests ?? Detected.Value;
 
@@ -66,14 +65,7 @@ public static class PortableEdition
     public static string MarkerPath =>
         Path.Combine(ExecutableDirectory(), MarkerFileName);
 
-    private static bool Detect()
-    {
-#if PORTABLE
-        return true;
-#else
-        return HasMarker(ExecutableDirectory());
-#endif
-    }
+    private static bool Detect() => HasMarker(ExecutableDirectory());
 
     /// <summary>
     /// Whether a directory carries the marker. Separate from <see cref="Detect"/> so the rule can be
