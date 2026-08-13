@@ -18,9 +18,22 @@ one irreversibly. Do not point any of this at the file you actually use.
 mkdir C:\mrng-verify
 copy $env:APPDATA\mRemoteNG\confCons.xml C:\mrng-verify\confCons.xml
 
-# Launch against them (both switches take --switch value or /switch:value)
-.\mRemoteNG.exe --cons C:\mrng-verify\confCons.xml --cfg C:\mrng-verify\settings
+# Launch against them. The colon form is REQUIRED — see the warning below.
+.\mRemoteNG.exe --cons:C:\mrng-verify\confCons.xml --cfg:C:\mrng-verify\settings
 ```
+
+> **Do not use the space-separated form with an absolute path.**
+> `--cons C:\mrng-verify\confCons.xml` fails with *"The connection file could not be found"* even
+> when the file is plainly there. `CmdArgumentsInterpreter` splits arguments on
+> `^-{1,2}|^/|=|:` and that `:` is not anchored, so a bare `C:\...` argument splits at the drive
+> letter and is read as a new parameter rather than as the waiting switch's value — `cons` then
+> receives the literal string `true`. `--cons:<path>` and `/cons:<path>` parse correctly.
+>
+> This is a real defect rather than a documentation quirk: `CommandLineParser.ExpandSwitchValue`
+> explicitly supports "the value is in the next argument", so the normalizer accepts a form the
+> interpreter cannot parse. It is invisible to `CommandLineParserTests` because that fixture uses
+> `%VAR%\confCons.xml`, which contains no colon. Not fixed here — it is nothing to do with the
+> per-file key — but it is worth its own change.
 
 **Keep an untouched original.** `copy C:\mrng-verify\confCons.xml C:\mrng-verify\confCons.pristine.xml`
 before you start. Several sections want a classic file to go back to.
