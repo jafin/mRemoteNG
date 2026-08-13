@@ -3108,7 +3108,7 @@ Accept the new key and continue connecting?</value>
     <value>Classic stores can be opened by upstream mRemoteNG. Hardened stores cannot.</value>
   </data>
   <data name="StorageFormatAlreadyHardened" xml:space="preserve">
-    <value>This store already uses the hardened format. Use Export to File to produce a copy that upstream mRemoteNG can open.</value>
+    <value>This store already uses the hardened format and is protected by a key of its own, so there is nothing further to harden. Use Export to File to produce a copy that upstream mRemoteNG can open.</value>
   </data>
   <data name="StorageFormatMenuItem" xml:space="preserve">
     <value>Storage &amp;Format...</value>

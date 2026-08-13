@@ -36,17 +36,33 @@ public class StorageFormatOfferTests
     public void AClassicConnectionFileIsOffered()
     {
         Assert.That(
-            StorageFormatOffer.ShouldOffer(StorageFormatLevel.Classic, StorageFormatStoreKind.ConnectionFile, false),
+            StorageFormatOffer.ShouldOffer(StorageFormatLevel.Classic, StorageFormatStoreKind.ConnectionFile,
+                previouslyDeclined: false, hasPerFileKey: false),
             Is.True);
     }
 
     [Test]
-    public void AHardenedStoreIsNotOffered()
+    public void AHardenedFileWithItsOwnKeyIsNotOffered()
     {
         // Nothing left to offer it.
         Assert.That(
-            StorageFormatOffer.ShouldOffer(StorageFormatLevel.Hardened, StorageFormatStoreKind.ConnectionFile, false),
+            StorageFormatOffer.ShouldOffer(StorageFormatLevel.Hardened, StorageFormatStoreKind.ConnectionFile,
+                previouslyDeclined: false, hasPerFileKey: true),
             Is.False);
+    }
+
+    [Test]
+    public void AHardenedFileWithNoKeyOfItsOwnIsStillOffered()
+    {
+        // Task 5.9, and a defect found by running the §8 verification against a real store rather
+        // than by any test. A file raised to the hardened level by `add-storage-format-opt-in` has a
+        // stretched KDF and is still encrypted under the published default constant — 600,000
+        // iterations over a value printed in this repository. Deciding from the level made the users
+        // who took the earlier security upgrade the only ones who could not take this one.
+        Assert.That(
+            StorageFormatOffer.ShouldOffer(StorageFormatLevel.Hardened, StorageFormatStoreKind.ConnectionFile,
+                previouslyDeclined: false, hasPerFileKey: false),
+            Is.True);
     }
 
     [Test]
@@ -56,7 +72,8 @@ public class StorageFormatOfferTests
         // application first. An accepting click from someone without that authority costs their
         // colleagues access.
         Assert.That(
-            StorageFormatOffer.ShouldOffer(StorageFormatLevel.Classic, StorageFormatStoreKind.SqlDatabase, false),
+            StorageFormatOffer.ShouldOffer(StorageFormatLevel.Classic, StorageFormatStoreKind.SqlDatabase,
+                previouslyDeclined: false, hasPerFileKey: false),
             Is.False);
     }
 
@@ -64,8 +81,35 @@ public class StorageFormatOfferTests
     public void ADeclinedFileIsNotOfferedAgain()
     {
         Assert.That(
-            StorageFormatOffer.ShouldOffer(StorageFormatLevel.Classic, StorageFormatStoreKind.ConnectionFile, true),
+            StorageFormatOffer.ShouldOffer(StorageFormatLevel.Classic, StorageFormatStoreKind.ConnectionFile,
+                previouslyDeclined: true, hasPerFileKey: false),
             Is.False);
+    }
+
+    [Test]
+    public void AHardenedSqlStoreIsComplete()
+    {
+        // A database has no per-file key by design — several people read one store, so a key wrapped
+        // for one Windows account is meaningless there. For that kind the level really is the whole
+        // answer, which is why the fix is a second condition rather than dropping the level test.
+        Assert.That(
+            StorageFormatOffer.IsFullyHardened(StorageFormatLevel.Hardened, StorageFormatStoreKind.SqlDatabase,
+                hasPerFileKey: false),
+            Is.True);
+    }
+
+    [Test]
+    public void CompletenessIsReadFromTheKeyAndNotFromTheLevel()
+    {
+        Assert.Multiple(() =>
+        {
+            Assert.That(StorageFormatOffer.IsFullyHardened(StorageFormatLevel.Hardened,
+                StorageFormatStoreKind.ConnectionFile, hasPerFileKey: false), Is.False);
+            Assert.That(StorageFormatOffer.IsFullyHardened(StorageFormatLevel.Hardened,
+                StorageFormatStoreKind.ConnectionFile, hasPerFileKey: true), Is.True);
+            Assert.That(StorageFormatOffer.IsFullyHardened(StorageFormatLevel.Classic,
+                StorageFormatStoreKind.ConnectionFile, hasPerFileKey: false), Is.False);
+        });
     }
 
     [Test]

@@ -180,6 +180,46 @@ public class ConnectionFileMigrationTests
     }
 
     [Test]
+    public void GivingAnAlreadyHardenedStoreAKeyCountsAsAChange()
+    {
+        // Task 5.9. `Apply` answers "was the level raised", and for a store hardened before per-file
+        // keys existed the answer is no — while a random key and two protectors have just been
+        // created for it. Deciding from that alone tells the caller nothing happened, and the caller
+        // is what saves: the protectors would live in memory and never reach the file, on precisely
+        // the stores that most needed them.
+        Assert.Multiple(() =>
+        {
+            Assert.That(StorageFormatUpgrade.ConfirmationChangedTheStore(
+                levelWasRaised: false, wasAlreadyProtected: false), Is.True,
+                "the level did not move and a key was established, which is the whole 5.9 case");
+            Assert.That(StorageFormatUpgrade.ConfirmationChangedTheStore(
+                levelWasRaised: true, wasAlreadyProtected: false), Is.True,
+                "an ordinary classic migration");
+            Assert.That(StorageFormatUpgrade.ConfirmationChangedTheStore(
+                levelWasRaised: false, wasAlreadyProtected: true), Is.False,
+                "nothing moved and nothing was created, so nothing needs writing");
+        });
+    }
+
+    [Test]
+    public void AStoreAlreadyAtTheHardenedLevelCanStillBeGivenAKey()
+    {
+        // The other half of 5.9, on the migration rather than on the decision. Nothing about
+        // Establish depends on the level, and that is what makes the fix a change to the gate alone.
+        RootNodeInfo root = new(RootNodeType.Connection) { StorageFormat = StorageFormatLevel.Hardened };
+
+        ConnectionFileMigration.Establish(root, Password("recovery"), includeMachineProtector: false,
+            iterations: FastIterations);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(ConnectionFileMigration.IsAlreadyProtected(root));
+            Assert.That(root.KeyProtection!.HasMachineProtector, Is.False);
+            Assert.That(root.StorageFormat, Is.EqualTo(StorageFormatLevel.Hardened));
+        });
+    }
+
+    [Test]
     public void DecliningIsToldPlainlyThatTheKeyIsPublishedInOurSource()
     {
         // Task 7.2, and the sentence this application has never said. A user who declines keeps a

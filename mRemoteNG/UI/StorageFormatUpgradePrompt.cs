@@ -55,10 +55,16 @@ public static class StorageFormatUpgradePrompt
             // this Windows account and nothing else — and its entire backup history would go with the
             // profile, silently, with no signal until the day a backup was needed.
             if (choice == StorageFormatUpgradeChoice.Harden &&
-                storeKind == StorageFormatStoreKind.ConnectionFile &&
-                !EstablishProtection(owner, rootNode))
+                storeKind == StorageFormatStoreKind.ConnectionFile)
             {
-                return false;
+                // Read before establishing anything, because that is what changes it.
+                bool wasAlreadyProtected = ConnectionFileMigration.IsAlreadyProtected(rootNode);
+
+                if (!EstablishProtection(owner, rootNode))
+                    return false;
+
+                bool levelRaised = StorageFormatUpgrade.Apply(rootNode, choice);
+                return StorageFormatUpgrade.ConfirmationChangedTheStore(levelRaised, wasAlreadyProtected);
             }
 
             // Task 7.2. A refusal used to end in silence, which after a question about protecting a

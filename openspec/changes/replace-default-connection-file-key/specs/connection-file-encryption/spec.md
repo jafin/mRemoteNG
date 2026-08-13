@@ -101,6 +101,34 @@ which stretches a constant everybody has. Deciding whether to offer from the dec
 than from whether a key protector is present would exclude exactly the users who took the earlier
 security upgrade, and tell them so.
 
+#### Scenario: Accepting on a store that is already at the hardened level
+
+- **WHEN** such a store is given a per-file key
+- **THEN** the store is written, even though its declared level did not change
+
+The level not changing is not the same as nothing changing. A key and its protectors exist only in
+memory until the store is saved, so treating "the level was already correct" as "nothing to do"
+would walk the user through the whole migration and write none of it.
+
+### Requirement: One storage format confirmation at a time
+
+The system SHALL NOT present more than one storage format confirmation at once.
+
+The offer is raised whenever the store is loaded, and a store reloads for reasons that have nothing
+to do with the user — an external edit to the file, a recovery from backup, a switch between files.
+Each of those otherwise adds another copy of the question on top of the last, and a question asked
+several times cannot be answered once.
+
+#### Scenario: The store reloads while the confirmation is open
+
+- **WHEN** the connection file is reloaded while a storage format confirmation is on screen
+- **THEN** no second confirmation is presented
+
+#### Scenario: An automatic offer while the user has opened the confirmation
+
+- **WHEN** the store reloads while a confirmation the user opened from the menu is on screen
+- **THEN** no second confirmation is presented
+
 #### Scenario: The user declines to set a recovery password
 
 - **WHEN** the user declines to supply a recovery password

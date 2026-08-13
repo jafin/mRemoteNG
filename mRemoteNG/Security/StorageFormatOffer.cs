@@ -81,7 +81,7 @@ public sealed class SidecarStorageFormatOfferLog : IStorageFormatOfferLog
 public static class StorageFormatOffer
 {
     /// <summary>
-    /// A classic connection file whose user has not already declined.
+    /// A connection file that is not yet fully hardened and whose user has not already declined.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -90,13 +90,40 @@ public static class StorageFormatOffer
     /// authority costs their colleagues access. It lives in the SQL options page instead.
     /// </para>
     /// <para>
-    /// Not a store already hardened, which has nothing to be offered.
+    /// <b>Not a store already at the hardened level, which is not the same test.</b> See
+    /// <see cref="IsFullyHardened"/>.
     /// </para>
     /// </remarks>
     public static bool ShouldOffer(StorageFormatLevel level,
         StorageFormatStoreKind storeKind,
-        bool previouslyDeclined) =>
-        level == StorageFormatLevel.Classic &&
+        bool previouslyDeclined,
+        bool hasPerFileKey) =>
         storeKind == StorageFormatStoreKind.ConnectionFile &&
-        !previouslyDeclined;
+        !previouslyDeclined &&
+        !IsFullyHardened(level, storeKind, hasPerFileKey);
+
+    /// <summary>
+    /// Whether this store already has everything the hardened format gives it, and so has nothing
+    /// left to be offered.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The level alone does not answer this, and reading it as though it did was a real defect.</b>
+    /// A connection file raised to <see cref="StorageFormatLevel.Hardened"/> by
+    /// <c>add-storage-format-opt-in</c> has a stretched KDF and no key of its own — it is still
+    /// encrypted under the published default constant, and stretching a constant everybody has
+    /// changes nothing about who can read the file. Deciding from the level excluded exactly the
+    /// users who had taken the earlier security upgrade, and told them there was nothing left to do.
+    /// </para>
+    /// <para>
+    /// A SQL store has no per-file key by design — several people read one database, so a key wrapped
+    /// for one Windows account is meaningless there, and <c>require-sql-master-password</c> owns what
+    /// replaces the default. For that kind the level genuinely is the whole answer.
+    /// </para>
+    /// </remarks>
+    public static bool IsFullyHardened(StorageFormatLevel level,
+        StorageFormatStoreKind storeKind,
+        bool hasPerFileKey) =>
+        level == StorageFormatLevel.Hardened &&
+        (storeKind == StorageFormatStoreKind.SqlDatabase || hasPerFileKey);
 }

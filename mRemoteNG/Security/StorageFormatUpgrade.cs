@@ -206,4 +206,22 @@ public static class StorageFormatUpgrade
         rootNode.StorageFormat = StorageFormatLevel.Hardened;
         return true;
     }
+
+    /// <summary>
+    /// Whether the confirmation left something that has to be written to the store.
+    /// </summary>
+    /// <remarks>
+    /// Raising the level is not the only thing that can change, and <see cref="Apply"/> only reports
+    /// on the level — which is all it applies. A connection file already at the hardened level that
+    /// has just been given a random key and two protectors has changed a great deal and gets
+    /// <see langword="false"/> from <see cref="Apply"/>. Deciding from that alone leaves the
+    /// protectors in memory, never written, on precisely the stores that most needed them: the ones
+    /// hardened before per-file keys existed, still encrypted under the published default constant.
+    /// </remarks>
+    /// <param name="wasAlreadyProtected">
+    /// Read <em>before</em> protection is established, since establishing it is what changes the
+    /// answer.
+    /// </param>
+    public static bool ConfirmationChangedTheStore(bool levelWasRaised, bool wasAlreadyProtected) =>
+        levelWasRaised || !wasAlreadyProtected;
 }

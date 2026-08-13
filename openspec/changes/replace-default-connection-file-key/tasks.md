@@ -97,14 +97,26 @@ and the application tells them there is nothing left to do. Confirmed on a real 
 stored password under `mR3m`. The hardened KDF stretches the published constant beautifully and
 changes nothing about who can read the file.
 
-- [ ] 5.9 Make both routes test whether the store has a per-file key, not what level it declares. `Hardened` without `KeyProtection` is an unfinished migration, not a finished one.
-- [ ] 5.10 Decide what the confirmation says in that case. The existing text trades upstream compatibility for hardening, and such a store has already spent that — the remaining decision is only about the key, so re-using the message unchanged would overstate the cost and ask for a recovery password in exchange for something the user already gave up.
-- [ ] 5.11 Fix `Language.StorageFormatAlreadyHardened`, which is the sentence that sends these users away. It is true about the level and false about what it implies.
-- [ ] 5.12 Tests: a store at `Hardened` with no `KeyProtection` is offered the per-file key by both routes; one that already has protectors is not offered again; a `Classic` store is unaffected.
+- [x] 5.9 Make both routes test whether the store has a per-file key, not what level it declares. `Hardened` without `KeyProtection` is an unfinished migration, not a finished one. — `StorageFormatOffer.IsFullyHardened(level, storeKind, hasPerFileKey)`, used by `ShouldOffer` and by `AskOnRequest`. The store kind is a parameter rather than an assumption: a SQL database has no per-file key by design, so for that kind the level really is the whole answer, and the fix is a second condition rather than dropping the level test.
+- [x] 5.10 Decide what the confirmation says in that case. — **Reused unchanged, on the user's call, and recorded as owing a revisit.** The text still trades upstream compatibility for hardening, which a store at this level has already spent, so it overstates what is being given up. It does not overstate what is gained, and it asks for the recovery password the migration genuinely needs. Wrong in the safe direction, and worth its own wording pass before release.
+- [x] 5.11 Fix `Language.StorageFormatAlreadyHardened`, which is the sentence that sends these users away. — Now names the key rather than only the format, and says there is nothing further to harden. With 5.9's gate in place that claim is finally true when it is shown.
+- [x] 5.12 Tests: a store at `Hardened` with no `KeyProtection` is offered the per-file key by both routes; one that already has protectors is not offered again; a `Classic` store is unaffected. — `StorageFormatOfferTests`, plus `AStoreAlreadyAtTheHardenedLevelCanStillBeGivenAKey` showing nothing in `Establish` ever depended on the level, which is what makes the gate the whole fix.
+- [x] 5.13 **Found by 5.9, and the more dangerous half.** `StorageFormatUpgrade.Apply` answers "was the level raised", and `StorageFormatUpgradePrompt.Confirm` returned that answer to a caller that saves only when it is true. For a store already at the hardened level the answer is *no* — while a random key and two protectors had just been created for it. Fixing the gate alone would have walked the user through the whole migration and written none of it, on exactly the stores that most needed it. `ConfirmationChangedTheStore(levelWasRaised, wasAlreadyProtected)` is the corrected decision, kept as a named function so the trap is documented rather than inlined.
 
-This is what §8 is for. Nothing in the suite covers it, because every test that builds a hardened
+This is what §8 is for. Nothing in the suite covered it, because every test that builds a hardened
 store builds one **with** protectors — the combination that only exists in the wild, on files
-written by a shipped release, is the combination nothing exercised.
+written by a shipped release, is the combination nothing exercised. 5.13 is the sharper lesson: the
+defect the manual run exposed was hiding a second one that no amount of staring at the gate would
+have shown.
+
+### Defect found in the same session: the confirmation stacked on screen
+
+- [x] 5.14 Guard `StorageFormatCoordinator` against re-entry. — `OfferIfDue` is posted from **every** `ConnectionsLoaded`, and the store reloads for reasons that have nothing to do with the user: an external edit to the file, a recovery from backup, a switch between files. A `BeginInvoke` callback still runs while a modal dialog is pumping messages, so each reload stacked another confirmation on top of the last and the user was asked a question they could not answer once. One flag covers `OfferIfDue` and `AskOnRequest` together, because the stacking case is an automatic offer landing on a confirmation the user opened deliberately — a per-method guard would not have caught it. UI thread only, so a plain field rather than a lock that would imply contention that cannot happen.
+
+Reported from the manual run, triggered by editing `confCons.xml` while the application had it open —
+which is exactly the file-watcher path. Not reproducible in the suite: it needs a modal message pump,
+and a test that opened one would be the interactive test this project forbids. Verified by inspection
+of the call path and by the reporter.
 
 ## 6. Backups and recovery
 
