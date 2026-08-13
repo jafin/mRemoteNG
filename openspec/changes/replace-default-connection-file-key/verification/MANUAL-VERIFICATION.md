@@ -24,28 +24,28 @@ if (-not (Test-Path $check)) { throw "check-legacy-key.py not found - is `$repo 
 if (-not (Test-Path $exe))   { throw "mRemoteNG.exe not found - build it first" }
 
 # A scratch store and a scratch settings location, so nothing touches your real profile.
-mkdir C:\mrng-verify
-copy $env:APPDATA\mRemoteNG\confCons.xml C:\mrng-verify\confCons.xml
+mkdir $env:USERPROFILE\mrng-verify
+copy $env:APPDATA\mRemoteNG\confCons.xml $env:USERPROFILE\mrng-verify\confCons.xml
 
 # Launch against them. The colon form is REQUIRED — see the second warning below.
-& $exe --cons:C:\mrng-verify\confCons.xml --cfg:C:\mrng-verify\settings
+& $exe --cons:$env:USERPROFILE\mrng-verify\confCons.xml --cfg:$env:USERPROFILE\mrng-verify\settings
 ```
 
 > **If a command reports a `SyntaxError` inside your connection file, `$check` is not set.**
 >
 > ```
-> File "C:\mrng-verify\confCons.xml", line 1
+> File "C:\Users\you\mrng-verify\confCons.xml", line 1
 >     <?xml version="1.0" encoding="utf-8"?>
 > SyntaxError: invalid syntax
 > ```
 >
 > PowerShell expands an unset variable to nothing rather than complaining, so
-> `python $check C:\mrng-verify\confCons.xml` becomes `python C:\mrng-verify\confCons.xml` and
-> Python tries to run your connection file as a script. Nothing is wrong with the file or the
-> script — you are in a shell that never ran the block above. Re-run it.
+> `python $check <store>` becomes `python <store>` and Python tries to run your connection file as
+> a script. Nothing is wrong with the file or the script — you are in a shell that never ran the
+> block above. Re-run it.
 
 > **Do not use the space-separated form with an absolute path.**
-> `--cons C:\mrng-verify\confCons.xml` fails with *"The connection file could not be found"* even
+> `--cons $env:USERPROFILE\mrng-verify\confCons.xml` fails with *"The connection file could not be found"* even
 > when the file is plainly there. `CmdArgumentsInterpreter` splits arguments on
 > `^-{1,2}|^/|=|:` and that `:` is not anchored, so a bare `C:\...` argument splits at the drive
 > letter and is read as a new parameter rather than as the waiting switch's value — `cons` then
@@ -57,12 +57,19 @@ copy $env:APPDATA\mRemoteNG\confCons.xml C:\mrng-verify\confCons.xml
 > `%VAR%\confCons.xml`, which contains no colon. Not fixed here — it is nothing to do with the
 > per-file key — but it is worth its own change.
 
-**Keep an untouched original.** `copy C:\mrng-verify\confCons.xml C:\mrng-verify\confCons.pristine.xml`
+> **The scratch store must be inside your user profile, and that is not arbitrary.**
+> `MachineProtectorPolicy` writes no machine protector for a store outside it — a file several
+> people might share carries one protector, which would serve exactly one of them and cost everyone
+> else a prompt they could never remove. Put the scratch file in `C:\` and 8.4 comes back
+> `machine=no` and prompts on every open. Both are correct behaviour and neither is what 8.4 is
+> measuring. 8.9 uses a path outside the profile deliberately, and is the section that tests it.
+
+**Keep an untouched original.** `copy $env:USERPROFILE\mrng-verify\confCons.xml $env:USERPROFILE\mrng-verify\confCons.pristine.xml`
 before you start. Several sections want a classic file to go back to.
 
 **Have the notifications panel open** — View → Notifications. Two of these scenarios turn on a
 message that is written there rather than shown in a dialog. `%APPDATA%\mRemoteNG\mRemoteNG.log`
-(or `C:\mrng-verify\settings\mRemoteNG.log` with the `--cfg` above) has the same content.
+(or `$env:USERPROFILE\mrng-verify\settings\mRemoteNG.log` with the `--cfg` above) has the same content.
 
 ### Builds you will need
 
@@ -103,7 +110,7 @@ real file, with no secret involved.)*
 **Step 2 — confirm your scratch file is currently readable.**
 
 ```powershell
-python $check C:\mrng-verify\confCons.xml
+python $check $env:USERPROFILE\mrng-verify\confCons.xml
 ```
 
 Expect `OPEN`. If it says `shut`, your file already has a master password — take it off, or start
@@ -115,17 +122,26 @@ from a file without one, or 8.4 proves nothing.
 **Step 4 — check again.**
 
 ```powershell
-python $check C:\mrng-verify\confCons.xml
+python $check $env:USERPROFILE\mrng-verify\confCons.xml
 ```
 
 **Pass:** `RESULT: the published key mR3m does not open this file`, `StorageFormat: Hardened`, and
 `protectors: machine=yes, recovery=yes`.
 
+The line that matters is every `[shut]` where step 2 printed `[OPEN]` — the same stored passwords,
+no longer readable by anyone holding the file. `KdfIterations: 0` here is expected and not a
+failure: the contents are keyed on the store's own random key, so nothing is derived from a
+password and the KDF attributes are inert.
+
+`machine=no` means the store is not under your user profile. Move it and redo from step 2 — see the
+location warning above.
+
 **Step 5 — the other half of the task.** Close and relaunch against the same store.
 
 **Pass:** the tree loads, a connection opens with its saved password, and **you were asked for
 nothing**. A prompt here would mean the machine protector is not working and every daily user would
-meet a password box; report it rather than typing the recovery password past it.
+meet a password box; report it rather than typing the recovery password past it. (If step 4 said
+`machine=no`, you will be prompted and that is the location problem, not this one.)
 
 > Record: 8.4 self-test ___ / before ___ / after ___ / silent reopen ___
 
@@ -140,7 +156,7 @@ asked rather than left to conclude their password is wrong.
 I don't have this person's sign-in information → Add a user without a Microsoft account` is enough;
 it does not need to be an administrator.
 
-1. From the first account, copy the migrated `C:\mrng-verify\confCons.xml` somewhere both accounts
+1. From the first account, copy the migrated `$env:USERPROFILE\mrng-verify\confCons.xml` somewhere both accounts
    can read — `C:\Users\Public\mrng-verify\` works.
 2. Sign in as the second account. Copy the file to a folder that account owns.
 3. Run mRemoteNG there — colon form, as above:

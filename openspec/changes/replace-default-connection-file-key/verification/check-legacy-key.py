@@ -72,27 +72,59 @@ def try_decrypt(b64, password, iterations, prf_name):
         return None  # tag mismatch: this key did not encrypt this
 
 
+FALLBACK_ITERATIONS = [1000, 600_000]
+
+
 def parameters(root):
-    """The KDF parameters the file records, with the historical defaults for absence."""
+    """The KDF parameters the file records, with the historical defaults for absence.
+
+    Returns (iterations, prf, note). A store keyed on its own random key records
+    KdfIterations="0" — the per-file-key provider derives nothing, so its KDF properties are
+    inert and serialize as zero. That is not a usable iteration count and PBKDF2 rejects it,
+    so fall back rather than hand it over.
+    """
     prf = root.get("KdfPrf") or "SHA1"
     recorded = root.get("KdfIterations")
-    # A file that records nothing was written before the format carried it. 1000 is the
-    # historical default; 600000 is this fork's. Trying both keeps a negative result from
-    # being an artefact of guessing wrong.
-    iterations = [int(recorded)] if recorded else [1000, 600000]
-    return iterations, prf
+
+    try:
+        count = int(recorded) if recorded else 0
+    except ValueError:
+        count = 0
+
+    if count > 0:
+        return [count], prf, ""
+
+    # Nothing usable was recorded. 1000 is the historical default and 600000 is this fork's;
+    # trying both keeps a negative result from being an artefact of guessing wrong. The check
+    # stays a real decryption attempt rather than an inference from an attribute, which is the
+    # entire point of not asking mRemoteNG.
+    note = (f"  (recorded {recorded!r} is not a usable count - trying {FALLBACK_ITERATIONS})"
+            if recorded else "  (absent, trying both defaults)")
+    return list(FALLBACK_ITERATIONS), prf, note
 
 
 def inspect(path):
     root = ET.parse(path).getroot()
-    iteration_list, prf = parameters(root)
+    iteration_list, prf, note = parameters(root)
+
+    machine = "yes" if root.get("KeyProtectorMachine") else "no"
+    recovery = "yes" if root.get("KeyProtectorRecovery") else "no"
 
     print(f"file        : {path}")
     print(f"KdfPrf      : {prf}{'' if root.get('KdfPrf') else '  (absent, assumed)'}")
-    print(f"KdfIterations: {root.get('KdfIterations') or f'absent, trying {iteration_list}'}")
+    print(f"KdfIterations: {root.get('KdfIterations') or 'absent'}{note}")
     print(f"StorageFormat: {root.get('StorageFormat') or 'absent (classic)'}")
-    print(f"protectors  : machine={'yes' if root.get('KeyProtectorMachine') else 'no'}, "
-          f"recovery={'yes' if root.get('KeyProtectorRecovery') else 'no'}")
+    print(f"protectors  : machine={machine}, recovery={recovery}")
+
+    if recovery == "yes":
+        print()
+        print("  This store is keyed on a random key of its own, wrapped by the protectors above,")
+        print("  so nothing in it is derived from a password and the KDF attributes mean nothing.")
+        print("  The decryption below is still attempted rather than assumed - an attribute saying")
+        print("  a file is safe is not evidence that it is.")
+        if machine == "no":
+            print("  No machine protector: expected for a portable edition, or for a store outside")
+            print("  the user profile. Both cases are by design - see task 5.5.")
     print()
 
     targets = [("root sentinel (Protected)", root.get("Protected"))]
