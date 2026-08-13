@@ -103,9 +103,17 @@ protection is a password, and a password nobody chose to set is no password.
 
 ## 8. Verification
 
-- [ ] 8.1 Full build; zero new analyzer warnings.
-- [ ] 8.2 Full test suite; zero failures, no `[Ignore]`.
-- [ ] 8.3 `openspec validate replace-default-connection-file-key --strict`.
+- [x] 8.1 Full build; zero new analyzer warnings.
+- [x] 8.2 Full test suite; zero failures, no `[Ignore]`. — 4117 passed, 0 failed, 0 skipped outside the five pre-existing SQL-server tests that need an instance. `test-config.json` matches group by group.
+- [x] 8.3 `openspec validate replace-default-connection-file-key --strict`.
+
+8.4–8.9 are manual and have a runbook: `verification/MANUAL-VERIFICATION.md`, with the independent
+decryption check 8.4 asks for beside it as `verification/check-legacy-key.py`. The script
+reimplements the classic format — PBKDF2 → AES-256-GCM, salt as associated data, 16-byte nonce —
+and shares no code with this repository, because asking mRemoteNG whether mRemoteNG still uses
+`mR3m` establishes nothing. It carries a `--self-test` that opens a real file from the test
+resources first: a script that cannot decrypt anything would give a migrated file the same clean
+result and mean nothing by it.
 - [ ] 8.4 Manual: migrate a real file, confirm connections still open with no prompt, confirm the file no longer decrypts with `mR3m` using an independent script.
 - [ ] 8.5 Manual: copy a migrated file to a second Windows account, confirm the recovery password opens it and the message before that names the cause.
 - [ ] 8.6 Manual: let the rolling backup run, copy the backup directory to another machine, restore from it with the recovery password. **This is the scenario that changed the design; verify it by hand, not only in tests.**
