@@ -307,8 +307,16 @@ Copy-Item $env:USERPROFILE\mrng-verify $old -Recurse
 # Confirm the set is mixed — at least one classic backup is what makes this a real test.
 Get-ChildItem $old -Filter *.backup | ForEach-Object {
   $fmt = if (Select-String -Path $_.FullName -Pattern 'StorageFormat="Hardened"' -Quiet) { 'hardened' } else { 'CLASSIC' }
-  "{0,-45} {1}" -f $_.Name, $fmt
+  $prf = if (Select-String -Path $_.FullName -Pattern 'KdfPrf=' -Quiet) { 'KdfPrf (v1.82.0 CANNOT read)' } else { 'no KdfPrf - readable' }
+  "{0,-45} {1,-9} {2}" -f $_.Name, $fmt, $prf
 }
+
+# A classic backup is not enough on its own. v1.82.0 predates the KdfPrf attribute, so a classic
+# backup carrying KdfPrf="SHA256" is decrypted with SHA-1, fails, and is skipped — the walk then
+# finds nothing to restore and the file survives for a reason that will not hold for other users.
+# The set needs at least one backup the old build can genuinely open. This repository ships one:
+Copy-Item mRemoteNGTests\Resources\confCons_v2_6.xml `
+          (Join-Path $old ("confCons.xml.{0}.backup" -f (Get-Date).ToString('yyyyMMdd-HHmmssffff')))
 
 # Fingerprint everything, so any change at all is visible afterwards.
 Get-ChildItem $old -File | Get-FileHash | Select-Object Path,Hash | Sort-Object Path | Format-Table -AutoSize
