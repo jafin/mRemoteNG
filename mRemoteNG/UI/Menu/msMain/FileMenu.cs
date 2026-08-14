@@ -22,6 +22,7 @@ public class FileMenu : ToolStripMenuItem
     private ToolStripMenuItem _mMenRecentConnections = null!;
     private ToolStripMenuItem _mMenFileSaveAs = null!;
     private ToolStripMenuItem _mMenFileStorageFormat = null!;
+    private ToolStripMenuItem _mMenFileRekey = null!;
     private ToolStripMenuItem _mMenFileExit = null!;
     private ToolStripSeparator _mMenFileSep2 = null!;
     private ToolStripSeparator _mMenFileSep1 = null!;
@@ -41,6 +42,7 @@ public class FileMenu : ToolStripMenuItem
         _mMenFileSave = new ToolStripMenuItem();
         _mMenFileSaveAs = new ToolStripMenuItem();
         _mMenFileStorageFormat = new ToolStripMenuItem();
+        _mMenFileRekey = new ToolStripMenuItem();
         _mMenFileSep2 = new ToolStripSeparator();
         _mMenFileSep1 = new ToolStripSeparator();
         _mMenFileExit = new ToolStripMenuItem();
@@ -74,6 +76,7 @@ public class FileMenu : ToolStripMenuItem
             _mMenFileSave,
             _mMenFileSaveAs,
             _mMenFileStorageFormat,
+            _mMenFileRekey,
             _mMenFileSep1,
             _mMenToolsOptions,
             _mMenFileSep2,
@@ -135,6 +138,13 @@ public class FileMenu : ToolStripMenuItem
         _mMenFileStorageFormat.Size = new System.Drawing.Size(281, 22);
         _mMenFileStorageFormat.Text = Language.StorageFormatMenuItem;
         _mMenFileStorageFormat.Click += mMenFileStorageFormat_Click;
+        //
+        // mMenFileRekey
+        //
+        _mMenFileRekey.Name = "mMenFileRekey";
+        _mMenFileRekey.Size = new System.Drawing.Size(281, 22);
+        _mMenFileRekey.Text = Language.RekeyMenuItem;
+        _mMenFileRekey.Click += mMenFileRekey_Click;
         // 
         // mMenFileSep2
         // 
@@ -172,6 +182,8 @@ public class FileMenu : ToolStripMenuItem
         _mMenFileLoad.Text = Language.OpenConnectionFile;
         _mMenFileSave.Text = Language.SaveConnectionFile;
         _mMenFileSaveAs.Text = Language.SaveConnectionFileAs;
+        _mMenFileStorageFormat.Text = Language.StorageFormatMenuItem;
+        _mMenFileRekey.Text = Language.RekeyMenuItem;
         _mMenToolsOptions.Text = Language.OptionsMenuItem;
         _mMenFileExit.Text = Language.Exit;
         _mMenRecentConnections.Text = "Recent Connections";
@@ -186,6 +198,7 @@ public class FileMenu : ToolStripMenuItem
         // Dismissing the offer is an answer to it, not an opt-out from the decision. The menu keeps
         // the upgrade reachable for a user who declined and later changed their mind.
         _mMenFileStorageFormat.Enabled = Runtime.ConnectionsService.IsConnectionsFileLoaded;
+        _mMenFileRekey.Enabled = Runtime.ConnectionsService.IsConnectionsFileLoaded;
     }
 
     private void RebuildRecentConnectionsMenu()
@@ -308,6 +321,11 @@ public class FileMenu : ToolStripMenuItem
     private void mMenFileStorageFormat_Click(object sender, EventArgs e)
     {
         StorageFormatCoordinator.AskOnRequest(FrmMain.Default);
+    }
+
+    private void mMenFileRekey_Click(object sender, EventArgs e)
+    {
+        ConnectionFileRekeyPrompt.Ask(FrmMain.Default);
     }
 
     private void mMenFileExit_Click(object sender, EventArgs e)
