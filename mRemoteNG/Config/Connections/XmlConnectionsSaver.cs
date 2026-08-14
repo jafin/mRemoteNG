@@ -63,15 +63,23 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
     }
 
     /// <summary>
-    /// Gives a store its machine-bound protector when it has none and is entitled to one.
+    /// Gives this Windows account its own slot when the store carries none for it.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Task 7.5. Three ordinary situations leave a store with only its recovery protector on a
-    /// machine where the user is entitled to a silent open: a file migrated outside the user profile
-    /// and later moved inside, a portable file opened by the installed edition, and a store migrated
-    /// before a profile rebuild. Without this each of them prompts for the recovery password on
-    /// every open, for ever, with nothing the user can do about it.
+    /// Task 7.5, widened by key slots. Four ordinary situations leave a store the current account
+    /// cannot open silently: a file migrated outside the user profile and later moved inside, a
+    /// portable file opened by the installed edition, a store migrated before a profile rebuild, and
+    /// — the one slots add — <b>a file another member of a team migrated</b>, which carries their
+    /// slot and not yours. Without this each of them prompts for the recovery password on every
+    /// open, for ever, with nothing the user can do about it.
+    /// </para>
+    /// <para>
+    /// <b>On save, never on open.</b> Rewriting a file that was only read turns an inspection into a
+    /// permanent change, and on a shared file it would make every open a write to a file other people
+    /// have open. The cost is that a member who only ever reads never earns a slot and is prompted
+    /// every time — which is the right cost, since they are also the member for whom writing to the
+    /// shared file is least appropriate.
     /// </para>
     /// <para>
     /// It costs nothing to fix. The file key is already unwrapped by the time anything is saved, so
@@ -101,13 +109,30 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
         if (rootNode.KeyProtection is null || rootNode.FileKey is null)
             return;
 
-        if (rootNode.KeyProtection.HasMachineProtector)
+        // Not "does the file have a machine protector" — that question is wrong once slots exist. A
+        // shared file carries other members' slots, so it has protectors and none of them is yours,
+        // which is exactly the case that needs one added.
+        if (rootNode.KeyProtection.HasSlotForThisAccount)
             return;
 
         if (!MachineProtectorPolicy.ShouldWriteMachineProtector(_connectionFileName, Runtime.IsPortableEdition))
             return;
 
-        rootNode.KeyProtection = rootNode.KeyProtection.WithMachineProtector(rootNode.FileKey);
+        try
+        {
+            rootNode.KeyProtection = rootNode.KeyProtection.WithMachineProtector(rootNode.FileKey);
+        }
+        catch (KeyProtectionException ex)
+        {
+            // The slot list is full. This is a prompt the user keeps rather than a save that fails:
+            // refusing to write their connections because a convenience could not be added would be
+            // a far worse trade than the prompt it was going to remove.
+            Runtime.MessageCollector?.AddExceptionMessage(
+                $"Connection file '{_connectionFileName}' has no room for another machine protector, " +
+                "so this account will keep being asked for the recovery password. Rekeying the file " +
+                "clears the list.", ex, Messages.MessageClass.WarningMsg);
+            return;
+        }
 
         Runtime.MessageCollector?.AddMessage(Messages.MessageClass.InformationMsg,
             $"Connection file '{_connectionFileName}' can now be opened on this Windows account " +

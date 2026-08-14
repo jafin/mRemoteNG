@@ -37,12 +37,14 @@ public class ConnectionFileMigrationTests
     [TestCase(@"\\fileserver\team\confCons.xml")]
     [TestCase(@"D:\Shared\confCons.xml")]
     [TestCase(@"C:\ProgramData\mRemoteNG\confCons.xml")]
-    public void AStoreOutsideTheProfileGetsTheRecoveryProtectorAlone(string storePath)
+    public void AStoreOutsideTheProfileNowGetsAMachineProtectorToo(string storePath)
     {
-        // The file carries one machine protector, so on a shared file it serves exactly one person
-        // and costs everyone else a prompt they have no way to remove.
-        Assert.That(MachineProtectorPolicy.ShouldWriteMachineProtector(storePath, isPortableEdition: false),
-            Is.False);
+        // Reversed by key slots, and it is the point of them. This used to be false: the file could
+        // carry one machine protector, so on a shared file it served exactly one person and cost
+        // everyone else a prompt they had no way to remove, which made writing none the only
+        // defensible answer. Each member now earns their own slot, so the location suppresses
+        // nothing about what is written.
+        Assert.That(MachineProtectorPolicy.ShouldWriteMachineProtector(storePath, isPortableEdition: false));
     }
 
     [Test]
@@ -60,11 +62,11 @@ public class ConnectionFileMigrationTests
     [TestCase("a path with \0 an invalid character")]
     public void AStoreLocationThisCannotResolveIsTreatedAsOutside(string? storePath)
     {
-        // The asymmetry that settles every unknowable case: being wrong this way costs one prompt on
-        // a file that would not otherwise have prompted, and being wrong the other way costs every
-        // other member of a team a prompt they can never remove.
-        Assert.That(MachineProtectorPolicy.ShouldWriteMachineProtector(storePath, isPortableEdition: false),
-            Is.False);
+        // Still "outside", and it still settles something — no longer what is written, but whether
+        // the user is told that everyone sharing this file types the recovery password once each.
+        // Warning someone about sharing a file that turns out not to be shared is the cheaper way to
+        // be wrong.
+        Assert.That(MachineProtectorPolicy.IsInsideUserProfile(storePath), Is.False);
     }
 
     [Test]
@@ -149,7 +151,7 @@ public class ConnectionFileMigrationTests
     public void ASharedStoreIsToldItWillNeedThePasswordEverywhere()
     {
         string shared = StorageFormatUpgrade.BuildRecoveryPasswordExplanation(
-            willWriteMachineProtector: false, isPortableEdition: false);
+            storeMayBeShared: true, isPortableEdition: false);
 
         Assert.Multiple(() =>
         {
@@ -162,7 +164,7 @@ public class ConnectionFileMigrationTests
     public void APrivateStoreIsNotToldAboutSharing()
     {
         string ownProfile = StorageFormatUpgrade.BuildRecoveryPasswordExplanation(
-            willWriteMachineProtector: true, isPortableEdition: false);
+            storeMayBeShared: false, isPortableEdition: false);
 
         Assert.That(ownProfile, Does.Not.Contain(Language.RecoveryPasswordSharedStore));
     }
@@ -174,7 +176,7 @@ public class ConnectionFileMigrationTests
         // is about sharing. Telling a portable user their file might be shared with colleagues would
         // be a guess presented as a fact.
         string portable = StorageFormatUpgrade.BuildRecoveryPasswordExplanation(
-            willWriteMachineProtector: false, isPortableEdition: true);
+            storeMayBeShared: true, isPortableEdition: true);
 
         Assert.That(portable, Does.Not.Contain(Language.RecoveryPasswordSharedStore));
     }

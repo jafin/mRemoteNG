@@ -68,11 +68,33 @@ public sealed class ConnectionFileKeyProtection
 
     private readonly string[] _machineSlots;
 
-    private ConnectionFileKeyProtection(string[] machineSlots, string recoveryProtector)
+    private ConnectionFileKeyProtection(string[] machineSlots, string recoveryProtector,
+                                        bool hasSlotForThisAccount = false)
     {
         _machineSlots = machineSlots;
         RecoveryProtector = recoveryProtector;
+        HasSlotForThisAccount = hasSlotForThisAccount;
     }
+
+    /// <summary>
+    /// Whether one of the slots is known to belong to the account running now — either because this
+    /// object just wrote one, or because one of them opened the file.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not the same question as <see cref="HasMachineProtector"/>, and the difference is the whole
+    /// point of slots. A shared file carries other people's slots: it has machine protectors, and
+    /// none of them is yours, so you were asked for the recovery password. This is what the saver
+    /// tests to decide whether to earn you one.
+    /// </para>
+    /// <para>
+    /// False is the safe direction. Being wrong that way costs a duplicate slot on one file — a few
+    /// hundred bytes, and the count is bounded. Being wrong the other way leaves a member prompted
+    /// for the recovery password on every open with no way to fix it, which is the defect this change
+    /// exists to remove.
+    /// </para>
+    /// </remarks>
+    public bool HasSlotForThisAccount { get; private set; }
 
     /// <summary>
     /// The wrapped copies of the file key that this machine might be able to open — one per member
@@ -106,7 +128,8 @@ public sealed class ConnectionFileKeyProtection
 
         return new ConnectionFileKeyProtection(
             includeMachineProtector ? [DpapiKeyProtector.Wrap(fileKey)] : [],
-            RecoveryPasswordKeyProtector.Wrap(fileKey, recoveryPassword, iterations, prf));
+            RecoveryPasswordKeyProtector.Wrap(fileKey, recoveryPassword, iterations, prf),
+            hasSlotForThisAccount: includeMachineProtector);
     }
 
     /// <summary>
@@ -164,6 +187,7 @@ public sealed class ConnectionFileKeyProtection
                         ConnectionFileKey opened = candidate;
                         candidate = null;
                         MachineSlotSession.Remember(slot);
+                        HasSlotForThisAccount = true;
                         return opened;
                     }
 
@@ -289,7 +313,8 @@ public sealed class ConnectionFileKeyProtection
         ArgumentNullException.ThrowIfNull(recoveryPassword);
 
         return new ConnectionFileKeyProtection(_machineSlots,
-            RecoveryPasswordKeyProtector.Wrap(fileKey, recoveryPassword, iterations, prf));
+            RecoveryPasswordKeyProtector.Wrap(fileKey, recoveryPassword, iterations, prf),
+            HasSlotForThisAccount);
     }
 
     /// <summary>
@@ -320,7 +345,7 @@ public sealed class ConnectionFileKeyProtection
                 "the most it may have. Rekeying the file drops them and starts again.");
 
         return new ConnectionFileKeyProtection([.. _machineSlots, DpapiKeyProtector.Wrap(fileKey)],
-            RecoveryProtector);
+            RecoveryProtector, hasSlotForThisAccount: true);
     }
 
     /// <summary>

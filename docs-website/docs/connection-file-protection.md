@@ -81,22 +81,38 @@ When mRemoteNG needs it, you get an ordinary password prompt naming the connecti
 three attempts, and once a password has worked, it is remembered for the rest of that mRemoteNG
 session — opening a second file protected by the same password does not ask again.
 
+## Sharing a file with your team
+
+A connection file on a share works, and each person types the recovery password **once**.
+
+The first time a colleague opens the file, their Windows account is not one it recognises yet, so
+they are asked for the recovery password. The next time they **save**, mRemoteNG adds an unlock for
+their account alongside everyone else's, and the file opens silently for them from then on. Nobody's
+unlock replaces anybody else's.
+
+Two things follow from that happening on save rather than on open:
+
+- Someone who only ever **reads** the file never earns one, and is asked for the recovery password
+  every time. Saving is what earns it.
+- If two people save at the same moment, one save overwrites the other — as it already does for the
+  rest of the file. If the lost one carried an unlock, that person is asked for the password once
+  more, and has it back when they next save.
+
+:::note Everyone still needs the recovery password once
+
+Share it the way you would any team secret. It is also what opens the file on a machine that has
+never seen it.
+
+:::
+
 ## When every open asks for the password
 
-Two situations get the recovery password and no automatic unlock. This is deliberate, and mRemoteNG
-tells you which one applies before you commit:
+**You are running the [portable edition](./portable-edition.md).** A key tied to one Windows account
+defeats a copy whose whole purpose is to run from a USB stick on someone else's machine, so the
+portable edition uses the recovery password alone and adds no automatic unlock, wherever the file is
+kept.
 
-**The file lives outside your user profile** — a network share, a redirected Documents folder, a
-folder several people use. The automatic unlock is tied to one Windows account, so on a shared file
-it would work for exactly one person and ask everyone else on every open, with no way to fix it.
-The recovery password becomes a shared secret for the team. It is still a real improvement over the
-published key — it is yours rather than printed in public — but it is a smaller one than a
-single-user file gets.
-
-**You are running the [portable edition](./portable-edition.md)** — a key tied to one Windows
-account defeats a copy whose whole purpose is to run from a USB stick on someone else's machine.
-
-Because both use the recovery password alone, files they produce open in the other edition too.
+Files it writes open in the installed edition, and vice versa.
 
 ## Moving a file to another computer
 

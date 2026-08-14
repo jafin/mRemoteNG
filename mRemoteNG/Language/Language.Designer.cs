@@ -8789,7 +8789,7 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
-        ///   Looks up a localized string explaining that a shared store gets the recovery protector alone.
+        ///   Looks up a localized string explaining that everyone sharing a store types the recovery password once each.
         /// </summary>
         internal static string RecoveryPasswordSharedStore {
             get {

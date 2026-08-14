@@ -3132,7 +3132,7 @@ Keep it somewhere other than this computer. It is the only way back if this Wind
   <data name="RecoveryPasswordSharedStore" xml:space="preserve">
     <value>This connection file is outside your user profile, so it may be shared with other people or kept on a network location.
 
-It will be protected by the recovery password alone. The automatic unlock is tied to a single Windows account, and on a shared file it would work for one person and ask everyone else for the password on every open. Everyone who uses this file will need the recovery password.</value>
+Everyone who uses this file will need the recovery password the first time they open it. After they save, their own Windows account unlocks it automatically, as yours does — so it is typed once per person and per computer, not on every open.</value>
   </data>
   <data name="StorageFormatDeclined" xml:space="preserve">
     <value>The storage format was not changed. The connection file is unchanged and still opens as it did before, here and in the other applications that read it.</value>

@@ -308,6 +308,88 @@ public class MachineKeySlotTests
         Assert.That(viaPassword.Bytes.SequenceEqual(fileKey.Bytes));
     }
 
+    [Test]
+    public void AMemberWhoOpenedWithTheRecoveryPasswordIsKnownToHaveNoSlot()
+    {
+        // What the saver tests. "Does the file have a machine protector" is the wrong question once
+        // slots exist: a shared file has several and none of them is yours, which is precisely the
+        // case that needs one added.
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+        ConnectionFileKeyProtection mine = ConnectionFileKeyProtection.Create(
+            fileKey, Password("recovery"), includeMachineProtector: false, iterations: FastIterations);
+
+        ConnectionFileKeyProtection theirs = ConnectionFileKeyProtection.Read(
+            string.Join(ConnectionFileKeyProtection.SlotSeparator, SlotForAnotherKey(), ForeignSlot()),
+            mine.RecoveryProtector)!;
+
+        using ConnectionFileKey opened = theirs.Unwrap(Supplies("recovery"), keyValidator: Only(fileKey));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(theirs.HasMachineProtector, Is.True, "the file carries other members' slots");
+            Assert.That(theirs.HasSlotForThisAccount, Is.False, "and none of them is this account's");
+        });
+    }
+
+    [Test]
+    public void AMemberWhoOpenedWithASlotIsNotGivenASecondOne()
+    {
+        // The other half: a member who already has a slot must not collect another on every save, or
+        // a file used daily grows a slot a day until it hits the bound.
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+        ConnectionFileKeyProtection mine =
+            ConnectionFileKeyProtection.Create(fileKey, Password("recovery"), iterations: FastIterations);
+
+        ConnectionFileKeyProtection reopened =
+            ConnectionFileKeyProtection.Read(mine.MachineSlots[0], mine.RecoveryProtector)!;
+
+        using ConnectionFileKey opened = reopened.Unwrap(NeverAsked, keyValidator: Only(fileKey));
+
+        Assert.That(reopened.HasSlotForThisAccount, Is.True);
+    }
+
+    [Test]
+    public void AFreshlyProtectedStoreAlreadyHasThisAccountsSlot()
+    {
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+
+        ConnectionFileKeyProtection installed =
+            ConnectionFileKeyProtection.Create(fileKey, Password("recovery"), iterations: FastIterations);
+        ConnectionFileKeyProtection portable = ConnectionFileKeyProtection.Create(
+            fileKey, Password("recovery"), includeMachineProtector: false, iterations: FastIterations);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(installed.HasSlotForThisAccount, Is.True,
+                "migration just wrote it, so the next save must not write a duplicate");
+            Assert.That(portable.HasSlotForThisAccount, Is.False);
+        });
+    }
+
+    [Test]
+    public void ReadingAFileDoesNotAddASlotToIt()
+    {
+        // On save, never on open. Rewriting a file that was only read turns an inspection into a
+        // permanent change, and on a shared file it would make every open a write to a file other
+        // people have open.
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+        ConnectionFileKeyProtection mine = ConnectionFileKeyProtection.Create(
+            fileKey, Password("recovery"), includeMachineProtector: false, iterations: FastIterations);
+
+        ConnectionFileKeyProtection asRead =
+            ConnectionFileKeyProtection.Read(ForeignSlot(), mine.RecoveryProtector)!;
+        int slotsBefore = asRead.MachineSlots.Count;
+
+        using ConnectionFileKey opened = asRead.Unwrap(Supplies("recovery"), keyValidator: Only(fileKey));
+
+        XElement root = new("Connections");
+        asRead.WriteTo(root);
+
+        Assert.That(root.Attribute(ConnectionFileKeyProtection.MachineProtectorAttributeName)!.Value
+                .Split(ConnectionFileKeyProtection.SlotSeparator), Has.Length.EqualTo(slotsBefore),
+            "opening the file left its slot list exactly as it was");
+    }
+
     /// <summary>A DPAPI blob belonging to another application entirely — another member's slot.</summary>
     private static string ForeignSlot() =>
         Convert.ToBase64String(ProtectedData.Protect(
