@@ -76,7 +76,7 @@ message that is written there rather than shown in a dialog. `%APPDATA%\mRemoteN
 | For | Command | Lands in |
 |---|---|---|
 | 8.4–8.7, 8.9 | `pwsh -File build.ps1` | `mRemoteNG\bin\x64\Release\` |
-| 8.8 | download the **v1.82.0** release from GitHub | anywhere separate |
+| 8.8 | an older build that **has the backup walk** — the nightly, or a v1.79.0+ tag | anywhere separate |
 
 > **One build now serves both editions.** The edition is decided by a `portable.flag` file beside the
 > executable, not by how the binary was compiled, so 8.7 needs no second build:
@@ -278,7 +278,7 @@ second way. Reopen: no prompt.
 
 ---
 
-## 8.8 — The previous release meeting a migrated file
+## 8.8 — An older build meeting a migrated file
 
 **Proves:** an older build refuses rather than damaging the file. A build that does not know the
 third sentinel must not treat it as "not protected" and write over it.
@@ -294,9 +294,20 @@ their file was recovered.
 own never reaches the walk, and would pass this section while the actual defect went unseen. A mixed
 set is the normal state: migration leaves the pre-migration rolling backups in place.
 
-Download the **v1.82.0** release from `https://github.com/robertpopa22/mRemoteNG/releases` and unpack
-it somewhere separate. It keeps its settings beside its own executable, so it will not disturb
-anything.
+**Which older build is used decides whether this section tests anything at all.**
+
+| Build | Backup walk | Knows the sentinel | Useful here |
+|---|---|---|---|
+| 1.77.3 and earlier | **no** | no | refusal only — there is no walk to misfire |
+| v1.79.0 – v1.82.0, and the rolling **nightly** | **yes** | no | **this is the one that matters** |
+
+`TryRecoverFromBackup` arrived in February 2026, years after 1.77.3. An older build without it can
+only refuse, so a clean result there is real but narrow: it says nothing about the walk. The nightly
+is published, carries the walk, and is what a user of this fork would actually downgrade to.
+
+Get the **nightly**, or build a tag that has it — `git worktree add ../mrng-old v1.82.0` then
+`build.ps1` in that worktree. Unpack somewhere separate; it keeps its settings beside its own
+executable, so it will not disturb anything.
 
 ```powershell
 # A copy of the WHOLE folder: the migrated store and every .backup beside it.

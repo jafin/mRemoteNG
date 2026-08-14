@@ -187,6 +187,23 @@ result and mean nothing by it.
 - [x] 8.7 Manual: portable edition on two machines from one USB stick, with and without a recovery password, and a file exchanged between portable and installed. — **7a and 7b passed:** a store hardened on the stick gets `machine=no, recovery=yes`, and the same stick opens it on a second physical machine. This is the only step in §8 that cannot be faked from one machine, and it is the step that `PortableEditionInterchangeTests` explicitly declines to claim. **7c–7e are not confirmed** — the decline message, and the two interchange directions — and are left open rather than assumed from "all pass". 7d came for free in a sense that is worth stating: the store restored in 8.6 was written by the installed edition and read by the portable build on the stick, which is that direction exercised, though not deliberately as 7d.
 - [ ] 8.8 Manual: open a migrated file with the previous release and confirm it refuses with a version message rather than corrupting anything. — **Deferred by the user, and deliberately left unchecked. This is the only item in §8 that can lose data, and nothing in the suite can stand in for it.** Every automated test of an unrecognised sentinel runs against *this* build's reader; what v1.82.0 does with `ThisIsDpapiProtected` can only be learnt from the v1.82.0 binary. The specific fear is not the refusal — a build that predates the sentinel will fail to decrypt and report something — it is **what happens next**. v1.82.0 has the same `TryRecoverFromBackup` walk, without §6's protector-failure clause, so a failed load sends it through the backup set; if it finds an older *classic* backup beside the store it can restore that and `File.Copy` it over the migrated file. The user would lose every change made since the migration and be told their file was recovered. **Must be run before this ships**, and the check that matters is the file afterwards, not the message.
 
+  **Partly run, and the result narrows the risk rather than closing it.** 1.77.3 — the newest build
+  actually published for download — was pointed at a migrated store sitting in its full mixed backup
+  set. It refused with *"Could not load startup file."* and exited, and **every file in the folder
+  was byte-identical afterwards**, verified by hashing the set before and after. So the refusal is
+  safe on that build.
+
+  It is safe there for a reason that does not generalise: **1.77.3 has no backup walk.**
+  `TryRecoverFromBackup` arrived in February 2026, years later. There was nothing to misfire, so the
+  clean result says nothing about the mechanism this task is about. *(A first reading of it blamed
+  `KdfPrf` — that every classic backup in the set carries `KdfPrf="SHA256"` and 1.77.3 would derive
+  with SHA-1 and fail. True, and irrelevant: the walk that would have read them does not exist in
+  that build.)*
+
+  **What remains untested is v1.79.0 through v1.82.0 and the rolling nightly**, all of which have the
+  walk and none of which know the sentinel. The nightly is published and is what a user of this fork
+  would actually downgrade to, so it is the build this task now names.
+
   **This is not hypothetical, and the verification store proves it.** A migration leaves the
   pre-migration rolling backups in place, so a hardened store normally sits in a *mixed* backup set.
   On the store used for 8.4–8.6 there are twelve backups, of which
