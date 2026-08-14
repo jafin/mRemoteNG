@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Buffers.Binary;
 using System.Security;
 using System.Security.Cryptography;
@@ -47,7 +47,7 @@ public class ConnectionFileKeyProtectionTests
         ConnectionFileKeyProtection protection =
             ConnectionFileKeyProtection.Create(fileKey, Password("correct horse"), iterations: FastIterations);
 
-        using ConnectionFileKey viaMachine = DpapiKeyProtector.Unwrap(protection.MachineProtector);
+        using ConnectionFileKey viaMachine = DpapiKeyProtector.Unwrap(protection.MachineSlots[0]);
         using ConnectionFileKey viaPassword =
             RecoveryPasswordKeyProtector.Unwrap(protection.RecoveryProtector, Password("correct horse"));
 
@@ -86,7 +86,7 @@ public class ConnectionFileKeyProtectionTests
         Assert.Multiple(() =>
         {
             Assert.That(protection.HasMachineProtector, Is.False);
-            Assert.That(protection.MachineProtector, Is.Null);
+            Assert.That(protection.MachineSlots, Is.Empty);
             Assert.That(unwrapped.Bytes.SequenceEqual(fileKey.Bytes));
         });
     }
@@ -180,7 +180,7 @@ public class ConnectionFileKeyProtectionTests
         Assert.Multiple(() =>
         {
             Assert.That(viaNewPassword.Bytes.SequenceEqual(fileKey.Bytes), "the same file key comes back");
-            Assert.That(replaced.MachineProtector, Is.EqualTo(original.MachineProtector),
+            Assert.That(replaced.MachineSlots, Is.EqualTo(original.MachineSlots),
                 "the machine protector is untouched, so the daily path is unaffected");
             Assert.That(replaced.RecoveryProtector, Is.Not.EqualTo(original.RecoveryProtector));
             Assert.Throws<KeyProtectionException>(
@@ -198,7 +198,7 @@ public class ConnectionFileKeyProtectionTests
 
         ConnectionFileKeyProtection installed = portable.WithMachineProtector(fileKey);
 
-        using ConnectionFileKey viaMachine = DpapiKeyProtector.Unwrap(installed.MachineProtector);
+        using ConnectionFileKey viaMachine = DpapiKeyProtector.Unwrap(installed.MachineSlots[0]);
         using ConnectionFileKey viaPassword =
             RecoveryPasswordKeyProtector.Unwrap(installed.RecoveryProtector, Password("recovery"));
 
@@ -223,8 +223,8 @@ public class ConnectionFileKeyProtectionTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(a.MachineProtector, Is.Not.EqualTo(a.RecoveryProtector));
-            Assert.That(a.MachineProtector, Is.Not.EqualTo(b.MachineProtector));
+            Assert.That(a.MachineSlots[0], Is.Not.EqualTo(a.RecoveryProtector));
+            Assert.That(a.MachineSlots[0], Is.Not.EqualTo(b.MachineSlots[0]));
 
             // The salt and nonce are random per wrap, so even one password across two files gives
             // two unrelated blobs. A constant here would let one file's protector be recognised in
@@ -259,7 +259,14 @@ public class ConnectionFileKeyProtectionTests
         Assert.Multiple(() =>
         {
             Assert.That(ConnectionFileKeyProtection.Read(null, null), Is.Null);
-            Assert.That(ConnectionFileKeyProtection.Read("", "   "), Is.Null);
+            Assert.That(ConnectionFileKeyProtection.Read(null, "   "), Is.Null,
+                "a recovery protector of whitespace is the same as none");
+
+            // Changed by the slot list, deliberately. A machine attribute that is *present* and holds
+            // nothing is no longer read as "no machine protector": nothing this application writes
+            // produces it, so accepting it would take a file something else has damaged and prompt
+            // for the recovery password as though that were normal. Absence still means absence.
+            Assert.Throws<KeyProtectionException>(() => ConnectionFileKeyProtection.Read("", "   "));
         });
     }
 
@@ -280,7 +287,7 @@ public class ConnectionFileKeyProtectionTests
         Assert.Multiple(() =>
         {
             Assert.That(read, Is.Not.Null);
-            Assert.That(read!.MachineProtector, Is.EqualTo(protection.MachineProtector));
+            Assert.That(read!.MachineSlots, Is.EqualTo(protection.MachineSlots));
             Assert.That(read.RecoveryProtector, Is.EqualTo(protection.RecoveryProtector));
         });
     }

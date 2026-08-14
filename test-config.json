@@ -1,11 +1,11 @@
 {
   "metadata": {
-    "total_expected": 4171,
+    "total_expected": 4183,
     "min_total_threshold": 3800,
-    "last_updated": "2026-08-14",
+    "last_updated": "2026-08-15",
     "stats": {
-      "unique_methods": 1274,
-      "static_test_cases": 1369,
+      "unique_methods": 1286,
+      "static_test_cases": 1381,
       "dynamic_source_methods": 22,
       "note": "static_test_cases counts [Test] as 1, each [TestCase] as 1. dynamic_source_methods use [TestCaseSource] generating N cases at runtime. total_expected = the sum of the runner's groups plus the isolated tests, and the groups partition the assembly: every test belongs to exactly one. Before 2026-08-12 the negated clauses carried a literal backslash (\\!~), which VSTest silently treats as matching everything rather than excluding, so Remaining re-ran the whole assembly and the reported total was roughly double the real test count."
     }
@@ -40,7 +40,7 @@
       {
         "name": "Security",
         "filter": "FullyQualifiedName~mRemoteNGTests.Security",
-        "expected": 464
+        "expected": 476
       },
       {
         "name": "Tree+Container+Cred",
@@ -1288,6 +1288,24 @@
             "PasswordLessThanMinimumLengthFailsValidation": 1,
             "PasswordThatEqualsMaxLengthPassesValidation": 1,
             "PasswordThatEqualsMinimumLengthPassesValidation": 1
+          }
+        }
+      },
+      "FileProtection": {
+        "_classes": {
+          "MachineKeySlotTests": {
+            "OneSlotIsExactlyWhatTheSingleValueFormWas": 1,
+            "AnAbsentAttributeStillMeansNoMachineProtector": 1,
+            "EverySlotUnwrapsToTheSameFileKey": 1,
+            "AddingASlotKeepsTheOnesAlreadyThere": 1,
+            "AForeignSlotDoesNotStopTheValidOneBeingFound": 1,
+            "ASlotHoldingAnotherFilesKeyIsRejectedAndTheSearchContinues": 1,
+            "WhenNoSlotBelongsToThisFileTheRecoveryPasswordIsAskedForOnce": 1,
+            "AnAttributeThatIsPresentAndEmptyIsRefused": 1,
+            "AnOverLongListIsRefusedWithoutTryingASlot": 1,
+            "ASlotCannotBeAddedBeyondTheBound": 1,
+            "AMultiSlotValueIsNotSilentlyReadAsOneBlobByASingleSlotReader": 1,
+            "TheSlotThatOpenedTheStoreIsTriedFirstNextTime": 1
           }
         }
       }

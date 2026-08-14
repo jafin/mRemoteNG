@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Security;
 using mRemoteNG.Resources.Language;
@@ -117,7 +117,7 @@ public class ConnectionFileMigrationTests
         Assert.Multiple(() =>
         {
             Assert.That(root.KeyProtection!.HasMachineProtector, Is.False);
-            Assert.That(root.KeyProtection.MachineProtector, Is.Null);
+            Assert.That(root.KeyProtection.MachineSlots, Is.Empty);
         });
     }
 
