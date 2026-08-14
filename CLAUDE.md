@@ -113,7 +113,7 @@ Write for someone using mRemoteNG, not someone building it. That means:
 - Cross-link with relative `.md` paths (`../variables-reference.md`); `onBrokenLinks` is `throw`, so a dead link fails CI.
 - Verify with `pnpm run typecheck && pnpm run build` in `docs-website/`. Do not commit documentation you have not built.
 
-The Sphinx sources in `mRemoteNGDocumentation/` are the pre-migration upstream copy and are **no longer maintained** — never edit them, and never port a fix there.
+`docs-website/docs/` is the only user documentation in this repository. The Sphinx sources that preceded it, and the readthedocs config that built them, have been removed; if you find a reference to `mRemoteNGDocumentation/` anywhere, it is stale.
 
 ## Build Instructions
 
