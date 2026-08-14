@@ -22,6 +22,10 @@ namespace mRemoteNG.Tools.Cmdline;
 //
 public class CmdArgumentsInterpreter
 {
+    /// <summary>Strips one enclosing quote from each end, as this class has always done.</summary>
+    private static readonly Regex QuoteRemover =
+        new("^[\'\"]?(.*?)[\'\"]?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+
     private readonly StringDictionary _parameters;
 
     // Retrieve a parameter value if it exists
@@ -30,9 +34,7 @@ public class CmdArgumentsInterpreter
     public CmdArgumentsInterpreter(IEnumerable<string> args)
     {
         _parameters = [];
-        Regex spliter = new("^-{1,2}|^/|=|:", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        Regex remover = new("^[\'\"]?(.*?)[\'\"]?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
-        string? parameter = null;
+        string? pending = null;
 
         // Valid parameters forms:
         // {-,/,--}param{ ,=,:}((",')value(",'))
@@ -42,70 +44,52 @@ public class CmdArgumentsInterpreter
         {
             foreach (string txt in args)
             {
-                // Look for new parameters (-,/ or --) and a possible enclosed value (=,:)
-                string[] parts = spliter.Split(txt, 3);
-                switch (parts.Length)
+                if (CommandLineSwitch.TryParse(txt, out string name, out string? inlineValue))
                 {
-                    case 1:
-                        // Found a value (for the last parameter found (space separator))
-                        if (parameter != null)
-                        {
-                            if (!_parameters.ContainsKey(parameter))
-                            {
-                                parts[0] = remover.Replace(parts[0], "$1");
-                                _parameters.Add(parameter, parts[0]);
-                            }
+                    // A switch ends whatever was waiting: it was given no value, so it is a flag.
+                    Remember(pending, "true");
+                    pending = null;
 
-                            parameter = null;
-                        }
+                    if (inlineValue == null)
+                        pending = name;
+                    else
+                        Remember(name, Unquote(inlineValue));
 
-                        // else Error: no parameter waiting for a value (skipped)
-                        break;
-                    case 2:
-                        // Found just a parameter
-                        // The last parameter is still waiting. With no value, set it to true.
-                        if (parameter != null)
-                        {
-                            if (!_parameters.ContainsKey(parameter))
-                            {
-                                _parameters.Add(parameter, "true");
-                            }
-                        }
-
-                        parameter = parts[1];
-                        break;
-                    case 3:
-                        // Parameter with enclosed value
-                        // The last parameter is still waiting. With no value, set it to true.
-                        if (parameter != null)
-                        {
-                            if (!_parameters.ContainsKey(parameter))
-                            {
-                                _parameters.Add(parameter, "true");
-                            }
-                        }
-
-                        parameter = parts[1];
-                        // Remove possible enclosing characters (",')
-                        if (!_parameters.ContainsKey(parameter))
-                        {
-                            parts[2] = remover.Replace(parts[2], "$1");
-                            _parameters.Add(parameter, parts[2]);
-                        }
-
-                        parameter = null;
-                        break;
+                    continue;
                 }
+
+                if (pending != null)
+                {
+                    // Whole, and unexamined. Whatever the value contains is the value.
+                    Remember(pending, Unquote(txt));
+                    pending = null;
+                    continue;
+                }
+
+                // A value with no switch waiting for it. Discarded rather than promoted to a
+                // parameter of its own: an invented switch nobody defined cannot be told apart from
+                // a typo, so the mistake produced neither an error nor an effect.
             }
 
-            // In case a parameter is still waiting
-            if (parameter == null) return;
-            if (!_parameters.ContainsKey(parameter))
-                _parameters.Add(parameter, "true");
+            // A switch at the end of the line, still waiting. It is a flag.
+            Remember(pending, "true");
         }
         catch (Exception ex)
         {
             Runtime.MessageCollector.AddExceptionMessage("Creating new Args failed", ex);
         }
     }
+
+    /// <summary>
+    /// First occurrence wins, which is what the original loop did by testing before every add.
+    /// </summary>
+    private void Remember(string? parameter, string value)
+    {
+        if (parameter == null || _parameters.ContainsKey(parameter))
+            return;
+
+        _parameters.Add(parameter, value);
+    }
+
+    private static string Unquote(string value) => QuoteRemover.Replace(value, "$1");
 }

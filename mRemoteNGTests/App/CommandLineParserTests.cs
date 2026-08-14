@@ -76,6 +76,22 @@ public class CommandLineParserTests
     }
 
     [Test]
+    public void ApplySwitches_SetsConnectionFilePath_WhenConsIsAnAbsolutePathAsASeparateArgument()
+    {
+        // The fixture above passes an env-var path, which contains no colon and so never exercised
+        // the split that a real Windows path triggers. This is the same case with a drive letter.
+        string tempDirectory = CreateTempDirectory();
+        string connectionsFilePath = Path.Combine(tempDirectory, "confCons.xml");
+        File.WriteAllText(connectionsFilePath, "<connections />");
+
+        CommandLineParser parser = new(["--cons", connectionsFilePath]);
+
+        parser.ApplySwitches();
+
+        Assert.That(OptionsConnectionsPage.Default.ConnectionFilePath, Is.EqualTo(Path.GetFullPath(connectionsFilePath)));
+    }
+
+    [Test]
     public void ApplySwitches_SetsCustomConfigurationPath_WhenSettingsSwitchIsProvided()
     {
         string tempDirectory = CreateTempDirectory();
@@ -127,6 +143,29 @@ public class CommandLineParserTests
         Assert.That(normalizedArgs[3], Is.EqualTo(Path.Combine(tempDirectory, "confCons.xml")));
         Assert.That(normalizedArgs[4], Is.EqualTo($"/settings:{tempDirectory}"));
         Assert.That(normalizedArgs[5], Is.EqualTo($"--log={Path.Combine(tempDirectory, "mRemoteNG.log")}"));
+    }
+
+    [Test]
+    public void GetNormalizedArguments_RoundTripsEveryFormWithAbsolutePaths()
+    {
+        // This is what the single-instance forward sends to an already-running process, so a form
+        // that survives parsing here must survive the trip as well.
+        string tempDirectory = CreateTempDirectory();
+        string connectionsFilePath = Path.Combine(tempDirectory, "confCons.xml");
+        string logFilePath = Path.Combine(tempDirectory, "mRemoteNG.log");
+
+        string[] inputArgs =
+        [
+            "--connect", "My Server",
+            "--cons", connectionsFilePath,
+            $"/settings:{tempDirectory}",
+            $"--log={logFilePath}",
+            "--exitafter"
+        ];
+
+        string[] normalizedArgs = new CommandLineParser(inputArgs).GetNormalizedArguments();
+
+        Assert.That(normalizedArgs, Is.EqualTo(inputArgs));
     }
 
     private string CreateTempDirectory()

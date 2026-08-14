@@ -1,4 +1,6 @@
 using System;
+using System.IO;
+using System.Linq;
 using System.Runtime.Versioning;
 using mRemoteNG.Messages;
 using mRemoteNG.Tools.Cmdline;
@@ -159,6 +161,53 @@ public class StartupArgumentsInterpreterTests
 
         Assert.That(StartupArgumentsInterpreter.ConnectTo, Is.EqualTo("ConnA"));
         Assert.That(StartupArgumentsInterpreter.ExitAfterLastConnection, Is.True);
+    }
+
+    #endregion
+
+    #region --cons
+
+    [Test]
+    public void ParseArguments_SetsCustomConnectionFile_WhenConsIsAnAbsolutePathAsASeparateArgument()
+    {
+        // The case the parsing fix exists for: before it, the drive letter split the argument and
+        // cons was given the string "true", so the switch was silently dropped and whatever store
+        // happened to be discovered opened instead.
+        string connectionsFile = Path.Combine(Path.GetTempPath(),
+            "mRemoteNG_StartupArgs_" + Guid.NewGuid().ToString("N") + ".xml");
+        File.WriteAllText(connectionsFile, "<connections />");
+
+        try
+        {
+            CreateSut().ParseArguments(["mRemoteNG.exe", "--cons", connectionsFile]);
+
+            Assert.That(StartupArgumentsInterpreter.CustomConnectionFile, Is.EqualTo(connectionsFile));
+        }
+        finally
+        {
+            File.Delete(connectionsFile);
+        }
+    }
+
+    [Test]
+    public void ParseArguments_KeepsTheRequestedPath_WhenTheFileDoesNotExist()
+    {
+        // Not a fallback to the usual store. A path that is not there is carried through so that
+        // loading fails against the file the user named, which is what raises the "connection file
+        // not found" dialog for it. Substituting a different store silently is the half of this
+        // defect that let people edit and save into a file they never asked to open.
+        string missing = Path.Combine(Path.GetTempPath(),
+            "mRemoteNG_StartupArgs_missing_" + Guid.NewGuid().ToString("N") + ".xml");
+        MessageCollector collector = new();
+
+        new StartupArgumentsInterpreter(collector).ParseArguments(["mRemoteNG.exe", "--cons", missing]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(StartupArgumentsInterpreter.CustomConnectionFile, Is.EqualTo(missing));
+            Assert.That(collector.Messages.Any(m => m.Text.Contains(missing, StringComparison.Ordinal)),
+                Is.True, "the message must name the path the user typed, not a placeholder");
+        });
     }
 
     #endregion

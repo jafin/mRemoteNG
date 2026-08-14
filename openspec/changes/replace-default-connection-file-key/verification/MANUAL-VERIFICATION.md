@@ -27,7 +27,7 @@ if (-not (Test-Path $exe))   { throw "mRemoteNG.exe not found - build it first" 
 mkdir $env:USERPROFILE\mrng-verify
 copy $env:APPDATA\mRemoteNG\confCons.xml $env:USERPROFILE\mrng-verify\confCons.xml
 
-# Launch against them. The colon form is REQUIRED — see the second warning below.
+# Launch against them.
 & $exe --cons:$env:USERPROFILE\mrng-verify\confCons.xml --cfg:$env:USERPROFILE\mrng-verify\settings
 ```
 
@@ -44,18 +44,11 @@ copy $env:APPDATA\mRemoteNG\confCons.xml $env:USERPROFILE\mrng-verify\confCons.x
 > a script. Nothing is wrong with the file or the script — you are in a shell that never ran the
 > block above. Re-run it.
 
-> **Do not use the space-separated form with an absolute path.**
-> `--cons $env:USERPROFILE\mrng-verify\confCons.xml` fails with *"The connection file could not be found"* even
-> when the file is plainly there. `CmdArgumentsInterpreter` splits arguments on
-> `^-{1,2}|^/|=|:` and that `:` is not anchored, so a bare `C:\...` argument splits at the drive
-> letter and is read as a new parameter rather than as the waiting switch's value — `cons` then
-> receives the literal string `true`. `--cons:<path>` and `/cons:<path>` parse correctly.
->
-> This is a real defect rather than a documentation quirk: `CommandLineParser.ExpandSwitchValue`
-> explicitly supports "the value is in the next argument", so the normalizer accepts a form the
-> interpreter cannot parse. It is invisible to `CommandLineParserTests` because that fixture uses
-> `%VAR%\confCons.xml`, which contains no colon. Not fixed here — it is nothing to do with the
-> per-file key — but it is worth its own change.
+> **The space-separated form works again.** `--cons <path>` and `--cons:<path>` are now equivalent,
+> including for absolute paths. This runbook used the colon form throughout because a bare `C:\...`
+> argument split at the drive letter and the switch was silently dropped, which cost a whole session
+> to diagnose. Fixed by `fix-command-line-value-parsing`; the colon form below is left as written
+> because it is also correct.
 
 > **The scratch store must be inside your user profile, and that is not arbitrary.**
 > `MachineProtectorPolicy` writes no machine protector for a store outside it — a file several

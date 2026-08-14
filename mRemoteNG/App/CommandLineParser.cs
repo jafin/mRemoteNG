@@ -207,7 +207,7 @@ public sealed class CommandLineParser
             if (string.IsNullOrWhiteSpace(argument))
                 continue;
 
-            if (!TryGetNamedSwitch(argument, out string switchName, out string? inlineValue))
+            if (!CommandLineSwitch.TryParse(argument, out string switchName, out string? inlineValue))
                 continue;
 
             if (!switchNames.Contains(switchName, StringComparer.OrdinalIgnoreCase))
@@ -229,46 +229,6 @@ public sealed class CommandLineParser
             if (!string.IsNullOrWhiteSpace(expandedValue))
                 args[valueIndex] = expandedValue;
         }
-    }
-
-    private static bool TryGetNamedSwitch(string argument, out string switchName, out string? inlineValue)
-    {
-        switchName = string.Empty;
-        inlineValue = null;
-
-        if (argument.StartsWith("--", StringComparison.Ordinal))
-            return ParseSwitch(argument, 2, out switchName, out inlineValue);
-
-        if (argument.StartsWith('-'))
-            return ParseSwitch(argument, 1, out switchName, out inlineValue);
-
-        if (argument.StartsWith('/'))
-            return ParseSwitch(argument, 1, out switchName, out inlineValue);
-
-        return false;
-    }
-
-    private static bool ParseSwitch(string argument, int prefixLength, out string switchName, out string? inlineValue)
-    {
-        switchName = string.Empty;
-        inlineValue = null;
-
-        string withoutPrefix = argument[prefixLength..];
-        if (string.IsNullOrWhiteSpace(withoutPrefix))
-            return false;
-
-        int separatorIndex = withoutPrefix.IndexOfAny(['=', ':']);
-        if (separatorIndex < 0)
-        {
-            switchName = withoutPrefix;
-            return true;
-        }
-
-        switchName = withoutPrefix[..separatorIndex];
-        if (separatorIndex + 1 < withoutPrefix.Length)
-            inlineValue = withoutPrefix[(separatorIndex + 1)..];
-
-        return true;
     }
 
     private static string ReplaceSwitchValue(string argument, string originalValue, string replacementValue)

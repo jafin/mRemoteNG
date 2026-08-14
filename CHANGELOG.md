@@ -16,6 +16,7 @@ and adapted (including SQL-schema support upstream does not have).
 - **RD Gateway access token inheritance** (upstream [#3243](https://github.com/mRemoteNG/mRemoteNG/pull/3243)) — the gateway access token can now be inherited from a parent folder
 
 ### Fixed
+- **Command-line switch values containing `:` or `=`** — `mRemoteNG.exe --cons C:\stores\confCons.xml` split at the drive letter, so the switch was silently dropped and mRemoteNG opened whichever connections file it discovered instead: the user asked for one store and edited another with no indication. Every switch was affected whenever its value held a colon or an equals sign (`--quickconnect host:2222`, any absolute path), and only the `--cons:` / `/cons:` forms worked. A value given as the following argument is now taken whole, an argument is a switch only when it starts with `-`, `--` or `/`, and a `--cons` path that does not exist raises the "connection file not found" prompt against that path rather than falling back to another store
 - **CSV export column misalignment** (#141) — seven inheritance columns were written under the wrong headers in every CSV export (pre-existing; found by independent model review during the port)
 - **RDP auto-reconnect after deliberate logoff** (#140) — with "Automatically try to reconnect" enabled, logging off inside an RDP session immediately logged the user back in; deliberate logoffs now close the tab
 - Stable releases attach the **MSI installer** with a versioned filename and include it in `checksums-SHA256.txt` (#138)

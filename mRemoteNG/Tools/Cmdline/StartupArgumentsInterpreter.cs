@@ -159,7 +159,14 @@ public class StartupArgumentsInterpreter
         }
         else
         {
-            _messageCollector.AddMessage(MessageClass.WarningMsg, $"Cmdline arg: custom connection file not found: {consValue}");
+            // Honoured even though nothing is there. Falling back to the normally discovered store
+            // is the dangerous half of this defect: the user asked for one file, was given another
+            // without being told, and every edit was saved into it. Keeping the path means loading
+            // fails on the file they named, which raises the "connection file not found" dialog
+            // against that path — create it, choose another, import, or exit.
+            CustomConnectionFile = consValue;
+            _messageCollector.AddMessage(MessageClass.WarningMsg,
+                $"Cmdline arg: custom connection file not found: {consValue}", onlyLog: false);
         }
     }
 

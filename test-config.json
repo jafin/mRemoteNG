@@ -1,11 +1,11 @@
 {
   "metadata": {
-    "total_expected": 4141,
+    "total_expected": 4167,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-14",
     "stats": {
-      "unique_methods": 1250,
-      "static_test_cases": 1339,
+      "unique_methods": 1270,
+      "static_test_cases": 1365,
       "dynamic_source_methods": 22,
       "note": "static_test_cases counts [Test] as 1, each [TestCase] as 1. dynamic_source_methods use [TestCaseSource] generating N cases at runtime. total_expected = the sum of the runner's groups plus the isolated tests, and the groups partition the assembly: every test belongs to exactly one. Before 2026-08-12 the negated clauses carried a literal backslash (\\!~), which VSTest silently treats as matching everything rather than excluding, so Remaining re-ran the whole assembly and the reported total was roughly double the real test count."
     }
@@ -35,7 +35,7 @@
       {
         "name": "Tools",
         "filter": "FullyQualifiedName~mRemoteNGTests.Tools",
-        "expected": 494
+        "expected": 518
       },
       {
         "name": "Security",
@@ -50,7 +50,7 @@
       {
         "name": "Remaining",
         "filter": "FullyQualifiedName!~mRemoteNGTests.Connection&FullyQualifiedName!~mRemoteNGTests.Config&FullyQualifiedName!~mRemoteNGTests.UI&FullyQualifiedName!~mRemoteNGTests.Tools&FullyQualifiedName!~mRemoteNGTests.Security&FullyQualifiedName!~mRemoteNGTests.Tree&FullyQualifiedName!~mRemoteNGTests.Container&FullyQualifiedName!~mRemoteNGTests.Credential&FullyQualifiedName!~mRemoteNGTests.IntegrationTests&Name!=FormBehavior&Name!=AllPagesExistWithIconsAndLoadCorrectSettings",
-        "expected": 346
+        "expected": 348
       },
       {
         "name": "Integration",
@@ -83,7 +83,9 @@
           "ApplySwitches_SetsConnectionFilePath_WhenConsContainsEnvironmentVariable": 1,
           "ApplySwitches_SetsCustomConfigurationPath_WhenSettingsSwitchIsProvided": 1,
           "ApplySwitches_SetsLogFilePath_WhenLogSwitchIsProvided": 1,
-          "GetNormalizedArguments_ExpandsEnvironmentVariablesForConfiguredPathSwitches": 1
+          "GetNormalizedArguments_ExpandsEnvironmentVariablesForConfiguredPathSwitches": 1,
+          "ApplySwitches_SetsConnectionFilePath_WhenConsIsAnAbsolutePathAsASeparateArgument": 1,
+          "GetNormalizedArguments_RoundTripsEveryFormWithAbsolutePaths": 1
         },
         "ImportTests": {
           "AnErrorInOneFileDoNotPreventOtherFilesFromProcessing": 1,
@@ -1419,7 +1421,27 @@
         "_classes": {
           "StartupArgumentsInterpreterTests": {
             "ParseArguments_SetsConnectTo_WhenConnectArgumentIsProvided": 1,
-            "ParseArguments_SetsStartupConnectTo_WhenStartupArgumentIsProvided": 1
+            "ParseArguments_SetsStartupConnectTo_WhenStartupArgumentIsProvided": 1,
+            "ParseArguments_SetsCustomConnectionFile_WhenConsIsAnAbsolutePathAsASeparateArgument": 1,
+            "ParseArguments_KeepsTheRequestedPath_WhenTheFileDoesNotExist": 1
+          },
+          "CmdArgumentsInterpreterTests": {
+            "SpaceSeparatedAbsolutePath_IsTakenWhole": 1,
+            "SpaceSeparatedHostAndPort_IsTakenWhole": 1,
+            "SpaceSeparatedValueContainingEquals_IsTakenWhole": 1,
+            "SpaceSeparatedValueContainingBothSeparators_IsTakenWhole": 1,
+            "InlineValue_IsSplitAtTheFirstSeparatorOnly": 4,
+            "EveryPrefix_TakesTheFollowingArgumentAsItsValue": 3,
+            "ABareFlagIsTrue": 1,
+            "EnclosingQuotesAreRemovedFromASeparateValue": 2,
+            "EnclosingQuotesAreRemovedFromAnInlineValue": 1,
+            "ASwitchFollowedByAnotherSwitch_IsAFlagAndDoesNotEatIt": 1,
+            "ABareArgumentWithNothingWaiting_CreatesNoParameter": 1,
+            "TheExecutablePathIsNotAParameter": 1,
+            "ANameValuedSwitchIsUnaffected": 1,
+            "TheFirstOccurrenceOfASwitchWins": 1,
+            "ASwitchIsCaseInsensitive": 1,
+            "AnUnknownSwitchIsNotAnError": 1
           }
         }
       },
