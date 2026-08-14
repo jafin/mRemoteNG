@@ -1,4 +1,6 @@
 using System.Configuration;
+using System.IO;
+using System.Windows.Forms;
 using mRemoteNG.App.Info;
 using mRemoteNG.Config.Settings.Providers;
 using NUnit.Framework;
@@ -69,5 +71,27 @@ public class SettingsProviderSelectionTests
         string installedPath = SettingsFileInfo.SettingsPath;
 
         Assert.That(portablePath, Is.Not.EqualTo(installedPath));
+    }
+
+    [TestCase(true)]
+    [TestCase(false)]
+    public void TheReportedSettingsFileIsTheOneTheProviderWrites(bool isPortable)
+    {
+        // The startup log, the debug report and the load message all name UserSettingsFilePath, so
+        // it has to be the file PortableSettingsProvider uses: <SettingsPath>\<exe>.settings. It
+        // used to report the framework's user.config for the installed edition, which nothing writes
+        // now that both editions share the file-based provider — a diagnostic saying "file does not
+        // exist - using defaults" about settings that were persisting perfectly well.
+        PortableEdition.OverrideForTests(isPortable);
+
+        string expected = Path.Combine(
+            SettingsFileInfo.SettingsPath,
+            $"{Path.GetFileNameWithoutExtension(Application.ExecutablePath)}.settings");
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(SettingsFileInfo.UserSettingsFilePath, Is.EqualTo(expected));
+            Assert.That(SettingsFileInfo.UserSettingsFilePath, Does.Not.EndWith("user.config"));
+        });
     }
 }

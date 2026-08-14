@@ -38,6 +38,7 @@ const sidebars: SidebarsConfig = {
           items: ['protocols/anydesk', 'protocols/rdp'],
         },
         'keyboard-shortcuts',
+        'portable-edition',
         'sql-configuration',
         {
           type: 'category',
