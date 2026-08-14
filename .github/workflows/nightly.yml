@@ -263,8 +263,11 @@ jobs:
 
             | Format | Description |
             |--------|-------------|
-            | **ZIP** | Portable — extract and run |
+            | **ZIP** | Extract and run — no installer, but the **installed** edition: settings and connections live in `%APPDATA%\mRemoteNG` |
             | **MSI** | Windows Installer — installs to Program Files with shortcuts |
+
+            > [!IMPORTANT]
+            > **Nightly ZIPs are no longer the portable edition.** The edition is decided by a `portable.flag` file beside `mRemoteNG.exe`, and this ZIP does not carry one — the same folder is harvested into the MSI, where a marker would make an installed application write into Program Files. If you have been running a nightly ZIP with its settings beside the executable, create an empty `portable.flag` next to `mRemoteNG.exe` after extracting and they will be found again; otherwise mRemoteNG starts in `%APPDATA%\mRemoteNG` and appears to have lost them. Nothing is deleted either way. See [Portable and Installed Editions](https://robertpopa22.github.io/mRemoteNG/portable-edition).
 
             > [!WARNING]
             > This is an automated build from the `main` branch. It includes the latest changes but may not be fully tested in production scenarios. For the stable release, use the [latest release](https://github.com/${{ github.repository }}/releases/latest).

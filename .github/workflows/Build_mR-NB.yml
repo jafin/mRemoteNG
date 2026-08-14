@@ -565,15 +565,21 @@ jobs:
             **Framework-Dependent** - Requires .NET 10 Runtime installed:
             - Smaller download size (~15-25 MB)
             - Requires .NET 10 Desktop Runtime on user machine
+            - Installed edition: settings and connections live in `%APPDATA%\mRemoteNG`
 
             **Self-Contained** - Portable, no installation required:
             - Larger download size (~80-150 MB)
             - Includes .NET 10 runtime - no installation needed
+            - Portable edition: settings and connections live in a `Settings` folder beside `mRemoteNG.exe`
 
             Both versions are available for **x64**, **x86**, and **ARM64** architectures.
 
             > [!IMPORTANT]
             > **Extract ZIPs into a fresh/empty folder** — do not unpack a framework-dependent build over a folder that previously held a self-contained one (or vice versa). Stale .NET runtime files from the old layout make the app fail to start with a native "You must install .NET" dialog (#130).
+
+            > [!IMPORTANT]
+            > **Portable users: extract the whole ZIP, do not copy `mRemoteNG.exe` on its own.**
+            > The edition is now decided by a `portable.flag` file beside the executable, which the self-contained ZIP carries. Replacing only the executable leaves the new copy without that file, so it starts as the installed edition, looks in `%APPDATA%\mRemoteNG`, and appears to have lost every connection and setting. Nothing is deleted — close mRemoteNG, create an empty `portable.flag` next to `mRemoteNG.exe`, and start it again. See [Portable and Installed Editions](https://robertpopa22.github.io/mRemoteNG/portable-edition).
 
             ---
 

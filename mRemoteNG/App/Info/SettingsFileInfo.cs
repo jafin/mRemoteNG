@@ -58,10 +58,27 @@ public static class SettingsFileInfo
             ? _portableWritablePath.Value
             : InstalledSettingsPath.Value;
 
-    public static string UserSettingsFilePath =>
-        Runtime.IsPortableEdition
-            ? Path.Combine(_portableWritablePath.Value, $"{Path.GetFileNameWithoutExtension(Application.ExecutablePath)}.settings")
-            : GetInstalledUserSettingsFilePath();
+    /// <summary>
+    /// The settings file that is actually read and written, for either edition.
+    /// </summary>
+    /// <remarks>
+    /// One expression, because <see cref="Providers.PortableSettingsProvider"/> serves both editions
+    /// and writes <c>&lt;exe&gt;.settings</c> into <see cref="SettingsPath"/> — which is itself the
+    /// edition-aware part. This used to report the framework's <c>user.config</c> for the installed
+    /// edition, and after the provider became the same for both, nothing ever wrote there: the
+    /// startup log and the debug report named a file that could not exist and said settings were at
+    /// their defaults while they were persisting correctly beside it.
+    /// </remarks>
+    public static string UserSettingsFilePath
+    {
+        get
+        {
+            string settingsDir = SettingsPath;
+            return string.IsNullOrWhiteSpace(settingsDir)
+                ? string.Empty
+                : Path.Combine(settingsDir, $"{Path.GetFileNameWithoutExtension(Application.ExecutablePath)}.settings");
+        }
+    }
 
     public static string UserSettingsFolderPath =>
         string.IsNullOrWhiteSpace(UserSettingsFilePath)
@@ -138,18 +155,6 @@ public static class SettingsFileInfo
             return string.Empty;
         }
         catch (Exception ex) when (ex is ArgumentException or NotSupportedException or PathTooLongException)
-        {
-            return string.Empty;
-        }
-    }
-
-    private static string GetInstalledUserSettingsFilePath()
-    {
-        try
-        {
-            return ConfigurationManager.OpenExeConfiguration(ConfigurationUserLevel.PerUserRoamingAndLocal).FilePath;
-        }
-        catch (ConfigurationErrorsException)
         {
             return string.Empty;
         }

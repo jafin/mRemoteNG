@@ -4,12 +4,14 @@ title: Troubleshooting
 
 ## Logfile
 
-The mRemoteNG.log is located in the following location:
+The mRemoteNG.log is located in the following location. Which one applies depends on the edition —
+see [Portable and Installed Editions](./portable-edition.md) if you are not sure which you are
+running.
 
 ### MSI/Installed version
 
-    %APPDATA%\mRemoteNG\mRemoteNG.log
-    (example: `C:\Users\[username]\AppData\Roaming\mRemoteNG\mRemoteNG.log`)
+    %LOCALAPPDATA%\mRemoteNG\mRemoteNG.log
+    (example: `C:\Users\[username]\AppData\Local\mRemoteNG\mRemoteNG.log`)
 
 ### Portable version
 
@@ -25,13 +27,14 @@ The exact file path is logged during startup in `mRemoteNG.log` as:
 
 ### Installed Version
 
-    %LOCALAPPDATA%\[CompanyName]\mRemoteNG.exe_Url_[hash]\[mRemoteNG version]\user.config
+    %APPDATA%\mRemoteNG\mRemoteNG.settings
 
-The folder can vary by build metadata (company name and URL hash), so rely on the startup log entry above for the exact location.
+If you set a configuration directory in **Tools → Options → Configuration**, the file is there
+instead. Rely on the startup log entry above for the exact location.
 
 ### Portable Version {#portable-version-1}
 
-    [location of mRemoteNG.exe]\mRemoteNG.settings
+    [location of mRemoteNG.exe]\Settings\mRemoteNG.settings
 
 ## Crash Information
 
@@ -48,8 +51,8 @@ By default, your connections file is backed up every time it is saved. These bac
 
 Your backup files are located in the same place as your normal connections file. This could be one of three places:
 
-- Normal version: `%AppData%mRemoteNG`
-- Portable version: In the same location as mRemoteNG.exe
+- Normal version: `%APPDATA%\mRemoteNG` (or `%LOCALAPPDATA%\mRemoteNG` if a connections file was already there from an older version)
+- Portable version: the `Settings` folder next to mRemoteNG.exe
 - If you have saved your confCons.xml to a custom location, go there.
 
 There are 2 different backup naming schemes:
