@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "total_expected": 4197,
+    "total_expected": 4206,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-15",
     "stats": {
@@ -25,7 +25,7 @@
       {
         "name": "Config.Other",
         "filter": "FullyQualifiedName~mRemoteNGTests.Config&FullyQualifiedName!~Serializers.ConnectionSerializers.Xml",
-        "expected": 716
+        "expected": 725
       },
       {
         "name": "UI",
@@ -156,6 +156,17 @@
             "LoadsEncryptedFile_WithCorrectPassword_Successfully": 1,
             "LoadsEncryptedFile_WithIncorrectPassword_ReturnsNull": 1,
             "LoadsEncryptedFile_WithNoPasswordProvided_ReturnsNull": 1
+          },
+          "ConnectionFileGenerationTests": {
+            "AHardenedStoreRecordsWhichKeyItIsOn": 1,
+            "ARekeyChangesItAndNothingElseDoes": 1,
+            "ASaveFromBeforeARekeyIsRefused": 1,
+            "ARefusedSaveLeavesTheRekeyedFileExactlyAsItWas": 1,
+            "TheSessionThatRekeyedCanSaveTwice": 1,
+            "AnOrdinarySaveFromAnotherSessionIsNotRefused": 1,
+            "TwoSessionsSavingInTurnLeaveAFileBothCanStillOpen": 1,
+            "AFileWrittenBeforeGenerationsExistedIsSavedNormally": 1,
+            "RekeyingAFileWrittenBeforeGenerationsExistedStillRefusesTheStaleSave": 1
           },
           "XmlConnectionsLoaderTests": {
             "FallsBackToNewestValidBackupWhenPrimaryFileHasInvalidXml": 1,

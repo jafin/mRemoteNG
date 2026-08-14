@@ -39,6 +39,24 @@ public sealed class ConnectionFileKeyProtection
     public const string RecoveryProtectorAttributeName = "KeyProtectorRecovery";
 
     /// <summary>
+    /// Root attribute naming which key the file is on. Absent in files written before it existed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Written in the clear, and it says nothing: it is a random token whose only property is being
+    /// different from the last one. What it is for is a save from a session that has not seen the
+    /// rekey — the writer compares the file's token against the one it read, and refuses rather than
+    /// writing the contents back under the key and the recovery password the rekey removed.
+    /// </para>
+    /// <para>
+    /// <b>A token rather than a counter.</b> Two rekeys from two sessions each bump a counter to the
+    /// same number, so a counter can say "unchanged" about two different keys — which is the one
+    /// answer this must never give. Random tokens collide only by accident of 128 bits.
+    /// </para>
+    /// </remarks>
+    public const string GenerationAttributeName = "KeyGeneration";
+
+    /// <summary>
     /// What separates one slot from the next.
     /// </summary>
     /// <remarks>
@@ -69,10 +87,11 @@ public sealed class ConnectionFileKeyProtection
     private readonly string[] _machineSlots;
 
     private ConnectionFileKeyProtection(string[] machineSlots, string recoveryProtector,
-                                        bool hasSlotForThisAccount = false)
+                                        string? generation, bool hasSlotForThisAccount = false)
     {
         _machineSlots = machineSlots;
         RecoveryProtector = recoveryProtector;
+        Generation = generation;
         HasSlotForThisAccount = hasSlotForThisAccount;
     }
 
@@ -110,6 +129,25 @@ public sealed class ConnectionFileKeyProtection
 
     public string RecoveryProtector { get; }
 
+    /// <summary>
+    /// Which key this store is on. Null for a file written before generations existed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Changed by <see cref="Create"/> alone, which means by hardening and by a rekey — never by
+    /// adding a slot, changing the recovery password, or an ordinary save. It has to track the key
+    /// rather than the file, because the thing it protects against is contents written under a key
+    /// the file no longer uses.
+    /// </para>
+    /// <para>
+    /// Null propagates rather than being filled in. A file that predates this gains a generation when
+    /// it is next rekeyed and not before: adopting one on an ordinary save would give every other
+    /// session holding that file a token they had never seen, and their next save — an ordinary save,
+    /// which is meant to be last-writer-wins — would be refused for a rekey that never happened.
+    /// </para>
+    /// </remarks>
+    public string? Generation { get; }
+
     public bool HasMachineProtector => _machineSlots.Length > 0;
 
     /// <param name="includeMachineProtector">
@@ -129,8 +167,16 @@ public sealed class ConnectionFileKeyProtection
         return new ConnectionFileKeyProtection(
             includeMachineProtector ? [DpapiKeyProtector.Wrap(fileKey)] : [],
             RecoveryPasswordKeyProtector.Wrap(fileKey, recoveryPassword, iterations, prf),
+            NewGeneration(),
             hasSlotForThisAccount: includeMachineProtector);
     }
+
+    /// <summary>
+    /// A token for a key that has just been made. Never derived from the key: the generation is
+    /// written in the clear beside the protectors, so anything computed from key material would be
+    /// key material published.
+    /// </summary>
+    private static string NewGeneration() => Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
 
     /// <summary>
     /// Recovers the file key, trying the machine protector first and asking for the recovery password
@@ -312,9 +358,11 @@ public sealed class ConnectionFileKeyProtection
         ArgumentNullException.ThrowIfNull(fileKey);
         ArgumentNullException.ThrowIfNull(recoveryPassword);
 
+        // The generation is carried over, because this is the same key: nothing another session holds
+        // has been invalidated, and refusing their next save would be a lie about what happened here.
         return new ConnectionFileKeyProtection(_machineSlots,
             RecoveryPasswordKeyProtector.Wrap(fileKey, recoveryPassword, iterations, prf),
-            HasSlotForThisAccount);
+            Generation, HasSlotForThisAccount);
     }
 
     /// <summary>
@@ -344,8 +392,11 @@ public sealed class ConnectionFileKeyProtection
                 $"This connection file already carries {MaxMachineSlots} machine protectors, which is " +
                 "the most it may have. Rekeying the file drops them and starts again.");
 
+        // Same key, so same generation. A slot earned on save must not make anyone else's next save
+        // look like a save from before a rekey — that is an ordinary save, and ordinary saves are
+        // last-writer-wins by design.
         return new ConnectionFileKeyProtection([.. _machineSlots, DpapiKeyProtector.Wrap(fileKey)],
-            RecoveryProtector, hasSlotForThisAccount: true);
+            RecoveryProtector, Generation, hasSlotForThisAccount: true);
     }
 
     /// <summary>
@@ -360,7 +411,14 @@ public sealed class ConnectionFileKeyProtection
     /// <exception cref="KeyProtectionException">
     /// The file declares a machine protector and no recovery protector.
     /// </exception>
-    public static ConnectionFileKeyProtection? Read(string? machineProtector, string? recoveryProtector)
+    /// <param name="generation">
+    /// The file's key generation, or null in a file written before generations existed. Present and
+    /// blank is refused for the same reason an empty slot list is: nothing this application writes
+    /// produces it, and reading it as "no generation" would silently disarm the check that stops a
+    /// stale session undoing a rekey.
+    /// </param>
+    public static ConnectionFileKeyProtection? Read(string? machineProtector, string? recoveryProtector,
+                                                    string? generation = null)
     {
         bool hasMachine = machineProtector is not null;
         bool hasRecovery = !string.IsNullOrWhiteSpace(recoveryProtector);
@@ -373,7 +431,12 @@ public sealed class ConnectionFileKeyProtection
                 "This connection file carries a machine protector but no recovery protector, so it " +
                 "could never be opened anywhere else. It was not written by this application.");
 
-        return new ConnectionFileKeyProtection(ReadSlots(machineProtector), recoveryProtector!);
+        if (generation is not null && string.IsNullOrWhiteSpace(generation))
+            throw new KeyProtectionException(KeyProtector.Machine, KeyProtectionFailure.Unusable,
+                "This connection file declares a key generation that holds nothing. It was not " +
+                "written by this application.");
+
+        return new ConnectionFileKeyProtection(ReadSlots(machineProtector), recoveryProtector!, generation);
     }
 
     /// <summary>
@@ -425,5 +488,9 @@ public sealed class ConnectionFileKeyProtection
                                       HasMachineProtector ? string.Join(SlotSeparator, _machineSlots) : null);
 
         rootElement.SetAttributeValue(XName.Get(RecoveryProtectorAttributeName), RecoveryProtector);
+
+        // Null removes it, which is what keeps a file written before generations existed free of one
+        // until it is rekeyed. See <see cref="Generation"/> for why it is not filled in here.
+        rootElement.SetAttributeValue(XName.Get(GenerationAttributeName), Generation);
     }
 }

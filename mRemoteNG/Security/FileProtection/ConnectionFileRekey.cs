@@ -80,6 +80,11 @@ public static class ConnectionFileRekey
         rootNode.FileKey = newKey;
         rootNode.KeyProtection = protection;
 
+        // `KeyGenerationSeen` is deliberately left as it was. The new protection carries a new
+        // generation and the file still holds the old one, and that gap is what lets the save below
+        // through while refusing a save from any session that has not seen this rekey — which is the
+        // whole point of it. It closes itself when the save lands.
+
         // The slot this run remembered belongs to the key that was just discarded. Left in place it
         // would be tried first on the next read of every file and fail, which costs nothing but is
         // exactly the sort of stale state that is hard to reason about later.

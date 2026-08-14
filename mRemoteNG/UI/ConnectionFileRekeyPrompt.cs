@@ -83,7 +83,11 @@ public static class ConnectionFileRekeyPrompt
                 return;
             }
 
-            string fileName = Runtime.ConnectionsService.ConnectionFileName;
+            // The menu item is enabled only with a file loaded, so this is an impossible state rather
+            // than a user error — reported through the catch below rather than silently doing nothing.
+            string fileName = Runtime.ConnectionsService.ConnectionFileName
+                ?? throw new InvalidOperationException(
+                    "No connection file is loaded, so there is nothing to rekey.");
 
             // Before the rekey, and of the file as it stands. A rekey that half-completes on a share
             // is the one path here that can lose a store, and the backup is what makes that
