@@ -85,6 +85,38 @@ public class CmdArgumentsInterpreterTests
     }
 
     [Test]
+    public void ATrailingSeparatorLeavesTheValueToTheNextArgument()
+    {
+        // `--cons: <path>` is the form the switches page showed for years, so a separator with
+        // nothing after it means "the value is next", not "the value is empty". Reporting an empty
+        // inline value here would drop the path as a bare argument, and would stop CommandLineParser
+        // expanding environment variables in it before the single-instance forward.
+        CmdArgumentsInterpreter args = new(["--cons:", @"C:\stores\confCons.xml"]);
+
+        Assert.That(args["cons"], Is.EqualTo(@"C:\stores\confCons.xml"));
+    }
+
+    [Test]
+    public void ATrailingSeparatorWithNothingAfterItIsAFlag()
+    {
+        CmdArgumentsInterpreter args = new(["--cons:"]);
+
+        Assert.That(args["cons"], Is.EqualTo(CmdArgumentsInterpreter.FlagValue));
+    }
+
+    [Test]
+    public void ASwitchAwaitingAValueIsNotGivenTheNextSwitch()
+    {
+        CmdArgumentsInterpreter args = new(["--cons:", "--connect", "ConnA"]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(args["cons"], Is.EqualTo(CmdArgumentsInterpreter.FlagValue));
+            Assert.That(args["connect"], Is.EqualTo("ConnA"));
+        });
+    }
+
+    [Test]
     public void ABareFlagIsTrue()
     {
         CmdArgumentsInterpreter args = new(["--exitafter"]);

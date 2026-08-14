@@ -210,6 +210,23 @@ public class StartupArgumentsInterpreterTests
         });
     }
 
+    [Test]
+    public void ParseArguments_IgnoresConsWithNoPath()
+    {
+        // `--cons` on its own carries the flag placeholder, not a path. Honouring that would open a
+        // "connection file not found" dialog about a file called "true"; nothing was asked for, so
+        // the usual store opens and the message says the switch needs a path.
+        MessageCollector collector = new();
+
+        new StartupArgumentsInterpreter(collector).ParseArguments(["mRemoteNG.exe", "--cons"]);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(StartupArgumentsInterpreter.CustomConnectionFile, Is.Null);
+            Assert.That(collector.Messages.Any(m => m.Text.Contains("needs a path", StringComparison.Ordinal)), Is.True);
+        });
+    }
+
     #endregion
 
     #region Constructor

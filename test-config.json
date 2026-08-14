@@ -1,11 +1,11 @@
 {
   "metadata": {
-    "total_expected": 4167,
+    "total_expected": 4171,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-14",
     "stats": {
-      "unique_methods": 1270,
-      "static_test_cases": 1365,
+      "unique_methods": 1274,
+      "static_test_cases": 1369,
       "dynamic_source_methods": 22,
       "note": "static_test_cases counts [Test] as 1, each [TestCase] as 1. dynamic_source_methods use [TestCaseSource] generating N cases at runtime. total_expected = the sum of the runner's groups plus the isolated tests, and the groups partition the assembly: every test belongs to exactly one. Before 2026-08-12 the negated clauses carried a literal backslash (\\!~), which VSTest silently treats as matching everything rather than excluding, so Remaining re-ran the whole assembly and the reported total was roughly double the real test count."
     }
@@ -35,7 +35,7 @@
       {
         "name": "Tools",
         "filter": "FullyQualifiedName~mRemoteNGTests.Tools",
-        "expected": 518
+        "expected": 522
       },
       {
         "name": "Security",
@@ -1423,7 +1423,8 @@
             "ParseArguments_SetsConnectTo_WhenConnectArgumentIsProvided": 1,
             "ParseArguments_SetsStartupConnectTo_WhenStartupArgumentIsProvided": 1,
             "ParseArguments_SetsCustomConnectionFile_WhenConsIsAnAbsolutePathAsASeparateArgument": 1,
-            "ParseArguments_KeepsTheRequestedPath_WhenTheFileDoesNotExist": 1
+            "ParseArguments_KeepsTheRequestedPath_WhenTheFileDoesNotExist": 1,
+            "ParseArguments_IgnoresConsWithNoPath": 1
           },
           "CmdArgumentsInterpreterTests": {
             "SpaceSeparatedAbsolutePath_IsTakenWhole": 1,
@@ -1441,7 +1442,10 @@
             "ANameValuedSwitchIsUnaffected": 1,
             "TheFirstOccurrenceOfASwitchWins": 1,
             "ASwitchIsCaseInsensitive": 1,
-            "AnUnknownSwitchIsNotAnError": 1
+            "AnUnknownSwitchIsNotAnError": 1,
+            "ATrailingSeparatorLeavesTheValueToTheNextArgument": 1,
+            "ATrailingSeparatorWithNothingAfterItIsAFlag": 1,
+            "ASwitchAwaitingAValueIsNotGivenTheNextSwitch": 1
           }
         }
       },

@@ -22,6 +22,12 @@ namespace mRemoteNG.Tools.Cmdline;
 //
 public class CmdArgumentsInterpreter
 {
+    /// <summary>
+    /// What a switch given no value is worth. Callers that expect a value can compare against it to
+    /// tell "the switch was not given one" from "the switch was given this".
+    /// </summary>
+    public const string FlagValue = "true";
+
     /// <summary>Strips one enclosing quote from each end, as this class has always done.</summary>
     private static readonly Regex QuoteRemover =
         new("^[\'\"]?(.*?)[\'\"]?$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
@@ -47,7 +53,7 @@ public class CmdArgumentsInterpreter
                 if (CommandLineSwitch.TryParse(txt, out string name, out string? inlineValue))
                 {
                     // A switch ends whatever was waiting: it was given no value, so it is a flag.
-                    Remember(pending, "true");
+                    Remember(pending, FlagValue);
                     pending = null;
 
                     if (inlineValue == null)
@@ -72,7 +78,7 @@ public class CmdArgumentsInterpreter
             }
 
             // A switch at the end of the line, still waiting. It is a flag.
-            Remember(pending, "true");
+            Remember(pending, FlagValue);
         }
         catch (Exception ex)
         {

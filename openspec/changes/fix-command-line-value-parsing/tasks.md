@@ -39,7 +39,10 @@ sequenced behind anything.
 ## 5. Verification
 
 - [x] 5.1 Full build; zero new analyzer warnings.
-- [x] 5.2 Full test suite; zero failures. — 4167 passed, 0 failed (4141 + 26 new cases; `test-config.json` updated for both groups that grew).
+- [x] 5.2 Full test suite; zero failures. — **4171 passed, 0 failed** in `mRemoteNGTests.dll`, which is everything `run-tests.ps1` covers; `test-config.json` is updated to match. (`CHANGELOG.md` and `CLAUDE.md` both still say 6,329, which no run has produced since the runner's negated filter clauses were fixed on 2026-08-12 — see the note in `test-config.json`. Out of scope here, and left alone rather than half-corrected.)
+- [x] 5.9 Review findings from PR #41 (Copilot, CodeRabbit). Both flagged the same code point: a trailing separator, `--cons:`, reports no inline value, and both proposed reporting an empty one instead. **Not taken** — `--cons: <path>` is the form the switches page showed for years, and an empty inline value drops that path as a bare argument and stops `CommandLineParser` expanding environment variables in it before the single-instance forward. The reasoning is now a comment, and three tests hold it: the value comes from the next argument, a trailing separator alone is a flag, and a following *switch* is not eaten.
+  - What the finding did surface is real and one layer up: `--cons` with no path at all carries the flag placeholder, and §3.3 would have honoured `"true"` as a filename — a "connection file not found" dialog about a file called `true`. Nothing was asked for in that case, so the switch is ignored and the message says it needs a path. `CmdArgumentsInterpreter.FlagValue` exists so the two can be told apart by name rather than by a literal.
+  - Documentation findings taken: a language on the fenced block (MD040), "Temporary disables" → "Temporarily disables" (inherited from the old page), and aliases written as `— also /c` rather than listed as though each were a separate flag-only switch.
 - [x] 5.3 `openspec validate fix-command-line-value-parsing --strict`.
 - [ ] 5.4 Manual: `mRemoteNG.exe --cons C:\scratch\confCons.xml` opens that file. This is the case the whole change exists for and it has never worked.
 - [ ] 5.5 Manual: the same with `--cfg` and `--log`, and with a path containing spaces.

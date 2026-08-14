@@ -63,6 +63,12 @@ internal static class CommandLineSwitch
             return false;
 
         name = withoutPrefix[..separatorIndex];
+
+        // A separator with nothing after it — `--cons:` — leaves the value pending, so the next
+        // argument supplies it. That is deliberate: `--cons: C:\stores\confCons.xml` is the form the
+        // switches page showed for years, and it is the one form where a trailing separator is
+        // meaningful. Reporting an empty inline value instead would swallow the path as a bare
+        // argument, and would stop `CommandLineParser` expanding environment variables in it.
         if (separatorIndex + 1 < withoutPrefix.Length)
             inlineValue = withoutPrefix[(separatorIndex + 1)..];
 

@@ -7,7 +7,7 @@ title: Command-Line Switches
 A switch may be written with `/`, `-` or `--`, and its value may be given after a space, a colon or
 an equals sign. These are all the same instruction:
 
-```
+```text
 mRemoteNG.exe --cons C:\stores\confCons.xml
 mRemoteNG.exe --cons:C:\stores\confCons.xml
 mRemoteNG.exe --cons=C:\stores\confCons.xml
@@ -31,7 +31,7 @@ does not follow one is ignored.
 
 ## Connection file, settings and log
 
-`/cons PathToConnectionsFile` `/c PathToConnectionsFile`
+`/cons PathToConnectionsFile` — also `/c`
 
 > Loads the connections file from the given path, for this session only. The path may be a full file
 > path, or relative to the current directory, the mRemoteNG application directory, or the default
@@ -41,11 +41,11 @@ does not follow one is ignored.
 > file there, choose a different path, import, or exit. It does **not** quietly open your usual
 > connections file instead.
 
-`/cfg PathToSettingsFolder` `/settings` `/settingspath` `/config` `/configpath`
+`/cfg PathToSettingsFolder` — also `/settings`, `/settingspath`, `/config`, `/configpath`
 
 > Reads and writes settings in the given folder instead of the default one.
 
-`/log PathToLogFile` `/logpath` `/logfile`
+`/log PathToLogFile` — also `/logpath`, `/logfile`
 
 > Writes the log to the given file. A path ending in a separator is treated as a folder, and
 > `mRemoteNG.log` is written inside it.
@@ -61,12 +61,12 @@ does not follow one is ignored.
 
 > The same, but opened after the main window has finished loading.
 
-`/quickconnect Host` `/qc Host`
+`/quickconnect Host` — also `/qc`
 
 > Opens an ad-hoc connection without saving it, in the same formats the Quick Connect toolbar
 > accepts: `host`, `host:port` or `user@host:port`.
 
-`/protocol Protocol` `/p Protocol`
+`/protocol Protocol` — also `/p`
 
 > The protocol for `/quickconnect` — for example `RDP`, `SSH2` or `VNC`. Defaults to your configured
 > Quick Connect protocol.
@@ -82,21 +82,21 @@ does not follow one is ignored.
 
 > Resets window position, panels and toolbars
 
-`/resetpos` `/rp`
+`/resetpos` — also `/rp`
 
 > Reset the windows position
 
-`/resetpanels` `/rpnl`
+`/resetpanels` — also `/rpnl`
 
 > Resets all panel positions. Use this if you have troubles with panel layouts
 
-`/resettoolbar` `/rtbr`
+`/resettoolbar` — also `/rtbr`
 
 > Resets the positions of all toolbars
 
-`/noreconnect` `/norc`
+`/noreconnect` — also `/norc`
 
-> Temporary disables reconnect to previously opened sessions. Use this if you have problems opening
+> Temporarily disables reconnecting to previously opened sessions. Use this if you have problems opening
 > mRemoteNG after you enabled the setting and restarted mRemoteNG
 
 :::tip Already running?

@@ -145,6 +145,19 @@ public class StartupArgumentsInterpreter
         string? consValue = args[consParam];
         if (consValue == null) return;
 
+        // The switch was given no path at all — `--cons` on its own, or `--cons:` at the end of the
+        // line. There is nothing to honour, so the usual connection file opens as though the switch
+        // had not been typed, and the user is told why. Without this the placeholder itself would be
+        // carried through as a filename and produce a "not found" dialog about a file called "true".
+        if (string.Equals(consValue, CmdArgumentsInterpreter.FlagValue, StringComparison.Ordinal) &&
+            !File.Exists(consValue))
+        {
+            _messageCollector.AddMessage(MessageClass.WarningMsg,
+                $"Cmdline arg: --{consParam} needs a path, for example --{consParam} \"C:\\stores\\confCons.xml\". Ignoring it.",
+                onlyLog: false);
+            return;
+        }
+
         if (File.Exists(consValue))
         {
             CustomConnectionFile = consValue;
