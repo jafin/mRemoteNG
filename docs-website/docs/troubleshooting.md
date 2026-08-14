@@ -47,6 +47,10 @@ instead. Rely on the startup log entry above for the exact location.
 
 By default, your connections file is backed up every time it is saved. These backup files are normal/valid connections file - they have only been renamed to avoid being overwritten. mRemoteNG will save the 10 most recent backups.
 
+A backup is an exact copy, so it carries whatever protection the file had when it was taken. If a
+restore reports that a backup could not be unwrapped, the file is not damaged — see
+[Backups](./connection-file-protection.md#backups).
+
 ### Files and Locations
 
 Your backup files are located in the same place as your normal connections file. This could be one of three places:
