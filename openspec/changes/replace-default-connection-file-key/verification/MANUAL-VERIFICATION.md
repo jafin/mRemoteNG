@@ -283,27 +283,71 @@ second way. Reopen: no prompt.
 **Proves:** an older build refuses rather than damaging the file. A build that does not know the
 third sentinel must not treat it as "not protected" and write over it.
 
-1. Download the **v1.82.0** release. Install or unpack it somewhere separate.
-2. Copy the 8.4 migrated file to a scratch path.
-3. Open it with v1.82.0: `mRemoteNG.exe --cons:<copy> --cfg:<scratch settings>`
-   (v1.82.0 has the same argument defect, so the colon form is required there too.)
+**The refusal is not the interesting part.** v1.82.0 predates the sentinel, so of course it cannot
+decrypt the file and will report *something*. What matters is what it does **next**: it has the same
+`TryRecoverFromBackup` walk, without §6's protector-failure clause, so a failed load sends it
+through the backup set — and if it finds an older **classic** backup it can read, it restores that
+and copies it over the migrated file. The user loses everything since the migration and is told
+their file was recovered.
 
-**Pass:** it refuses to load. **The critical part is what it does next** — check the file
-afterwards:
+**So the file must be tested with its backups beside it.** A migrated file copied somewhere on its
+own never reaches the walk, and would pass this section while the actual defect went unseen. A mixed
+set is the normal state: migration leaves the pre-migration rolling backups in place.
+
+Download the **v1.82.0** release from `https://github.com/robertpopa22/mRemoteNG/releases` and unpack
+it somewhere separate. It keeps its settings beside its own executable, so it will not disturb
+anything.
 
 ```powershell
-python $check <the copy>
+# A copy of the WHOLE folder: the migrated store and every .backup beside it.
+$old = "C:\mrng-88"
+Remove-Item $old -Recurse -Force -ErrorAction SilentlyContinue
+Copy-Item $env:USERPROFILE\mrng-verify $old -Recurse
+
+# Confirm the set is mixed — at least one classic backup is what makes this a real test.
+Get-ChildItem $old -Filter *.backup | ForEach-Object {
+  $fmt = if (Select-String -Path $_.FullName -Pattern 'StorageFormat="Hardened"' -Quiet) { 'hardened' } else { 'CLASSIC' }
+  "{0,-45} {1}" -f $_.Name, $fmt
+}
+
+# Fingerprint everything, so any change at all is visible afterwards.
+Get-ChildItem $old -File | Get-FileHash | Select-Object Path,Hash | Sort-Object Path | Format-Table -AutoSize
 ```
 
-It must still report `StorageFormat: Hardened` with both protectors, and the current build must
-still open it. A v1.82.0 that silently rewrote the file as classic, emptied it, or dropped the
-protector attributes is a data-loss bug and outranks everything else in this list.
+Then open it with the old build — colon form, since v1.82.0 has the same argument defect:
 
-Note honestly what the refusal *looks like*. v1.82.0 predates the sentinel, so a clean message
-naming a version is the hope, not a guarantee; an unhelpful parse error that leaves the file intact
-is an acceptable pass with a caveat, and worth writing down as one.
+```powershell
+<path-to-v1.82.0>\mRemoteNG.exe --cons:C:\mrng-88\confCons.xml
+```
 
-> Record: 8.8 refused ___ / file intact afterwards ___ / still opens in current build ___ / message quality ___
+Let it do whatever it wants, including accepting any recovery offer it makes. Close it, and
+fingerprint again:
+
+```powershell
+Get-ChildItem $old -File | Get-FileHash | Select-Object Path,Hash | Sort-Object Path | Format-Table -AutoSize
+python $check C:\mrng-88\confCons.xml
+```
+
+**Pass:**
+- `confCons.xml`'s hash is **unchanged**, and it still reports `StorageFormat: Hardened` with both
+  protectors.
+- The current build still opens it.
+
+**Fail, and this is the outcome to look for:** `confCons.xml`'s hash changed, or the checker now
+reports it classic and readable under `mR3m`. That is the older release having restored a
+pre-migration backup over it — silently, and with a message saying it recovered your file.
+
+Note honestly what the refusal *looks like* as a secondary observation. A clean message naming a
+version is the hope, not a guarantee; an unhelpful parse error that leaves every hash untouched is a
+pass with a caveat, and worth writing down as one.
+
+> Record: 8.8 mixed set confirmed ___ / confCons.xml hash unchanged ___ / still hardened ___ / opens in current build ___ / message quality ___
+
+**If it fails, do not treat it as a v1.82.0 bug to be fixed there** — that release is out and cannot
+be changed. It becomes a constraint on *this* change: either the migrated file must be
+distinguishable to an older build before it reaches the backup walk, or migration must not leave
+readable classic backups beside a hardened store. Both are design work, which is why this section is
+worth running before shipping rather than after.
 
 ---
 
