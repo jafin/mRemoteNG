@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using System.Security;
 using System.Xml.Linq;
+using mRemoteNG.App.Info;
 using mRemoteNG.Config.Connections;
 using mRemoteNG.Config.Serializers;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
@@ -54,6 +55,8 @@ public class PortableEditionInterchangeTests
     public void Teardown()
     {
         RecoveryPasswordSession.Clear();
+        // Static, so leaving it set would decide the edition for every test that ran afterwards.
+        PortableEdition.OverrideForTests(null);
         if (Directory.Exists(_directory))
             Directory.Delete(_directory, true);
     }
@@ -123,11 +126,14 @@ public class PortableEditionInterchangeTests
         // file costs nothing: the installed edition wraps the same file key a second way, so the
         // contents are not re-encrypted and a backup taken before this still opens.
         //
-        // **This exercises the API, not the application.** `WithMachineProtector` is called here
-        // directly because nothing in the save path calls it — see task 7.5. So it proves the
-        // capability is correct and proves nothing about a store ever gaining a protector in
-        // practice, a distinction that hid a real gap until 8.4 was run by hand. Reword when 7.5
-        // lands and the assertion can go through the saver instead.
+        // **This exercises the API directly, and that is now the narrower claim.** It calls
+        // `WithMachineProtector` rather than going through the saver, so it says the capability is
+        // correct and nothing about whether the application uses it. For a long time nothing did,
+        // and this test reading as coverage of that scenario is what hid the gap until 8.4 was run
+        // by hand. The application side is task 7.5, asserted through the saver by
+        // `SavingInsideTheProfileGivesARecoveryOnlyStoreItsMachineProtector` and the three tests
+        // beside it. Both are worth keeping: this one fails if the wrapping breaks, those fail if
+        // nothing calls it.
         Save(machineProtector: false);
         string encryptedPasswordBefore = StoredPasswordCiphertext();
 
@@ -181,8 +187,126 @@ public class PortableEditionInterchangeTests
         });
     }
 
+    [Test]
+    public void SavingInsideTheProfileGivesARecoveryOnlyStoreItsMachineProtector()
+    {
+        // Task 7.5, through the saver. Until this existed, `WithMachineProtector` had no caller in
+        // the application at all: a store that arrived with only a recovery protector — moved in
+        // from outside the profile, written by the portable edition, or migrated before a profile
+        // rebuild — prompted on every open for ever, and nothing could change that.
+        Assert.That(MachineProtectorPolicy.IsInsideUserProfile(_storePath),
+            "the temp directory must be inside the user profile or this asserts nothing");
+
+        PortableEdition.OverrideForTests(false);
+        SaveRecoveryOnlyStore();
+
+        XElement root = XElement.Load(_storePath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(root.Attribute(ConnectionFileKeyProtection.MachineProtectorAttributeName), Is.Not.Null,
+                "the store was entitled to a machine protector and had none");
+            Assert.That(root.Attribute(ConnectionFileKeyProtection.RecoveryProtectorAttributeName), Is.Not.Null,
+                "and the recovery protector is untouched, so every existing copy still opens");
+        });
+
+        // The property that makes adopting safe rather than merely convenient.
+        Assert.That(Connection(Reopen(NeverAsked)).Password, Is.EqualTo("hunter2"));
+    }
+
+    [Test]
+    public void AdoptingKeepsTheStoresOwnKeyAndItsRecoveryPassword()
+    {
+        // Adopting wraps the same file key a second way; it does not rekey the store. The claim is
+        // not that the ciphertext is unchanged — it always changes, because the per-file provider is
+        // AES-GCM with a fresh nonce per encryption and reusing one would be far worse than a churned
+        // file. What must be unchanged is the *key*, and the recovery protector is where that shows:
+        // a new key would force it to be rewrapped.
+        PortableEdition.OverrideForTests(true);
+        SaveRecoveryOnlyStore();
+        string recoveryBefore = XElement.Load(_storePath)
+            .Attribute(ConnectionFileKeyProtection.RecoveryProtectorAttributeName)!.Value;
+
+        PortableEdition.OverrideForTests(false);
+        ConnectionTreeModel opened = Reopen(() => Password("recovery"));
+        new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(opened);
+
+        XElement after = XElement.Load(_storePath);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(after.Attribute(ConnectionFileKeyProtection.MachineProtectorAttributeName), Is.Not.Null,
+                "the store was adopted");
+            Assert.That(after.Attribute(ConnectionFileKeyProtection.RecoveryProtectorAttributeName)!.Value,
+                Is.EqualTo(recoveryBefore),
+                "and the recovery protector was not rewrapped, so it still holds the same key");
+        });
+
+        // Which means every copy taken before the adoption still opens on the same password.
+        RecoveryPasswordSession.Clear();
+        PortableEdition.OverrideForTests(true);
+        Assert.That(Connection(Reopen(() => Password("recovery"))).Password, Is.EqualTo("hunter2"));
+    }
+
+    [Test]
+    public void ThePortableEditionAdoptsNothing()
+    {
+        // The whole point of the edition: there is no account worth binding to on a machine the
+        // application was carried to.
+        PortableEdition.OverrideForTests(true);
+        SaveRecoveryOnlyStore();
+
+        Assert.That(XElement.Load(_storePath)
+            .Attribute(ConnectionFileKeyProtection.MachineProtectorAttributeName), Is.Null);
+    }
+
+    [Test]
+    public void AStoreThatAlreadyHasAMachineProtectorIsLeftAlone()
+    {
+        // Re-wrapping would be harmless but wasteful, and it would churn the file on every save —
+        // a new DPAPI blob each time means every backup differs from the last for no reason.
+        PortableEdition.OverrideForTests(false);
+        Save(machineProtector: true);
+        PortableEdition.OverrideForTests(false);
+        string blobBefore = XElement.Load(_storePath)
+            .Attribute(ConnectionFileKeyProtection.MachineProtectorAttributeName)!.Value;
+
+        ConnectionTreeModel opened = Reopen(NeverAsked);
+        new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(opened);
+
+        Assert.That(XElement.Load(_storePath)
+            .Attribute(ConnectionFileKeyProtection.MachineProtectorAttributeName)!.Value,
+            Is.EqualTo(blobBefore));
+    }
+
+    /// <summary>
+    /// Writes a store carrying only its recovery protector, whatever edition is in force — so the
+    /// saver's decision is the thing under test rather than what the store was built with.
+    /// </summary>
+    private void SaveRecoveryOnlyStore()
+    {
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+        ConnectionTreeModel model = new();
+        RootNodeInfo root = new(RootNodeType.Connection)
+        {
+            StorageFormat = StorageFormatLevel.Hardened,
+            FileKey = ConnectionFileKey.FromBytes(fileKey.Bytes),
+            KeyProtection = ConnectionFileKeyProtection.Create(
+                fileKey, Password("recovery"), includeMachineProtector: false, FastIterations)
+        };
+        root.AddChild(new ConnectionInfo { Name = "server", Password = "hunter2" });
+        model.AddRootNode(root);
+
+        new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(model);
+    }
+
     private void Save(bool machineProtector)
     {
+        // The portable edition is the reason these stores have no machine protector, so say so
+        // rather than relying on the saver not adding one. Since 7.5 it would: the test temp
+        // directory is under the user profile, where the installed edition is entitled to adopt.
+        PortableEdition.OverrideForTests(!machineProtector);
+
         using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
         ConnectionTreeModel model = new();
         RootNodeInfo root = new(RootNodeType.Connection)

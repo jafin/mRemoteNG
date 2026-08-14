@@ -8,6 +8,7 @@ using mRemoteNG.Config.DataProviders;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
+using mRemoteNG.Security.FileProtection;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
@@ -41,6 +42,8 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
 
             ICryptographyProvider cryptographyProvider = BuildProvider(rootNode);
 
+            AdoptMachineProtectorIfDue(rootNode);
+
             Serializers.ISerializer<Connection.ConnectionInfo, string> xmlConnectionsSerializer = XmlConnectionSerializerFactory.Build(cryptographyProvider, connectionTreeModel, _saveFilter, Properties.OptionsSecurityPage.Default.EncryptCompleteConnectionsFile);
             string xml = xmlConnectionsSerializer.Serialize(rootNode);
 
@@ -57,6 +60,59 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
             Runtime.MessageCollector?.AddExceptionStackTrace("SaveToXml failed", ex);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Gives a store its machine-bound protector when it has none and is entitled to one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Task 7.5. Three ordinary situations leave a store with only its recovery protector on a
+    /// machine where the user is entitled to a silent open: a file migrated outside the user profile
+    /// and later moved inside, a portable file opened by the installed edition, and a store migrated
+    /// before a profile rebuild. Without this each of them prompts for the recovery password on
+    /// every open, for ever, with nothing the user can do about it.
+    /// </para>
+    /// <para>
+    /// It costs nothing to fix. The file key is already unwrapped by the time anything is saved, so
+    /// this wraps that same key a second way — the contents are not re-encrypted, and a rolling
+    /// backup taken beforehand still opens on the recovery password.
+    /// </para>
+    /// <para>
+    /// <b>Silent, and that is task 7.6's answer.</b> It weakens nothing: the recovery protector
+    /// stays exactly as it was, so every copy of the file remains openable everywhere it was before.
+    /// It is also within what the user already agreed to — they chose to protect this store with a
+    /// per-file key, and this is that same key wrapped for the account already reading it. Asking
+    /// would be asking whether they want the thing they asked for. It is reported to the message
+    /// collector rather than being invisible.
+    /// </para>
+    /// <para>
+    /// <b>The mirror case is deliberately not implemented.</b> A store that moves *out* of the
+    /// profile keeps the protector it has. Removing one is a different act from adding one: adding
+    /// only ever removes a prompt, while removing costs the owner their silent open, and on a file
+    /// several people share it would be one member's save quietly changing protection for everyone.
+    /// It is also unnecessary for correctness — a machine protector nobody else can use costs them a
+    /// fallback, which is what they already have. If it is ever wanted it should be a decision the
+    /// user sees, not a side effect of saving.
+    /// </para>
+    /// </remarks>
+    private void AdoptMachineProtectorIfDue(RootNodeInfo rootNode)
+    {
+        if (rootNode.KeyProtection is null || rootNode.FileKey is null)
+            return;
+
+        if (rootNode.KeyProtection.HasMachineProtector)
+            return;
+
+        if (!MachineProtectorPolicy.ShouldWriteMachineProtector(_connectionFileName, Runtime.IsPortableEdition))
+            return;
+
+        rootNode.KeyProtection = rootNode.KeyProtection.WithMachineProtector(rootNode.FileKey);
+
+        Runtime.MessageCollector?.AddMessage(Messages.MessageClass.InformationMsg,
+            $"Connection file '{_connectionFileName}' can now be opened on this Windows account " +
+            "without its recovery password. The recovery password still works, everywhere it did before.",
+            true);
     }
 
     /// <summary>
