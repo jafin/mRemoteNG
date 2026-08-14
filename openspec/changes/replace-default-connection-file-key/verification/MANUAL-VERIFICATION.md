@@ -76,7 +76,7 @@ message that is written there rather than shown in a dialog. `%APPDATA%\mRemoteN
 | For | Command | Lands in |
 |---|---|---|
 | 8.4–8.7, 8.9 | `pwsh -File build.ps1` | `mRemoteNG\bin\x64\Release\` |
-| 8.8 | an older build that **has the backup walk** — the nightly, or a v1.79.0+ tag | anywhere separate |
+| 8.8 | **1.77.3**, the newest published release | anywhere separate |
 
 > **One build now serves both editions.** The edition is decided by a `portable.flag` file beside the
 > executable, not by how the binary was compiled, so 8.7 needs no second build:
@@ -294,20 +294,25 @@ their file was recovered.
 own never reaches the walk, and would pass this section while the actual defect went unseen. A mixed
 set is the normal state: migration leaves the pre-migration rolling backups in place.
 
-**Which older build is used decides whether this section tests anything at all.**
+**Use a build users can actually have.** The newest published release is **1.77.3**; v1.79.0 through
+v1.82.0 are tags in this repository, not downloads. Testing against an unreleased tag would be
+testing a downgrade path nobody can take.
 
-| Build | Backup walk | Knows the sentinel | Useful here |
-|---|---|---|---|
-| 1.77.3 and earlier | **no** | no | refusal only — there is no walk to misfire |
-| v1.79.0 – v1.82.0, and the rolling **nightly** | **yes** | no | **this is the one that matters** |
+| Build | Backup walk | Knows the sentinel |
+|---|---|---|
+| 1.77.3 — newest published | **no** | no |
+| v1.79.0 – v1.82.0 — tags only, unreleased | yes | no |
 
-`TryRecoverFromBackup` arrived in February 2026, years after 1.77.3. An older build without it can
-only refuse, so a clean result there is real but narrow: it says nothing about the walk. The nightly
-is published, carries the walk, and is what a user of this fork would actually downgrade to.
+The dangerous combination is *a published build with the backup walk and without the sentinel*, and
+it has never existed: `TryRecoverFromBackup` arrived in February 2026, years after 1.77.3, and
+nothing carrying it has shipped. So 1.77.3 can only refuse, which is exactly what this section needs
+it to do.
 
-Get the **nightly**, or build a tag that has it — `git worktree add ../mrng-old v1.82.0` then
-`build.ps1` in that worktree. Unpack somewhere separate; it keeps its settings beside its own
-executable, so it will not disturb anything.
+**Re-run this if that ever stops being true** — if a nightly or any v1.79.0+ build is published
+before this change ships, the combination becomes live and the walk needs testing against it.
+
+Download 1.77.3 and unpack it somewhere separate; it keeps its settings beside its own executable,
+so it will not disturb anything.
 
 ```powershell
 # A copy of the WHOLE folder: the migrated store and every .backup beside it.
