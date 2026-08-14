@@ -1,6 +1,6 @@
 param(
     [switch]$SelfContained,
-    [switch]$Portable,     # Self-contained + PORTABLE flag (settings in app folder, embeds .NET runtime)
+    [switch]$Portable,     # Self-contained + portable.flag marker (settings in app folder, embeds .NET runtime)
     [switch]$Rebuild,
     [switch]$NoRestore,    # Skip dotnet restore (use for fast incremental builds)
     [string]$Configuration = "Release",
@@ -61,12 +61,39 @@ $env:MSBUILDDISABLENODEREUSE = '1'
 $timer = [System.Diagnostics.Stopwatch]::StartNew()
 
 if ($Portable) {
-    Write-Host "Building portable edition ($Arch, self-contained + PORTABLE flag)..."
+    Write-Host "Building portable edition ($Arch, self-contained + portable.flag marker)..."
     if (-not $NoRestore) {
         dotnet restore $sln --runtime $rid
     }
+    # No -p:DefineConstants=PORTABLE. The edition is decided at runtime by the marker file written
+    # below, not by how the assembly was compiled -- see mRemoteNG\App\Info\PortableEdition.cs.
+    # Passing it here also *replaced* the whole constant list, quietly dropping TRACE and RELEASE.
     # PublishReadyToRun=false avoids NETSDK1094 crossgen2 issue; startup impact is negligible.
-    msbuild $sln -m -nodeReuse:false "-verbosity:minimal" "-p:Configuration=Release" "-p:Platform=$platform" "-p:DefineConstants=PORTABLE" "-p:SelfContained=true" "-p:RuntimeIdentifier=$rid" "-p:PublishReadyToRun=false" "-p:SignAssembly=false" "-p:PublishDir=bin\$platform\Portable\" -t:Publish
+    msbuild $sln -m -nodeReuse:false "-verbosity:minimal" "-p:Configuration=Release" "-p:Platform=$platform" "-p:SelfContained=true" "-p:RuntimeIdentifier=$rid" "-p:PublishReadyToRun=false" "-p:SignAssembly=false" "-p:PublishDir=bin\$platform\Portable\" -t:Publish
+
+    # This file is what makes the build portable. Without it the same binaries are the installed
+    # edition: settings under %APPDATA%, and connection files given a machine-bound protector.
+    # Its contents are never read -- presence is the whole signal -- so the text is for whoever
+    # opens it wondering what it is.
+    $portableDir = Join-Path $PSScriptRoot "mRemoteNG\bin\$platform\Portable"
+    if (Test-Path $portableDir) {
+        $markerText = @(
+            'This file marks the portable edition of mRemoteNG.'
+            ''
+            'While it sits beside mRemoteNG.exe, settings, logs and layouts are kept in this folder'
+            'rather than under %APPDATA%, and connection files are protected by their recovery'
+            'password alone -- a Windows-account-bound protector cannot follow the application to'
+            'another machine, which is the point of this edition.'
+            ''
+            'Delete it to run the same binaries as the installed edition. The contents of this file'
+            'are never read; only whether it exists, and only at startup.'
+        ) -join [Environment]::NewLine
+        Set-Content -Path (Join-Path $portableDir 'portable.flag') -Value $markerText -Encoding utf8
+        Write-Host "Wrote portable.flag marker" -ForegroundColor DarkGray
+    } else {
+        Write-Warning "Portable output folder not found; portable.flag was NOT written. The build will run as the INSTALLED edition."
+    }
+
     Write-Host "Portable output: mRemoteNG\bin\$platform\Portable\" -ForegroundColor Green
 } elseif ($SelfContained) {
     Write-Host "Building self-contained $Arch (embedded .NET runtime)..."

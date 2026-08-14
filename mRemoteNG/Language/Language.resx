@@ -3108,7 +3108,7 @@ Accept the new key and continue connecting?</value>
     <value>Classic stores can be opened by upstream mRemoteNG. Hardened stores cannot.</value>
   </data>
   <data name="StorageFormatAlreadyHardened" xml:space="preserve">
-    <value>This store already uses the hardened format. Use Export to File to produce a copy that upstream mRemoteNG can open.</value>
+    <value>This store already uses the hardened format and is protected by a key of its own, so there is nothing further to harden. Use Export to File to produce a copy that upstream mRemoteNG can open.</value>
   </data>
   <data name="StorageFormatMenuItem" xml:space="preserve">
     <value>Storage &amp;Format...</value>
@@ -3133,6 +3133,14 @@ Keep it somewhere other than this computer. It is the only way back if this Wind
     <value>This connection file is outside your user profile, so it may be shared with other people or kept on a network location.
 
 It will be protected by the recovery password alone. The automatic unlock is tied to a single Windows account, and on a shared file it would work for one person and ask everyone else for the password on every open. Everyone who uses this file will need the recovery password.</value>
+  </data>
+  <data name="StorageFormatDeclined" xml:space="preserve">
+    <value>The storage format was not changed. The connection file is unchanged and still opens as it did before, here and in the other applications that read it.</value>
+  </data>
+  <data name="StorageFormatDeclinedLegacyKey" xml:space="preserve">
+    <value>One thing is worth knowing about the file as it stands. Because no master password is set on it, it is encrypted with a fixed key that is built into mRemoteNG and published in its source code, where anyone can read it.
+
+That means the encryption stops nobody: whoever obtains a copy of this file — from a backup, a synchronised folder, a shared drive, or a stolen disk — can read every password stored in it. Hardening the storage format is what replaces that key with one belonging to this file alone. Setting a master password also replaces it.</value>
   </data>
   <data name="StorageFormatUpgradeTitle" xml:space="preserve">
     <value>Harden Storage Format</value>

@@ -109,6 +109,62 @@ public static class StorageFormatUpgrade
     }
 
     /// <summary>
+    /// What the user is told after declining, whether they declined the format or only the recovery
+    /// password that hardening a connection file requires.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Declining is a legitimate answer and this does not argue with it. What it refuses to do is
+    /// leave the user believing the file they kept is protected. Until this change the application
+    /// said nothing at all here, and silence after a security question reads as reassurance.
+    /// </para>
+    /// <para>
+    /// The sentence about the published key is only said when it is <i>true</i>, which is why
+    /// <paramref name="storeIsKeyedOnThePublishedDefault"/> exists rather than being assumed from the
+    /// store still being classic. A classic store with a master password is encrypted under that
+    /// password; telling its owner their key is published in our source would be false, and a warning
+    /// that turns out to be false is worth less than no warning.
+    /// </para>
+    /// <para>
+    /// It is not gated on the portable edition either, though task 7.2 is where it was written. The
+    /// key is equally published for both editions, and the difference is only that portable has no
+    /// machine protector to offer as the easy answer — so a portable user is likelier to arrive here.
+    /// Saying it to installed users too costs nothing and is the same truth.
+    /// </para>
+    /// </remarks>
+    /// <param name="recoveryPasswordDeclined">
+    /// <see langword="true"/> when the format was accepted and the recovery password was not, which
+    /// leaves the store exactly as classic as an outright refusal but for a reason the user should
+    /// hear back, since they may have thought they had hardened it.
+    /// </param>
+    public static string BuildDeclineExplanation(bool recoveryPasswordDeclined,
+                                                 bool storeIsKeyedOnThePublishedDefault)
+    {
+        string explanation = recoveryPasswordDeclined
+            ? Language.RecoveryPasswordDeclined
+            : Language.StorageFormatDeclined;
+
+        if (storeIsKeyedOnThePublishedDefault)
+            explanation += Environment.NewLine + Environment.NewLine + Language.StorageFormatDeclinedLegacyKey;
+
+        return explanation;
+    }
+
+    /// <summary>
+    /// Whether this store is still encrypted under <c>ConnectionFileDefaults.LegacyEncryptionKey</c>
+    /// — the constant this whole change exists to stop writing.
+    /// </summary>
+    /// <remarks>
+    /// The same comparison <c>XmlRootNodeSerializer</c> makes to choose the sentinel, so what the
+    /// user is told and what the writer does cannot disagree. A store holding key protectors is
+    /// excluded outright: its contents are keyed on its own random key, and
+    /// <see cref="RootNodeInfo.PasswordString"/> is not what opens it.
+    /// </remarks>
+    public static bool StoreIsKeyedOnThePublishedDefault(RootNodeInfo rootNode) =>
+        rootNode.KeyProtection is null &&
+        string.Equals(rootNode.PasswordString, rootNode.DefaultPassword, StringComparison.Ordinal);
+
+    /// <summary>
     /// The confirmation's command buttons, in the order <see cref="StorageFormatUpgradeChoice"/>
     /// reads them back, as the pipe-delimited list the task dialog expects.
     /// </summary>
@@ -150,4 +206,22 @@ public static class StorageFormatUpgrade
         rootNode.StorageFormat = StorageFormatLevel.Hardened;
         return true;
     }
+
+    /// <summary>
+    /// Whether the confirmation left something that has to be written to the store.
+    /// </summary>
+    /// <remarks>
+    /// Raising the level is not the only thing that can change, and <see cref="Apply"/> only reports
+    /// on the level — which is all it applies. A connection file already at the hardened level that
+    /// has just been given a random key and two protectors has changed a great deal and gets
+    /// <see langword="false"/> from <see cref="Apply"/>. Deciding from that alone leaves the
+    /// protectors in memory, never written, on precisely the stores that most needed them: the ones
+    /// hardened before per-file keys existed, still encrypted under the published default constant.
+    /// </remarks>
+    /// <param name="wasAlreadyProtected">
+    /// Read <em>before</em> protection is established, since establishing it is what changes the
+    /// answer.
+    /// </param>
+    public static bool ConfirmationChangedTheStore(bool levelWasRaised, bool wasAlreadyProtected) =>
+        levelWasRaised || !wasAlreadyProtected;
 }

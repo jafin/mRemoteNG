@@ -220,6 +220,32 @@ jobs:
               Remove-Item -Force $_.FullName
             }
 
+          # The self-contained download is described in the release notes as "Portable, no
+          # installation required", and since the PORTABLE compile constant was retired the edition
+          # is decided at runtime by this marker beside the executable. Without it these binaries are
+          # the installed edition: settings under %APPDATA%, and connection files given a
+          # Windows-account-bound protector that cannot follow the application to another machine.
+          #
+          # Written here rather than into the build output on purpose. The framework-dependent leg
+          # packages bin\<platform>\Release, and step (09a) harvests that same folder into the MSI —
+          # so a marker placed there would ship inside the installer and make an installed
+          # application behave as a portable one. The publish subfolder is used by this leg alone.
+          if ('${{ matrix.selfcontained }}' -eq 'true') {
+            $marker = Join-Path $sourceDir 'portable.flag'
+            @(
+              'This file marks the portable edition of mRemoteNG.'
+              ''
+              'While it sits beside mRemoteNG.exe, settings, logs and layouts are kept in this folder'
+              'rather than under %APPDATA%, and connection files are protected by their recovery'
+              'password alone -- a Windows-account-bound protector cannot follow the application to'
+              'another machine, which is the point of this edition.'
+              ''
+              'Delete it to run the same binaries as the installed edition. The contents of this file'
+              'are never read; only whether it exists, and only at startup.'
+            ) -join "`r`n" | Set-Content -Path $marker -Encoding utf8
+            Write-Host "Wrote portable.flag for the self-contained package"
+          }
+
           # Exclude build intermediates + Settings folder from ZIP
           $items = Get-ChildItem -Path $sourceDir | Where-Object { $_.Name -notin @('ref','publish','win-x64','win-x86','win-arm64','win-x64-sc','Settings') }
           $zipPath = "$Env:GITHUB_WORKSPACE\${{ steps.version.outputs.zipname }}"
@@ -246,6 +272,30 @@ jobs:
             exit 1
           }
           Write-Host "Sanity check passed: no Settings/confCons/backup entries in ZIP"
+
+          # The edition each package ships as, asserted rather than assumed. Getting this wrong is
+          # silent at build time and visible to users only as settings in the wrong place, or as a
+          # password prompt on every open of a connection file that should not need one — which is
+          # exactly how every artefact came to be the portable edition unnoticed.
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)
+          try {
+            $hasMarker = @($archive.Entries | Where-Object { $_.FullName -eq 'portable.flag' }).Count -gt 0
+          }
+          finally { $archive.Dispose() }
+
+          if ('${{ matrix.selfcontained }}' -eq 'true') {
+            if (-not $hasMarker) {
+              Write-Error "Self-contained ZIP has no portable.flag, so it would run as the installed edition despite being published as portable."
+              exit 1
+            }
+            Write-Host "Edition check passed: self-contained ZIP carries portable.flag"
+          } else {
+            if ($hasMarker) {
+              Write-Error "Framework-dependent ZIP carries portable.flag. That folder is also harvested into the MSI, so an installed application would behave as a portable one."
+              exit 1
+            }
+            Write-Host "Edition check passed: framework-dependent ZIP carries no portable.flag"
+          }
 
       - name: (09a) Build MSI installer
         if: matrix.platform == 'x64' && matrix.selfcontained == false

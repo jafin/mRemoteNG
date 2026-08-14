@@ -34,17 +34,11 @@ public static class Runtime
     /// </summary>
     public static bool IsDevMode => DevLog.IsEnabled;
 
-    public static bool IsPortableEdition
-    {
-        get
-        {
-#if PORTABLE
-            return true;
-#else
-                return false;
-#endif
-        }
-    }
+    /// <summary>
+    /// Whether this installation is the portable edition. See <see cref="Info.PortableEdition"/> for
+    /// how that is decided and why it is no longer decided by the compiler.
+    /// </summary>
+    public static bool IsPortableEdition => Info.PortableEdition.IsPortable;
 
     /// <summary>
     /// Feature flag to enable the credential manager feature

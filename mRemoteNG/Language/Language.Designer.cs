@@ -8798,6 +8798,24 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string similar to The storage format was not changed.
+        /// </summary>
+        internal static string StorageFormatDeclined {
+            get {
+                return ResourceManager.GetString("StorageFormatDeclined", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string stating that the file is still encrypted with a key published in this application's source.
+        /// </summary>
+        internal static string StorageFormatDeclinedLegacyKey {
+            get {
+                return ResourceManager.GetString("StorageFormatDeclinedLegacyKey", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Storage &amp;Format....
         /// </summary>
         internal static string StorageFormatMenuItem {

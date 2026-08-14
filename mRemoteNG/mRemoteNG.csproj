@@ -42,28 +42,27 @@
     <NeutralLanguage>en</NeutralLanguage>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x86'">
-    <DefineConstants>DEBUG;PORTABLE</DefineConstants>
+    <DefineConstants>DEBUG</DefineConstants>
     <OutputPath>bin\x86\Debug\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <Optimize>False</Optimize>
     <WarningLevel>8</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">
-    <DefineConstants>DEBUG;PORTABLE</DefineConstants>
+    <DefineConstants>DEBUG</DefineConstants>
     <OutputPath>bin\x64\Debug\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <Optimize>False</Optimize>
     <WarningLevel>8</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug|arm64'">
-    <DefineConstants>DEBUG;PORTABLE</DefineConstants>
+    <DefineConstants>DEBUG</DefineConstants>
     <OutputPath>bin\arm64\Debug\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <Optimize>False</Optimize>
     <WarningLevel>8</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x86'">
-    <DefineConstants>PORTABLE</DefineConstants>
     <Optimize>True</Optimize>
     <OutputPath>bin\x86\Release\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
@@ -71,7 +70,6 @@
     <ResolveComReferenceSilent>True</ResolveComReferenceSilent>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|x64'">
-    <DefineConstants>PORTABLE</DefineConstants>
     <Optimize>True</Optimize>
     <OutputPath>bin\x64\Release\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
@@ -79,7 +77,6 @@
     <ResolveComReferenceSilent>True</ResolveComReferenceSilent>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release|arm64'">
-    <DefineConstants>PORTABLE</DefineConstants>
     <Optimize>True</Optimize>
     <OutputPath>bin\arm64\Release\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
@@ -87,28 +84,27 @@
     <ResolveComReferenceSilent>True</ResolveComReferenceSilent>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Portable|x86'">
-    <DefineConstants>DEBUG;PORTABLE</DefineConstants>
+    <DefineConstants>DEBUG</DefineConstants>
     <Optimize>False</Optimize>
     <OutputPath>bin\x86\Debug Portable\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <WarningLevel>8</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Portable|x64'">
-    <DefineConstants>DEBUG;PORTABLE</DefineConstants>
+    <DefineConstants>DEBUG</DefineConstants>
     <Optimize>False</Optimize>
     <OutputPath>bin\x64\Debug Portable\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <WarningLevel>8</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Debug Portable|arm64'">
-    <DefineConstants>DEBUG;PORTABLE</DefineConstants>
+    <DefineConstants>DEBUG</DefineConstants>
     <Optimize>False</Optimize>
     <OutputPath>bin\arm64\Debug Portable\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
     <WarningLevel>8</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Portable|x86'">
-    <DefineConstants>PORTABLE</DefineConstants>
     <Optimize>True</Optimize>
     <OutputPath>bin\x86\Release Portable\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
@@ -116,7 +112,6 @@
     <ResolveComReferenceSilent>True</ResolveComReferenceSilent>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Portable|x64'">
-    <DefineConstants>PORTABLE</DefineConstants>
     <Optimize>True</Optimize>
     <OutputPath>bin\x64\Release Portable\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
@@ -124,7 +119,6 @@
     <ResolveComReferenceSilent>True</ResolveComReferenceSilent>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Portable|arm64'">
-    <DefineConstants>PORTABLE</DefineConstants>
     <Optimize>True</Optimize>
     <OutputPath>bin\arm64\Release Portable\</OutputPath>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
@@ -132,7 +126,7 @@
     <ResolveComReferenceSilent>True</ResolveComReferenceSilent>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Self-Contained|x64'">
-    <DefineConstants>PORTABLE;SELF_CONTAINED</DefineConstants>
+    <DefineConstants>SELF_CONTAINED</DefineConstants>
     <Optimize>True</Optimize>
     <PublishDir>bin\x64\Portable\</PublishDir>
     <GenerateAssemblyInfo>False</GenerateAssemblyInfo>
@@ -147,7 +141,7 @@
     <RunArguments></RunArguments>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)'=='Release Self-Contained|arm64'">
-    <DefineConstants>PORTABLE;SELF_CONTAINED</DefineConstants>
+    <DefineConstants>SELF_CONTAINED</DefineConstants>
     <Optimize>True</Optimize>
     <OutputPath>bin\arm64\Release Self-Contained\</OutputPath>
     <PublishDir>bin\arm64\Portable\</PublishDir>

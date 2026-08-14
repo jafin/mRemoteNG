@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security;
 using System.Xml.Linq;
+using mRemoteNG.App.Info;
 using mRemoteNG.Config.Connections;
 using mRemoteNG.Config.Serializers;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
@@ -48,6 +49,8 @@ public class PerFileKeyStoreRoundTripTests
     public void Teardown()
     {
         RecoveryPasswordSession.Clear();
+        // Static, so leaving it set would decide the edition for every test that ran afterwards.
+        PortableEdition.OverrideForTests(null);
         if (Directory.Exists(_directory))
             Directory.Delete(_directory, true);
     }
@@ -375,6 +378,13 @@ public class PerFileKeyStoreRoundTripTests
     private static (ConnectionTreeModel Model, ConnectionFileKey Key) ProtectedStore(
         string name, string password, bool machineProtector = true)
     {
+        // A store with no machine protector is one `MachineProtectorPolicy` declined, and since 7.5
+        // the saver adopts one when the policy would allow it. The test temp directory lives under
+        // the user profile, so without saying which edition this is, the store built here is not the
+        // store that reaches disk.
+        if (!machineProtector)
+            PortableEdition.OverrideForTests(true);
+
         ConnectionFileKey fileKey = ConnectionFileKey.Generate();
         ConnectionTreeModel model = new();
         RootNodeInfo root = new(RootNodeType.Connection)

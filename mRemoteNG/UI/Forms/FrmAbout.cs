@@ -51,8 +51,11 @@ public partial class frmAbout : BaseWindow
         AddPortableString();
     }
 
-    [Conditional("PORTABLE")]
-    private void AddPortableString() => lblTitle.Text += $@" {Language.PortableEdition}";
+    private void AddPortableString()
+    {
+        if (App.Runtime.IsPortableEdition)
+            lblTitle.Text += $@" {Language.PortableEdition}";
+    }
 
     private new void ApplyTheme()
     {

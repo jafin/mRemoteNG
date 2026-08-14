@@ -80,6 +80,44 @@ reused elsewhere living longer than it needs to.
 Fixing it means deciding what "locked" means for a store with no master password, which is a change
 to `AutoLockEnabled` affecting behaviour outside this proposal. Recorded rather than folded in.
 
+### Defect found running 8.4: a store already at the hardened level can never be given a per-file key
+
+**This blocks the change and must be fixed before it ships.** Both routes to the offer test the
+*level*, and a store raised to `Hardened` by `add-storage-format-opt-in` before this change existed
+has no per-file key:
+
+| Route | Condition | Result on such a store |
+|---|---|---|
+| Automatic | `StorageFormatOffer.ShouldOffer` requires `level == Classic` | never offered |
+| File menu | `StorageFormatCoordinator.AskOnRequest` returns early on `level == Hardened` | *"This store already uses the hardened format."* |
+
+So the users who took the **earlier** security upgrade are the only ones who cannot take this one,
+and the application tells them there is nothing left to do. Confirmed on a real store: `Hardened`,
+`KdfPrf=SHA256`, `KdfIterations=600000`, **no protectors**, and `check-legacy-key.py` recovers every
+stored password under `mR3m`. The hardened KDF stretches the published constant beautifully and
+changes nothing about who can read the file.
+
+- [x] 5.9 Make both routes test whether the store has a per-file key, not what level it declares. `Hardened` without `KeyProtection` is an unfinished migration, not a finished one. — `StorageFormatOffer.IsFullyHardened(level, storeKind, hasPerFileKey)`, used by `ShouldOffer` and by `AskOnRequest`. The store kind is a parameter rather than an assumption: a SQL database has no per-file key by design, so for that kind the level really is the whole answer, and the fix is a second condition rather than dropping the level test.
+- [x] 5.10 Decide what the confirmation says in that case. — **Reused unchanged, on the user's call, and recorded as owing a revisit.** The text still trades upstream compatibility for hardening, which a store at this level has already spent, so it overstates what is being given up. It does not overstate what is gained, and it asks for the recovery password the migration genuinely needs. Wrong in the safe direction, and worth its own wording pass before release.
+- [x] 5.11 Fix `Language.StorageFormatAlreadyHardened`, which is the sentence that sends these users away. — Now names the key rather than only the format, and says there is nothing further to harden. With 5.9's gate in place that claim is finally true when it is shown.
+- [x] 5.12 Tests: a store at `Hardened` with no `KeyProtection` is offered the per-file key by both routes; one that already has protectors is not offered again; a `Classic` store is unaffected. — `StorageFormatOfferTests`, plus `AStoreAlreadyAtTheHardenedLevelCanStillBeGivenAKey` showing nothing in `Establish` ever depended on the level, which is what makes the gate the whole fix.
+- [x] 5.13 **Found by 5.9, and the more dangerous half.** `StorageFormatUpgrade.Apply` answers "was the level raised", and `StorageFormatUpgradePrompt.Confirm` returned that answer to a caller that saves only when it is true. For a store already at the hardened level the answer is *no* — while a random key and two protectors had just been created for it. Fixing the gate alone would have walked the user through the whole migration and written none of it, on exactly the stores that most needed it. `ConfirmationChangedTheStore(levelWasRaised, wasAlreadyProtected)` is the corrected decision, kept as a named function so the trap is documented rather than inlined.
+
+This is what §8 is for. Nothing in the suite covered it, because every test that builds a hardened
+store builds one **with** protectors — the combination that only exists in the wild, on files
+written by a shipped release, is the combination nothing exercised. 5.13 is the sharper lesson: the
+defect the manual run exposed was hiding a second one that no amount of staring at the gate would
+have shown.
+
+### Defect found in the same session: the confirmation stacked on screen
+
+- [x] 5.14 Guard `StorageFormatCoordinator` against re-entry. — `OfferIfDue` is posted from **every** `ConnectionsLoaded`, and the store reloads for reasons that have nothing to do with the user: an external edit to the file, a recovery from backup, a switch between files. A `BeginInvoke` callback still runs while a modal dialog is pumping messages, so each reload stacked another confirmation on top of the last and the user was asked a question they could not answer once. One flag covers `OfferIfDue` and `AskOnRequest` together, because the stacking case is an automatic offer landing on a confirmation the user opened deliberately — a per-method guard would not have caught it. UI thread only, so a plain field rather than a lock that would imply contention that cannot happen.
+
+Reported from the manual run, triggered by editing `confCons.xml` while the application had it open —
+which is exactly the file-watcher path. Not reproducible in the suite: it needs a modal message pump,
+and a test that opened one would be the interactive test this project forbids. Verified by inspection
+of the call path and by the reporter.
+
 ## 6. Backups and recovery
 
 - [x] 6.1 Leave `FileBackupCreator.CreateBackupFile` as a `File.Copy` — decided, see design.md. A copy carrying both protectors is already restorable anywhere, and rewrapping per backup would put key handling into the one mechanism whose value is that it cannot go wrong. Add a test asserting a copy restores, rather than assuming it. — Unchanged, and `APlainCopyOfAProtectedStoreStillOpens` now asserts the property the decision rests on instead of assuming it.
@@ -90,19 +128,98 @@ to `AutoLockEnabled` affecting behaviour outside this proposal. Recorded rather 
 
 ## 7. Portable edition
 
-- [ ] 7.1 Gate the machine-bound protector on `Runtime.IsPortableEdition` so portable writes only the recovery-password protector.
-- [ ] 7.2 On decline, state plainly that the file is protected by a key published in the application's source.
-- [ ] 7.3 Tests: portable never writes a machine-bound protector; a portable file opens on a second machine.
-- [ ] 7.4 Tests: an installed file opens in the portable edition with its recovery password, and a portable file opens in the installed edition. The two editions must not produce a format split.
+- [x] 7.1 Gate the machine-bound protector on `Runtime.IsPortableEdition` so portable writes only the recovery-password protector. — Already delivered, by `MachineProtectorPolicy.ShouldWriteMachineProtector`, which the shared-store answer in §5 made load-bearing before §7 was reached. The portable branch is the unconditional half of it: `!isPortableEdition && IsInsideUserProfile(storePath)`, so portable is refused the protector even for a file inside the profile — which is the case a location-only rule would have got wrong, since a stick mounted at `C:\Users\...` is still a stick.
+- [x] 7.2 On decline, state plainly that the file is protected by a key published in the application's source. — `StorageFormatUpgrade.BuildDeclineExplanation`, shown from both routes that end in an unhardened store: declining the format outright, and accepting it but not setting a recovery password. The application said **nothing at all** on either path before, and silence after a security question reads as reassurance. Two limits are deliberate. It is said only when it is true — a classic store with a master password is encrypted under that password, and a false warning is worth less than none, so `StoreIsKeyedOnThePublishedDefault` reads the store rather than assuming from the level. And it is not gated on the portable edition despite living in §7: the key is equally published for both, and portable is merely where users are likeliest to arrive, having no machine protector offered as the easy answer.
+- [x] 7.3 Tests: portable never writes a machine-bound protector; a portable file opens on a second machine. — `PortableEditionInterchangeTests`, on the file rather than on the policy: no machine attribute under any spelling (an empty one would read back as a protector that always fails), and the store opens on the recovery password with exactly one prompt. **The second machine is a proxy and the test says so.** It cannot be run on one machine; what is asserted is the property that makes it true — a file with nothing bound to this machine has nothing that could fail on another. Carrying a real stick to a real second machine stays task 8.7.
+- [x] 7.4 Tests: an installed file opens in the portable edition with its recovery password, and a portable file opens in the installed edition. The two editions must not produce a format split. — Both directions, plus the split itself asserted directly: same declared level, and exactly one attribute of difference in each direction — the optional machine protector out, nothing invented in. The installed-file-in-portable case replaces the machine blob with one this account cannot unwrap, which is what a portable edition sees of it wherever it runs, and the prompt count is what proves the recovery protector carried the open rather than DPAPI quietly succeeding. The reverse direction goes further than the task asks and asserts what adopting a portable file costs: `WithMachineProtector` wraps the same file key a second way, so the stored ciphertext is byte-identical afterwards and a backup taken before it still opens.
+
+**Not part of §7, and worth stating because §7 is where a reader would look for it.** The portable
+edition still keeps `mR3m` if the user declines, exactly as the installed edition does. 7.2 makes
+that honest rather than silent; it does not make it good. The reason portable cannot do better is
+the reason it has no machine protector at all — there is no account to bind to — so its only
+protection is a password, and a password nobody chose to set is no password.
+
+### Defect found running 8.4: nothing ever adds a machine protector to an existing store
+
+**My own 7.4 test hid this, and that is the part worth learning from.**
+`ConnectionFileKeyProtection.WithMachineProtector` exists, is correct, and is covered — and has **no
+caller anywhere in the application**. `APortableStoreOpensInTheInstalledEditionAndCanBeGivenAMachineProtector`
+calls it directly, so it proves the *capability* and says nothing about whether anything uses it. The
+spec scenario it was written against says "a machine-bound protector **may be added** when it is next
+saved", and nothing adds one, ever.
+
+Reachable three ways, none exotic:
+
+| Case | Today |
+|---|---|
+| A store migrated outside the profile, later moved inside | prompts on every open, forever |
+| A portable file opened by the installed edition | prompts on every open, forever |
+| A store migrated before a profile rebuild | recovery password every time, forever |
+
+Each is a store whose owner is entitled to a silent open on this machine and never gets one. The key
+is already unwrapped at that point, so adding the protector costs nothing and re-encrypts nothing —
+which is exactly what 3.4 built `WithMachineProtector` for.
+
+- [x] 7.5 On save, add a machine protector when the store has none and `MachineProtectorPolicy` says it should. — `XmlConnectionsSaver.AdoptMachineProtectorIfDue`, which is the only place that knows both the store's protection and the path the policy needs. The file key is already unwrapped by the time anything is saved, so it wraps that same key a second way rather than rekeying: the recovery protector is left byte-identical, which is what proves the key did not change.
+- [x] 7.6 Decide whether that is silent. — **Silent, reported to the message collector rather than to a dialog.** It weakens nothing: the recovery protector is untouched, so every copy of the file still opens everywhere it did. It is also inside what the user already agreed to — they chose to protect this store with a per-file key, and this is that key wrapped for the account already reading it; asking would be asking whether they want the thing they asked for. **The mirror case is deliberately not implemented**: a store that moves *out* of the profile keeps its protector. Removing is not the reverse of adding — adding only ever removes a prompt, while removing costs the owner their silent open and, on a shared file, would be one member's save quietly changing protection for everyone. If it is ever wanted it should be a decision the user sees rather than a side effect of saving.
+- [x] 7.7 Tests through the **saver**, not through `WithMachineProtector`. — Four in `PortableEditionInterchangeTests`: a recovery-only store saved inside the profile gains the protector and then opens with no prompt; the portable edition adopts nothing; a store that already has one is not re-wrapped, which would churn the file and every backup of it; and adoption keeps the store's own key. **The task asked for byte-identical contents and that assertion was wrong** — the per-file provider is AES-GCM with a fresh nonce per encryption, so ciphertext changes on every save and must, since reusing a nonce is far worse than a churned file. What is actually observable is the *recovery protector* being unchanged, because a new key would force it to be rewrapped. Confirmed non-vacuous: removing the call from the saver fails two of the four.
+- [x] 7.8 Correct the comment on `APortableStoreOpensInTheInstalledEditionAndCanBeGivenAMachineProtector`. — It now says plainly that it calls the API directly and claims nothing about the application, and points at the saver tests that do. Both are kept: this one fails if the wrapping breaks, those fail if nothing calls it. **Eleven existing tests also had to change**, and that is worth recording rather than tidying away — they built recovery-only stores in a temp directory that lives under the user profile, so with 7.5 in place the store they saved was no longer the store they built. They now declare which edition they are testing instead of relying on the saver never acting.
+
+The spec scenario stays as written — "may be added" is the behaviour that is wanted, and it is now
+recorded as unimplemented rather than quietly read as satisfied.
 
 ## 8. Verification
 
-- [ ] 8.1 Full build; zero new analyzer warnings.
-- [ ] 8.2 Full test suite; zero failures, no `[Ignore]`.
-- [ ] 8.3 `openspec validate replace-default-connection-file-key --strict`.
-- [ ] 8.4 Manual: migrate a real file, confirm connections still open with no prompt, confirm the file no longer decrypts with `mR3m` using an independent script.
-- [ ] 8.5 Manual: copy a migrated file to a second Windows account, confirm the recovery password opens it and the message before that names the cause.
-- [ ] 8.6 Manual: let the rolling backup run, copy the backup directory to another machine, restore from it with the recovery password. **This is the scenario that changed the design; verify it by hand, not only in tests.**
-- [ ] 8.7 Manual: portable edition on two machines from one USB stick, with and without a recovery password, and a file exchanged between portable and installed.
-- [ ] 8.8 Manual: open a migrated file with the previous release and confirm it refuses with a version message rather than corrupting anything.
-- [ ] 8.9 Manual: point two Windows accounts at one connection file outside both profiles, migrate it from the first, and confirm the second opens it on the recovery password with no message about another account — and that the first is not prompted differently from the second. A second local account is enough; a share is not needed, only a path outside the profile.
+- [x] 8.1 Full build; zero new analyzer warnings.
+- [x] 8.2 Full test suite; zero failures, no `[Ignore]`. — 4117 passed, 0 failed, 0 skipped outside the five pre-existing SQL-server tests that need an instance. `test-config.json` matches group by group.
+- [x] 8.3 `openspec validate replace-default-connection-file-key --strict`.
+
+8.4–8.9 are manual and have a runbook: `verification/MANUAL-VERIFICATION.md`, with the independent
+decryption check 8.4 asks for beside it as `verification/check-legacy-key.py`. The script
+reimplements the classic format — PBKDF2 → AES-256-GCM, salt as associated data, 16-byte nonce —
+and shares no code with this repository, because asking mRemoteNG whether mRemoteNG still uses
+`mR3m` establishes nothing. It carries a `--self-test` that opens a real file from the test
+resources first: a script that cannot decrypt anything would give a migrated file the same clean
+result and mean nothing by it.
+- [x] 8.4 Manual: migrate a real file, confirm connections still open with no prompt, confirm the file no longer decrypts with `mR3m` using an independent script. — **Passed.** On a real store: six stored passwords recovered under `mR3m` before migration, none after, checked with `verification/check-legacy-key.py`, which shares no code with this repository. `machine=yes, recovery=yes`. Getting here took four attempts and each failure was worth more than the pass: the scratch store outside the user profile (correct, and not what 8.4 measures), `KdfIterations="0"` crashing the checker, a copied store keeping the protectors it was migrated with, and finally `build.ps1` producing a portable build — which is `detect-portable-edition-at-runtime`.
+- [x] 8.5 Manual: copy a migrated file to a second Windows account, confirm the recovery password opens it and the message before that names the cause. — **Passed.**
+- [x] 8.6 Manual: let the rolling backup run, copy the backup directory to another machine, restore from it with the recovery password. **This is the scenario that changed the design; verify it by hand, not only in tests.** — **Passed, on a second physical machine rather than the cheaper second-account substitute.** Three parts, all green: a rolling backup restored where the machine protector cannot help opens on the recovery password; a wrong password against a backup set produces **one** error naming the password rather than one warning and three prompts per backup, with the live file untouched; and a genuinely damaged live file still recovers from its backups, silently, which is the counterweight that stops §6's refusal to walk the set becoming a refusal to recover at all. The backups were real rolling ones written by ordinary use — twelve of them — not staged copies.
+- [x] 8.7 Manual: portable edition on two machines from one USB stick, with and without a recovery password, and a file exchanged between portable and installed. — **7a and 7b passed:** a store hardened on the stick gets `machine=no, recovery=yes`, and the same stick opens it on a second physical machine. This is the only step in §8 that cannot be faked from one machine, and it is the step that `PortableEditionInterchangeTests` explicitly declines to claim. **7c–7e are not confirmed** — the decline message, and the two interchange directions — and are left open rather than assumed from "all pass". 7d came for free in a sense that is worth stating: the store restored in 8.6 was written by the installed edition and read by the portable build on the stick, which is that direction exercised, though not deliberately as 7d.
+- [x] 8.8 Manual: open a migrated file with the previous release and confirm it refuses with a version message rather than corrupting anything. — **Passed against the previous release, with its scope recorded rather than glossed. This is the only item in §8 that can lose data, and nothing in the suite can stand in for it.** Every automated test of an unrecognised sentinel runs against *this* build's reader; what v1.82.0 does with `ThisIsDpapiProtected` can only be learnt from the v1.82.0 binary. The specific fear is not the refusal — a build that predates the sentinel will fail to decrypt and report something — it is **what happens next**. v1.82.0 has the same `TryRecoverFromBackup` walk, without §6's protector-failure clause, so a failed load sends it through the backup set; if it finds an older *classic* backup beside the store it can restore that and `File.Copy` it over the migrated file. The user would lose every change made since the migration and be told their file was recovered. **Must be run before this ships**, and the check that matters is the file afterwards, not the message.
+
+  **Partly run, and the result narrows the risk rather than closing it.** 1.77.3 — the newest build
+  actually published for download — was pointed at a migrated store sitting in its full mixed backup
+  set. It refused with *"Could not load startup file."* and exited, and **every file in the folder
+  was byte-identical afterwards**, verified by hashing the set before and after. So the refusal is
+  safe on that build.
+
+  It is safe there for a reason that does not generalise: **1.77.3 has no backup walk.**
+  `TryRecoverFromBackup` arrived in February 2026, years later. There was nothing to misfire, so the
+  clean result says nothing about the mechanism this task is about. *(A first reading of it blamed
+  `KdfPrf` — that every classic backup in the set carries `KdfPrf="SHA256"` and 1.77.3 would derive
+  with SHA-1 and fail. True, and irrelevant: the walk that would have read them does not exist in
+  that build.)*
+
+  **The builds that carry the walk were never released, so no user can downgrade into the hazard.**
+  v1.79.0 through v1.82.0 are tags in this repository and not published downloads — 1.77.3 is the
+  newest build anyone actually has. The dangerous combination is *a published build with the backup
+  walk and without the sentinel*, and on the fork owner's account that combination has never
+  existed. Testing against an unreleased tag would be testing a downgrade path nobody can take.
+
+  **This is not hypothetical, and the verification store proves it.** A migration leaves the
+  pre-migration rolling backups in place, so a hardened store normally sits in a *mixed* backup set.
+  On the store used for 8.4–8.6 there are twelve backups, of which
+  `confCons.xml.20260813-2205084387.backup` records no `StorageFormat` and is opened by `mR3m` —
+  a classic file, readable by any older build, one directory listing away from the hardened store it
+  precedes. That is precisely the file an older release's recovery walk would find, succeed on, and
+  copy over the live store. The mixed set is normal rather than a quirk of testing, which is what
+  makes 8.8 the item in §8 most worth not skipping.
+- [x] 8.9 Manual: point two Windows accounts at one connection file outside both profiles, migrate it from the first, and confirm the second opens it on the recovery password with no message about another account — and that the first is not prompted differently from the second. A second local account is enough; a share is not needed, only a path outside the profile. — **Passed.** The store was migrated by the account that owns the machine, on a healthy profile, and still came back `machine=no, recovery=yes`: the location rule declined a protector that account was entitled to, because a protector one member of a team can use costs every other member a prompt they cannot remove. Both accounts were then prompted identically, and the second saw **no** message about a different Windows account — which is the point, since there is no machine protector to fail and therefore nothing to explain. That message appearing would have meant 5.5 had not taken effect and the second user was being told something useless about a file that was never bound to anyone.
+
+**§8 is complete except 8.8, which is deferred.** 8.1–8.3 in CI and the build, 8.4–8.7 and 8.9 by hand,
+two of them on a second physical machine. What the manual pass bought over the suite is worth
+stating: **it found four defects the tests could not.** A hardened store could never be given a
+per-file key (5.9), the save that followed would have been suppressed (5.13), the confirmation
+stacked on screen (5.14), and every shipped artefact was the portable edition
+(`detect-portable-edition-at-runtime`). None of those were reachable from a test that builds its own
+store in a temp directory — they lived in the wiring, the build, and the message pump.

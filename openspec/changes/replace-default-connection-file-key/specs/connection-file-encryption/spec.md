@@ -90,6 +90,45 @@ point every copy they hold is equally unopenable.
 - **THEN** a recovery password is requested before the file is written
 - **AND** the file is written only once one is supplied
 
+#### Scenario: A store already at the hardened level with no per-file key
+
+- **WHEN** a store declares the hardened format but carries no key protectors
+- **THEN** it is offered the per-file key, by the automatic offer and on request alike
+- **AND** it is not reported as a store with nothing left to do
+
+A store hardened before per-file keys existed has a stretched KDF over the published default key,
+which stretches a constant everybody has. Deciding whether to offer from the declared *level* rather
+than from whether a key protector is present would exclude exactly the users who took the earlier
+security upgrade, and tell them so.
+
+#### Scenario: Accepting on a store that is already at the hardened level
+
+- **WHEN** such a store is given a per-file key
+- **THEN** the store is written, even though its declared level did not change
+
+The level not changing is not the same as nothing changing. A key and its protectors exist only in
+memory until the store is saved, so treating "the level was already correct" as "nothing to do"
+would walk the user through the whole migration and write none of it.
+
+### Requirement: One storage format confirmation at a time
+
+The system SHALL NOT present more than one storage format confirmation at once.
+
+The offer is raised whenever the store is loaded, and a store reloads for reasons that have nothing
+to do with the user — an external edit to the file, a recovery from backup, a switch between files.
+Each of those otherwise adds another copy of the question on top of the last, and a question asked
+several times cannot be answered once.
+
+#### Scenario: The store reloads while the confirmation is open
+
+- **WHEN** the connection file is reloaded while a storage format confirmation is on screen
+- **THEN** no second confirmation is presented
+
+#### Scenario: An automatic offer while the user has opened the confirmation
+
+- **WHEN** the store reloads while a confirmation the user opened from the menu is on screen
+- **THEN** no second confirmation is presented
+
 #### Scenario: The user declines to set a recovery password
 
 - **WHEN** the user declines to supply a recovery password
@@ -97,6 +136,17 @@ point every copy they hold is equally unopenable.
 - **AND** a file under a user's master password keeps that password
 - **AND** a file under the legacy default key keeps that key
 - **AND** the level is not raised
+- **AND** a file left under the legacy default key is stated to be protected by a key published in the application's source
+
+#### Scenario: A declined store that is not under the legacy default key
+
+- **WHEN** the user declines and the store carries a master password
+- **THEN** nothing is said about a published key
+
+The statement is worth making only where it is true. A classic store with a master password is
+encrypted under that password, so telling its owner their key is published would be false — and a
+warning that turns out to be false is worth less to the person reading the next one than no warning
+at all.
 
 A classic file is not always under the legacy default key: it carries a master password whenever the
 user set one. Describing every declined migration as remaining under the default key would either
@@ -213,6 +263,11 @@ machine it is carried to.
 - **WHEN** the portable edition saves and no recovery password is set
 - **THEN** the legacy default key is used
 - **AND** the user is told the file is protected by a key published in the application's source
+
+The statement itself is not a portable behaviour and is specified above, for either edition. It
+belongs here as well because portable is where declining is least recoverable: the installed edition
+can offer a machine protector as the easy answer and portable has no account to bind to, so a
+portable user who declines has nothing protecting the file but a password they chose not to set.
 
 ### Requirement: Files are interchangeable between editions
 

@@ -34,10 +34,12 @@ public class ExternalAppsLoader
     {
         string resolvedPath = SettingsFileInfo.ExtAppsFilePath;
         bool hasCustomPath = !string.IsNullOrWhiteSpace(Properties.Settings.Default.CustomExtAppsFilePath?.Trim());
-#if !PORTABLE
-            string oldPath =
- Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), GeneralAppInfo.ProductName, SettingsFileInfo.ExtAppsFilesName);
-#endif
+        // The pre-Settings-folder location, only ever used by an installed edition. Portable never
+        // wrote there, so it has nothing to migrate from and must not read another installation's file.
+        string? oldPath = App.Runtime.IsPortableEdition
+            ? null
+            : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                GeneralAppInfo.ProductName, SettingsFileInfo.ExtAppsFilesName);
         XmlDocument? xDom = null;
         bool fallbackToBuiltInShellPresets = false;
 
@@ -47,13 +49,11 @@ public class ExternalAppsLoader
                 true);
             xDom = SecureXmlHelper.LoadXmlFromFile(resolvedPath);
         }
-#if !PORTABLE
-            else if (!hasCustomPath && File.Exists(oldPath))
-            {
-                _messageCollector.AddMessage(MessageClass.InformationMsg, $"Loading External Apps from: {oldPath}", true);
-                xDom = SecureXmlHelper.LoadXmlFromFile(oldPath);
-            }
-#endif
+        else if (!hasCustomPath && oldPath is not null && File.Exists(oldPath))
+        {
+            _messageCollector.AddMessage(MessageClass.InformationMsg, $"Loading External Apps from: {oldPath}", true);
+            xDom = SecureXmlHelper.LoadXmlFromFile(oldPath);
+        }
         else
         {
             _messageCollector.AddMessage(MessageClass.WarningMsg, "Loading External Apps failed: Could not FIND file! Falling back to built-in shell presets.");
