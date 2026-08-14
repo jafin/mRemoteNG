@@ -8,6 +8,7 @@ using mRemoteNG.App;
 using mRemoteNG.Config.DataProviders;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 using mRemoteNG.Messages;
+using mRemoteNG.Security.FileProtection;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree;
 
@@ -64,6 +65,26 @@ public class XmlConnectionsLoader : IConnectionsLoader
         {
             return deserializer.Deserialize(xmlString);
         }
+        catch (KeyProtectionException ex)
+        {
+            // Deliberately ahead of the recovery clause below, and deliberately not folded into it.
+            // A key that cannot be unwrapped is not a corrupt file: every backup is a byte-identical
+            // copy carrying the same protectors, so searching them would fail identically for each
+            // one — a warning per backup implying the whole set is corrupt when the files are
+            // intact, and up to three password prompts each.
+            //
+            // This being a separate clause rather than an absence from the filter is the point. The
+            // filter used to exclude it only by not naming it, so widening that list for an
+            // unrelated reason would have quietly turned a wrong password into a walk of the backup
+            // set — ending in File.Copy over the live file.
+            _messageCollector.AddExceptionMessage(
+                $"The key for connection file '{_connectionFilePath}' could not be unwrapped. Its backups " +
+                "carry the same protection, so they were not searched and the file was left unchanged.",
+                ex,
+                MessageClass.ErrorMsg);
+
+            throw;
+        }
         catch (Exception ex) when (ex is XmlException or FormatException or InvalidOperationException or NotSupportedException)
         {
             _messageCollector.AddExceptionMessage(
@@ -107,6 +128,28 @@ public class XmlConnectionsLoader : IConnectionsLoader
 
                 recoveredTreeModel = backupTreeModel;
                 return true;
+            }
+            catch (KeyProtectionException ex)
+            {
+                // Stops the walk rather than moving to the next file. The backups are copies of the
+                // same encrypted bytes, so the protector that just failed is the protector every one
+                // of them carries; continuing would ask for the same password again for each, and
+                // report each intact file as though it were damaged.
+                //
+                // One exception to state honestly: a backup taken before the recovery password was
+                // last replaced carries the older protector, so stopping here can skip a file the
+                // user could have opened with a different password. That is worth the trade — the
+                // alternative is three prompts per backup for a set that is usually ten deep — and
+                // it is why the message names the password rather than the file.
+                _messageCollector.AddExceptionMessage(
+                    $"Backup '{backupFile}' could not be unwrapped, and the rest carry the same " +
+                    "protection, so the search stopped. The connection file has not been changed. If " +
+                    "the recovery password was changed after a backup was taken, that backup needs " +
+                    "the password that was in use when it was written.",
+                    ex,
+                    MessageClass.ErrorMsg);
+
+                return false;
             }
             catch (Exception ex)
             {
