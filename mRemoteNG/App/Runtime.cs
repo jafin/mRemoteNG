@@ -228,9 +228,12 @@ public static class Runtime
                 {
                     try
                     {
-                        CTaskDialog.ShowTaskDialogBox(GeneralAppInfo.ProductName, Language.ConnectionFileNotFound, "",
-                            "", "", "", "", string.Join(" | ", commandButtons), ETaskDialogButtons.None,
-                            ESysIcons.Question, ESysIcons.Question);
+                        // The path in the content line, because every button here acts on that file
+                        // and the user may well have named it themselves with --cons. "Create new"
+                        // against an unnamed file is a question nobody can answer.
+                        CTaskDialog.ShowTaskDialogBox(GeneralAppInfo.ProductName, Language.ConnectionFileNotFound,
+                            connectionFileName, "", "", "", "", string.Join(" | ", commandButtons),
+                            ETaskDialogButtons.None, ESysIcons.Question, ESysIcons.Question);
 
                         switch (CTaskDialog.CommandButtonResult)
                         {
