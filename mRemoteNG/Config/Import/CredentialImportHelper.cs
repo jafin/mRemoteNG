@@ -1,4 +1,5 @@
 using System.Linq;
+using System.Security;
 using mRemoteNG.Connection;
 using mRemoteNG.Container;
 using mRemoteNG.Credential;
@@ -12,14 +13,17 @@ public static class CredentialImportHelper
     {
         // Check if this specific node has credentials to extract
         if (!string.IsNullOrEmpty(connection.Username) ||
-            !string.IsNullOrEmpty(connection.Password) ||
+            HasPassword(connection) ||
             !string.IsNullOrEmpty(connection.Domain))
         {
             CredentialRecord record = new()
             {
                 Title = string.IsNullOrWhiteSpace(connection.Name) ? "Imported Credential" : connection.Name,
                 Username = connection.Username,
-                Password = connection.Password.ConvertToSecureString(),
+                // The connection's secret handed over without a plain-text copy in between. It was
+                // read as a string and converted straight back, which produced an unzeroable copy of
+                // every password in the file being imported.
+                Password = connection.SecurePassword,
                 Domain = connection.Domain
             };
 
@@ -45,7 +49,7 @@ public static class CredentialImportHelper
     public static bool HasCredentials(ConnectionInfo connection)
     {
         if (!string.IsNullOrEmpty(connection.Username) ||
-            !string.IsNullOrEmpty(connection.Password) ||
+            HasPassword(connection) ||
             !string.IsNullOrEmpty(connection.Domain))
         {
             return true;
@@ -57,5 +61,19 @@ public static class CredentialImportHelper
         }
 
         return false;
+    }
+
+    /// <summary>
+    /// Whether the connection carries a password, without producing a plain-text copy to find out.
+    /// </summary>
+    /// <remarks>
+    /// Asking <c>string.IsNullOrEmpty(connection.Password)</c> materialises the secret purely to
+    /// learn whether there is one — and this runs over every node in a file being imported, so it
+    /// did that for every password in it.
+    /// </remarks>
+    private static bool HasPassword(ConnectionInfo connection)
+    {
+        using SecureString password = connection.SecurePassword;
+        return password.Length > 0;
     }
 }

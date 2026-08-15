@@ -5,6 +5,7 @@ using System.Globalization;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Runtime.Versioning;
+using System.Security;
 using System.Text;
 using System.Threading;
 using System.Windows.Forms;
@@ -975,8 +976,18 @@ public class RdpProtocol : ProtocolBase, ISupportsViewOnly, IMessageFilter
             string domain = connectionInfo.Domain ?? "";
             string userViaApi = connectionInfo.UserViaAPI ?? "";
             string pkey = "";
-            //string password = (connectionInfo?.Password?.ConvertToUnsecureString() ?? "");
-            string password = connectionInfo.Password ?? "";
+
+            // Null until something supplies one, which is what lets the connection's own secret stay
+            // unread until the assignment at the bottom of this method. It used to be read here, a
+            // hundred and seventy lines earlier, and held as plain text across every branch below —
+            // eight of which replace it, and two of which mean it is never sent at all.
+            //
+            // Null and empty are different answers and both are load-bearing. Null means nothing
+            // supplied a password, so the connection's own is used; empty means a provider ran and
+            // returned nothing, which falls through to the configured default password exactly as it
+            // did before. A provider that throws before assigning leaves this null, so the
+            // connection's own secret is used — again matching what it did before.
+            string? password = null;
 
             // access secret server api if necessary
             if (InterfaceControl.Info.ExternalCredentialProvider == ExternalCredentialProvider.DelineaSecretServer)
@@ -1136,20 +1147,7 @@ public class RdpProtocol : ProtocolBase, ISupportsViewOnly, IMessageFilter
             // fail for accounts in the AD Protected Users security group.
             if (!connectionInfo.UseRestrictedAdmin && !connectionInfo.UseRCG)
             {
-                if (string.IsNullOrEmpty(password))
-                {
-                    if (string.Equals(Properties.OptionsCredentialsPage.Default.EmptyCredentials, "custom", StringComparison.Ordinal))
-                    {
-                        if (!string.IsNullOrEmpty(Properties.OptionsCredentialsPage.Default.DefaultPassword))
-                        {
-                            _rdpClient.AdvancedSettings2.ClearTextPassword = SettingsSecretProtector.Default.Unprotect(Properties.OptionsCredentialsPage.Default.DefaultPassword, Runtime.EncryptionKey);
-                        }
-                    }
-                }
-                else
-                {
-                    _rdpClient.AdvancedSettings2.ClearTextPassword = password;
-                }
+                AssignPassword(password);
             }
 
             if (string.IsNullOrEmpty(domain))
@@ -1170,6 +1168,134 @@ public class RdpProtocol : ProtocolBase, ISupportsViewOnly, IMessageFilter
         {
             Runtime.MessageCollector.AddExceptionStackTrace(Language.RdpSetCredentialsFailed, ex);
         }
+    }
+
+    /// <summary>
+    /// Puts the password on the RDP client, reading the connection's own secret only here and only
+    /// if nothing else supplied one.
+    /// </summary>
+    /// <param name="providerSupplied">
+    /// What an external credential provider returned, or <see langword="null"/> if none did. Empty
+    /// is not null: a provider that ran and returned nothing falls through to the configured default
+    /// password, and does not fall back to the connection's own secret.
+    /// </param>
+    /// <remarks>
+    /// <para>
+    /// <b>The COM conversion cannot be removed, only made brief.</b>
+    /// <c>AdvancedSettings2.ClearTextPassword</c> takes a <see cref="string"/>, so one plain-text
+    /// copy is unavoidable. What was avoidable was creating it at the top of
+    /// <see cref="SetCredentials"/> and holding it across the external-credential-provider branches,
+    /// the empty-username fallback and its four more providers — none of which need it — and then,
+    /// for a Restricted Admin or Remote Credential Guard connection, never sending it at all.
+    /// </para>
+    /// <para>
+    /// Not called for those two modes. They authenticate with the current user's Kerberos
+    /// credentials, and forwarding a password invites an NTLM fallback that fails outright for
+    /// accounts in the AD Protected Users group — so the secret is now never read for them, rather
+    /// than read and discarded.
+    /// </para>
+    /// </remarks>
+    private void AssignPassword(string? providerSupplied)
+    {
+        // Fetched only when nothing else supplied one, and disposed on the way out of this method.
+        using SecureString own = providerSupplied is null ? connectionInfo.SecurePassword : new SecureString();
+
+        switch (ChoosePasswordSource(providerSupplied, own.Length > 0,
+                                     Properties.OptionsCredentialsPage.Default.EmptyCredentials))
+        {
+            case RdpPasswordSource.Connection:
+                // The one unavoidable plain-text copy, made here and used on the next line.
+                _rdpClient.AdvancedSettings2.ClearTextPassword = own.ConvertToUnsecureString();
+                break;
+
+            case RdpPasswordSource.Provider:
+                _rdpClient.AdvancedSettings2.ClearTextPassword = providerSupplied!;
+                break;
+
+            case RdpPasswordSource.ConfiguredDefault:
+                // Unprotected here and nowhere earlier: a connection that never reaches this case —
+                // which is most of them — must not materialise the default password at all.
+                //
+                // Emptiness is judged on the password rather than on its stored form. The stored
+                // form is an `aead1:` string, so asking whether *that* is empty is a question about
+                // ciphertext; the old code asked it that way, and a configured default that
+                // unprotects to nothing would have been sent as an empty password.
+                string configuredDefault = SettingsSecretProtector.Default.Unprotect(
+                    Properties.OptionsCredentialsPage.Default.DefaultPassword, Runtime.EncryptionKey);
+
+                if (!string.IsNullOrEmpty(configuredDefault))
+                    _rdpClient.AdvancedSettings2.ClearTextPassword = configuredDefault;
+
+                break;
+
+            case RdpPasswordSource.None:
+                // Nothing is assigned, which is not the same as assigning an empty password: the
+                // RDP client prompts, and that is what a connection with no password has always
+                // done.
+                break;
+        }
+    }
+
+    /// <summary>Which password <see cref="SetCredentials"/> sends, if any.</summary>
+    internal enum RdpPasswordSource
+    {
+        /// <summary>Nothing is assigned, and the RDP client prompts.</summary>
+        None = 0,
+
+        /// <summary>What an external credential provider returned.</summary>
+        Provider = 1,
+
+        /// <summary>The connection's own stored secret.</summary>
+        Connection = 2,
+
+        /// <summary>
+        /// The default password from Options → Credentials, if one is configured. Whether there is
+        /// one is not decided here: answering it means unprotecting the stored value, and that must
+        /// not happen for a connection that had a password of its own.
+        /// </summary>
+        ConfiguredDefault = 3,
+    }
+
+    /// <summary>
+    /// Decides which password to send, separated from sending it so the decision can be tested.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Every branch of this is behaviour that predates this change and none of it is altered; it is
+    /// pulled out because a green test suite otherwise says nothing at all about RDP credentials.
+    /// The paths that decide this — six external credential providers, an empty-username fallback
+    /// with four more, Restricted Admin, Remote Credential Guard — cannot be exercised without a
+    /// real host, so the decision they feed is the part that can be pinned here. Breaking
+    /// authentication in this method costs far more than the exposure the change closes.
+    /// </para>
+    /// <para>
+    /// <b>Null and empty are different answers.</b> A provider that ran and returned nothing does not
+    /// fall back to the connection's own secret — it falls through to the configured default,
+    /// exactly as it did when this was one local initialised at the top of the method.
+    /// </para>
+    /// </remarks>
+    internal static RdpPasswordSource ChoosePasswordSource(string? providerSupplied,
+                                                           bool connectionHasSecret,
+                                                           string? emptyCredentialsMode)
+    {
+        if (providerSupplied is null)
+        {
+            if (connectionHasSecret)
+                return RdpPasswordSource.Connection;
+        }
+        else if (providerSupplied.Length > 0)
+        {
+            return RdpPasswordSource.Provider;
+        }
+
+        // The configured default applies on exactly the term it always has: only when empty
+        // credentials are set to "custom". Whether one is actually configured is deliberately not
+        // asked here — the stored value is ciphertext, so the honest form of that question needs the
+        // protector, and running it for a connection that will never use the answer is the exposure
+        // this change exists to remove.
+        return string.Equals(emptyCredentialsMode, "custom", StringComparison.Ordinal)
+            ? RdpPasswordSource.ConfiguredDefault
+            : RdpPasswordSource.None;
     }
 
     protected override void Resize(object sender, EventArgs e)

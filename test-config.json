@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "total_expected": 4206,
+    "total_expected": 4250,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-15",
     "stats": {
@@ -15,7 +15,7 @@
       {
         "name": "Connection",
         "filter": "FullyQualifiedName~mRemoteNGTests.Connection",
-        "expected": 1320
+        "expected": 1364
       },
       {
         "name": "Config.Xml",
