@@ -51,7 +51,7 @@ jobs:
       - name: Build solution
         shell: pwsh
         run: |
-          msbuild "$env:GITHUB_WORKSPACE\mRemoteNG.sln" /restore /m /verbosity:minimal -p:Configuration=Release -p:Platform=${{ matrix.platform }}
+          msbuild "$env:GITHUB_WORKSPACE\mRemoteNG.slnx" /restore /m /verbosity:minimal -p:Configuration=Release -p:Platform=${{ matrix.platform }}
 
       - name: Smoke test (app starts)
         if: matrix.platform != 'x86'

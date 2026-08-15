@@ -4,7 +4,7 @@ Throwaway harness for openspec change `add-native-ssh-terminal`, tasks **1.1**, 
 Nothing here ships. It exists to answer one question before 31 tasks get built on the answer:
 **does `ShellStream` → WebView2 → xterm.js keep up?**
 
-It is deliberately not in `mRemoteNG.sln`, so `build.ps1`, CI and the test run are unaffected.
+It is deliberately not in `mRemoteNG.slnx`, so `build.ps1`, CI and the test run are unaffected.
 
 ## Running it
 

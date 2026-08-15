@@ -150,7 +150,7 @@ jobs:
           Write-Host "Generated AssemblyInfo.cs: $base$prerelease.$build ($channel) $platform"
 
       - name: Build x64 Release
-        run: msbuild mRemoteNG.sln /restore -m /verbosity:minimal -p:Configuration=Release -p:Platform=x64
+        run: msbuild mRemoteNG.slnx /restore -m /verbosity:minimal -p:Configuration=Release -p:Platform=x64
 
       - name: Smoke test (app starts)
         shell: pwsh

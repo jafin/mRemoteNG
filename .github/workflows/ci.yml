@@ -51,7 +51,7 @@ jobs:
       # Builds mRemoteNGTests too, so run-tests-core.sh finds the DLL it expects at
       # mRemoteNGTests/bin/x64/Release/mRemoteNGTests.dll.
       - name: Build solution
-        run: msbuild mRemoteNG.sln /restore -m /verbosity:minimal -p:Configuration=Release -p:Platform=x64
+        run: msbuild mRemoteNG.slnx /restore -m /verbosity:minimal -p:Configuration=Release -p:Platform=x64
 
       - name: Smoke test (app starts)
         shell: pwsh

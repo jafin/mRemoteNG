@@ -48,7 +48,7 @@ if (-not $devShell) {
 Write-Host "Using: $devShell"
 & $devShell -Arch amd64
 
-$sln = "$PSScriptRoot\mRemoteNG.sln"
+$sln = "$PSScriptRoot\mRemoteNG.slnx"
 
 # Disable MSBuild worker-node reuse. With -m, reusable nodes survive the build
 # by design and keep open handles on obj\*.cache. When build.ps1 runs inside a
