@@ -11,21 +11,23 @@
     }
   },
   "runner": {
+    "_order": "Longest group first. The runner walks this array in order through a sliding window, so a slow group listed late starts when the window has nearly drained and its whole runtime lands on the tail. Integration measured 56s against Tools' 3s: last it cost 108s of wall clock, first it cost 57s. Re-sort when a group's runtime changes materially; do not reorder for readability.",
+    "_split": "The SFTP integration tests are three groups rather than one because the fixture is per process. A [SetUpFixture] in ...IntegrationTests.Sftp starts one container per test process, so splitting the namespace buys real concurrency (one container each, in parallel) instead of one container serving 47s of sequential SSH sessions. The three filters partition ...IntegrationTests exactly; Remaining already excludes the whole prefix.",
     "groups": [
+      {
+        "name": "Int.Sftp.Rest",
+        "filter": "FullyQualifiedName~mRemoteNGTests.IntegrationTests.Sftp&FullyQualifiedName!~SftpSessionReconnectionTests",
+        "expected": 25
+      },
+      {
+        "name": "Int.Sftp.Reconnect",
+        "filter": "FullyQualifiedName~mRemoteNGTests.IntegrationTests.Sftp.SftpSessionReconnectionTests",
+        "expected": 3
+      },
       {
         "name": "Connection",
         "filter": "FullyQualifiedName~mRemoteNGTests.Connection",
         "expected": 1320
-      },
-      {
-        "name": "Config.Xml",
-        "filter": "FullyQualifiedName~mRemoteNGTests.Config.Serializers.ConnectionSerializers.Xml",
-        "expected": 137
-      },
-      {
-        "name": "Config.Other",
-        "filter": "FullyQualifiedName~mRemoteNGTests.Config&FullyQualifiedName!~Serializers.ConnectionSerializers.Xml",
-        "expected": 715
       },
       {
         "name": "UI",
@@ -33,9 +35,19 @@
         "expected": 421
       },
       {
-        "name": "Tools",
-        "filter": "FullyQualifiedName~mRemoteNGTests.Tools",
-        "expected": 522
+        "name": "Config.Other",
+        "filter": "FullyQualifiedName~mRemoteNGTests.Config&FullyQualifiedName!~Serializers.ConnectionSerializers.Xml",
+        "expected": 715
+      },
+      {
+        "name": "Config.Xml",
+        "filter": "FullyQualifiedName~mRemoteNGTests.Config.Serializers.ConnectionSerializers.Xml",
+        "expected": 137
+      },
+      {
+        "name": "Int.Other",
+        "filter": "FullyQualifiedName~mRemoteNGTests.IntegrationTests&FullyQualifiedName!~mRemoteNGTests.IntegrationTests.Sftp",
+        "expected": 30
       },
       {
         "name": "Security",
@@ -43,19 +55,19 @@
         "expected": 464
       },
       {
-        "name": "Tree+Container+Cred",
-        "filter": "FullyQualifiedName~mRemoteNGTests.Tree|FullyQualifiedName~mRemoteNGTests.Container|FullyQualifiedName~mRemoteNGTests.Credential",
-        "expected": 184
-      },
-      {
         "name": "Remaining",
         "filter": "FullyQualifiedName!~mRemoteNGTests.Connection&FullyQualifiedName!~mRemoteNGTests.Config&FullyQualifiedName!~mRemoteNGTests.UI&FullyQualifiedName!~mRemoteNGTests.Tools&FullyQualifiedName!~mRemoteNGTests.Security&FullyQualifiedName!~mRemoteNGTests.Tree&FullyQualifiedName!~mRemoteNGTests.Container&FullyQualifiedName!~mRemoteNGTests.Credential&FullyQualifiedName!~mRemoteNGTests.IntegrationTests&Name!=FormBehavior&Name!=AllPagesExistWithIconsAndLoadCorrectSettings",
         "expected": 348
       },
       {
-        "name": "Integration",
-        "filter": "FullyQualifiedName~mRemoteNGTests.IntegrationTests",
-        "expected": 58
+        "name": "Tree+Container+Cred",
+        "filter": "FullyQualifiedName~mRemoteNGTests.Tree|FullyQualifiedName~mRemoteNGTests.Container|FullyQualifiedName~mRemoteNGTests.Credential",
+        "expected": 184
+      },
+      {
+        "name": "Tools",
+        "filter": "FullyQualifiedName~mRemoteNGTests.Tools",
+        "expected": 522
       }
     ],
     "isolated": [

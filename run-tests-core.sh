@@ -1,8 +1,12 @@
 #!/bin/bash
-# run-tests-core.sh - Core test runner (bash, v5 — THROTTLED PARALLEL, SHARED DLL)
+# run-tests-core.sh - Core test runner (bash, v6 — THROTTLED PARALLEL, SHARED DLL)
 # Launches test groups with MAX_PARALLEL sliding window to prevent resource exhaustion.
 # v4 launched all 9 groups simultaneously causing 60%+ crash rate from GDI/memory contention.
-# v5 limits to 2 concurrent testhost processes — eliminates crashes while staying fast.
+# v5 limits concurrent testhost processes — eliminates crashes while staying fast.
+# v6 sizes the window from the core count instead of pinning it at 2. The fixed 2 was chosen on
+# the crash evidence, but it also throttled a 32-core workstation to the same width as a 4-core
+# CI runner; a quarter of the cores keeps CI at 2 (identical behaviour) and opens the window
+# where there is hardware to absorb it. Group order is the other half — see test-config.json.
 # NOTE: grep -oE only — MSYS2 grep doesn't support -oP (Perl regex).
 
 REPO_ROOT="$(cd "$(dirname "$0")" && pwd)"
@@ -14,7 +18,13 @@ else
 fi
 RESULTS_BASE="$RESULTS_ROOT/mremoteng-testresults"
 PARALLEL_DIR="$RESULTS_ROOT/mremoteng-parallel-$$"
-MAX_PARALLEL=2
+# A quarter of the cores, clamped to [2,6]. Below 2 the sliding window stops being one; above 6
+# the groups are contending for GDI handles and memory rather than for CPU, which is the failure
+# v5 was written to stop. Override with MAX_PARALLEL=n to bisect a crash.
+_CORES=$(nproc 2>/dev/null || echo 8)
+MAX_PARALLEL=${MAX_PARALLEL:-$(( _CORES / 4 ))}
+[ "$MAX_PARALLEL" -lt 2 ] && MAX_PARALLEL=2
+[ "$MAX_PARALLEL" -gt 6 ] && MAX_PARALLEL=6
 
 # Read test config from single source of truth (test-config.json)
 CONFIG="$REPO_ROOT/test-config.json"
@@ -82,7 +92,7 @@ preflight_check() {
     cleanup_env
 }
 
-# Run a single test group. Returns: passed|failed|crashed
+# Run a single test group. Returns: passed|failed|crashed|total
 run_group() {
     local dll="$1" filter="$2"
     local uid=$(date +%s%N | tail -c 8)
@@ -95,15 +105,20 @@ run_group() {
     local output
     output=$(dotnet "${args[@]}" 2>&1 | tail -20)
 
-    local passed=0 failed=0 crashed=false
+    local passed=0 failed=0 total=0 crashed=false
     local trx_path="$results_dir/$trx_file"
     if [ -f "$trx_path" ]; then
-        local trx_passed trx_failed trx_outcome
+        local trx_passed trx_failed trx_total trx_outcome
         trx_passed=$(grep -oE 'passed="[0-9]+"' "$trx_path" | head -1 | grep -oE '[0-9]+')
         trx_failed=$(grep -oE 'failed="[0-9]+"' "$trx_path" | head -1 | grep -oE '[0-9]+')
+        # Counted separately from passed+failed, because they differ exactly where it matters:
+        # a group whose tests all skipped reports a total with nothing executed, and a group whose
+        # testhost died reports no total at all. Without this the two are the same zero.
+        trx_total=$(grep -oE 'total="[0-9]+"' "$trx_path" | head -1 | grep -oE '[0-9]+')
         trx_outcome=$(grep -oE 'outcome="[^"]+"' "$trx_path" | head -1 | sed 's/outcome="//;s/"//')
         [ -n "$trx_passed" ] && passed=$trx_passed
         [ -n "$trx_failed" ] && failed=$trx_failed
+        [ -n "$trx_total" ] && total=$trx_total
         [ "$trx_outcome" = "Aborted" ] || [ "$trx_outcome" = "Error" ] && crashed=true
     fi
 
@@ -113,9 +128,13 @@ run_group() {
         f=$(echo "$output" | grep -oE 'Failed[[:space:]]*[:-][[:space:]]*[0-9]+' | tail -1 | grep -oE '[0-9]+')
         [ -n "$p" ] && passed=$p
         [ -n "$f" ] && failed=$f
+        [ "$total" -eq 0 ] && total=$((passed + failed))
     fi
 
     echo "$output" | grep -qiE "crashed|aborted" && crashed=true
+
+    # Nothing at all came back — no counters, no summary line. That is the dead testhost.
+    [ "$total" -eq 0 ] && crashed=true
 
     # Preserve trx on failure/crash so CI collector can surface test names.
     # On success, clean up to avoid filling /tmp across many groups.
@@ -129,7 +148,7 @@ run_group() {
         echo "$output" > "$preserve/$(basename "$results_dir").out" 2>/dev/null || true
     fi
     rm -rf "$results_dir" 2>/dev/null || true
-    echo "${passed}|${failed}|${crashed}"
+    echo "${passed}|${failed}|${crashed}|${total}"
 }
 
 # ─── Pre-flight ──────────────────────────────────────────────────────
@@ -179,11 +198,12 @@ declare -a RETRY_INDICES=()
 for i in $(seq 0 $((num_groups - 1))); do
     name="${GROUP_NAMES[$i]}"
     result=$(cat "$PARALLEL_DIR/result-$i.txt" 2>/dev/null)
-    IFS='|' read -r p f c <<< "$result"
+    IFS='|' read -r p f c t <<< "$result"
     p=${p//[^0-9]/}; [ -z "$p" ] && p=0
     f=${f//[^0-9]/}; [ -z "$f" ] && f=0
+    t=${t//[^0-9]/}; [ -z "$t" ] && t=0
 
-    if [ "$c" = "true" ] || [ "$p" -eq 0 ]; then
+    if [ "$c" = "true" ]; then
         printf "  [%-20s] %dp/CRASHED — will retry\n" "$name" "$p"
         RETRY_INDICES+=($i)
         any_crashed=true
@@ -191,6 +211,10 @@ for i in $(seq 0 $((num_groups - 1))); do
         printf "  [%-20s] %dp/%df\n" "$name" "$p" "$f"
         total_passed=$((total_passed + p))
         total_failed=$((total_failed + f))
+    elif [ "$p" -eq 0 ]; then
+        # Ran, executed nothing: MRNG_SKIP_SFTP_INTEGRATION=1 does this to the SFTP groups on a
+        # runner with no Linux containers. Said out loud, so an unintended skip is not silent.
+        printf "  [%-20s] %d skipped\n" "$name" "$t"
     else
         printf "  [%-20s] %d passed\n" "$name" "$p"
         total_passed=$((total_passed + p))
@@ -210,14 +234,16 @@ if [ ${#RETRY_INDICES[@]} -gt 0 ]; then
         expected="${GROUP_EXPECTED[$i]}"
         printf "  [%-20s] " "$name"
 
-        best_p=0 best_f=0 best_c=false
+        best_p=0 best_f=0 best_t=0 best_c=false
         for attempt in 1 2; do
             cleanup_env
             sleep 1
             result=$(run_group "$TEST_DLL" "${GROUP_FILTERS[$i]}")
-            IFS='|' read -r p f c <<< "$result"
+            IFS='|' read -r p f c t <<< "$result"
             p=${p//[^0-9]/}; [ -z "$p" ] && p=0
             f=${f//[^0-9]/}; [ -z "$f" ] && f=0
+            t=${t//[^0-9]/}; [ -z "$t" ] && t=0
+            [ "$t" -gt "$best_t" ] && best_t=$t
             [ "$p" -gt "$best_p" ] && { best_p=$p; best_f=$f; best_c=$c; }
             [ "$best_p" -ge "$expected" ] && break
             [ "$attempt" -lt 2 ] && printf "RETRY(%dp)... " "$p"
@@ -230,7 +256,7 @@ if [ ${#RETRY_INDICES[@]} -gt 0 ]; then
         else
             echo "${best_p} passed"
         fi
-        [ "$best_p" -eq 0 ] && [ "$best_f" -eq 0 ] && groups_with_zero=$((groups_with_zero + 1))
+        [ "$best_t" -eq 0 ] && groups_with_zero=$((groups_with_zero + 1))
         total_passed=$((total_passed + best_p))
         total_failed=$((total_failed + best_f))
     done
@@ -248,18 +274,18 @@ for i in $(seq 0 $((${#ISO_NAMES[@]} - 1))); do
     cleanup_env
     sleep 1
     result=$(run_group "$TEST_DLL" "$filter")
-    IFS='|' read -r p f c <<< "$result"
+    IFS='|' read -r p f c t <<< "$result"
     p=${p//[^0-9]/}; [ -z "$p" ] && p=0
     f=${f//[^0-9]/}; [ -z "$f" ] && f=0
 
     retries=0
-    while [ "$retries" -lt 2 ] && { [ "$c" = "true" ] || [ "$p" -eq 0 ]; }; do
+    while [ "$retries" -lt 2 ] && [ "$c" = "true" ]; do
         retries=$((retries + 1))
         printf "RETRY%d... " "$retries"
         cleanup_env
         sleep 2
         result2=$(run_group "$TEST_DLL" "$filter")
-        IFS='|' read -r p2 f2 c2 <<< "$result2"
+        IFS='|' read -r p2 f2 c2 t2 <<< "$result2"
         p2=${p2//[^0-9]/}; [ -z "$p2" ] && p2=0
         f2=${f2//[^0-9]/}; [ -z "$f2" ] && f2=0
         [ "$p2" -gt "$p" ] && { p=$p2; f=$f2; c=$c2; }
