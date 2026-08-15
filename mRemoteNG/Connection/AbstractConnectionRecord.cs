@@ -373,6 +373,18 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
         set => SetSecureStringField(ref _password, value, nameof(Password));
     }
 
+    /// <summary>
+    /// The same password as <see cref="Password"/>, for callers that can consume a
+    /// <see cref="SecureString"/>. <b>The caller owns what it gets back and must dispose it.</b>
+    /// </summary>
+    /// <remarks>
+    /// A copy, never the stored instance: handing back the record's own secret would let any caller
+    /// dispose it, and the next read of <see cref="Password"/> would then throw from a getter nobody
+    /// expects to. Hidden from the property grid, which binds to the string property.
+    /// </remarks>
+    [Browsable(false)]
+    public SecureString SecurePassword => ResolveSecret(nameof(Password), _password);
+
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Connection), 2),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.VaultOpenbaoMount)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.VaultOpenbaoMountDescription)),
@@ -809,6 +821,13 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
         get => GetPropertyValue(nameof(RDGatewayPassword), _rdGatewayPassword?.ConvertToUnsecureString() ?? string.Empty);
         set => SetSecureStringField(ref _rdGatewayPassword, value, nameof(RDGatewayPassword));
     }
+
+    /// <summary>
+    /// The same secret as <see cref="RDGatewayPassword"/>, as a <see cref="SecureString"/> the
+    /// caller owns and must dispose. See <see cref="SecurePassword"/>.
+    /// </summary>
+    [Browsable(false)]
+    public SecureString SecureRDGatewayPassword => ResolveSecret(nameof(RDGatewayPassword), _rdGatewayPassword);
 
     [LocalizedAttributes.LocalizedCategory(nameof(Language.RDPGateway), 4),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.RdpGatewayAccessToken)),
@@ -1499,6 +1518,13 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
         set => SetSecureStringField(ref _vncProxyPassword, value, nameof(VNCProxyPassword));
     }
 
+    /// <summary>
+    /// The same secret as <see cref="VNCProxyPassword"/>, as a <see cref="SecureString"/> the caller
+    /// owns and must dispose. See <see cref="SecurePassword"/>.
+    /// </summary>
+    [Browsable(false)]
+    public SecureString SecureVNCProxyPassword => ResolveSecret(nameof(VNCProxyPassword), _vncProxyPassword);
+
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Appearance), 5),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.Colors)),
      LocalizedAttributes.LocalizedDescription(nameof(Language.PropertyDescriptionColors)),
@@ -1570,6 +1596,58 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     private static string ConvertToUnsecureStringOrEmpty(SecureString? password)
     {
         return password?.ConvertToUnsecureString() ?? string.Empty;
+    }
+
+    /// <summary>
+    /// A value no resolution can produce, used to tell "nothing overrode this record" apart from
+    /// "something resolved to an empty secret". Reference identity is the signal, so it must be a
+    /// distinct instance rather than a literal the runtime may intern.
+    /// </summary>
+    private static readonly string Unresolved = new([.. " unresolved"]);
+
+    /// <summary>
+    /// Resolves a secret the same way its plain-text property does, avoiding the plain text wherever
+    /// the answer is already a <see cref="SecureString"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two of the three routes never need a string. This record's own value is one, and a bound
+    /// credential record is the other — and the second is the one that matters, because the property
+    /// grid re-reads a displayed connection constantly and each read was converting the credential's
+    /// <see cref="SecureString"/> into a string that cannot be zeroed.
+    /// </para>
+    /// <para>
+    /// <b>The remaining routes deliberately go through the plain-text property.</b> Inheritance and
+    /// connection links resolve by reading <i>another record's</i> string property — including a walk
+    /// up the tree that skips parents holding an empty credential — and reimplementing those rules
+    /// here would be a second copy of them, free to drift from the first. A copy that drifts would
+    /// hand a caller the wrong password, which is far worse than the copy this saves. The string in
+    /// those cases exists whether this asks for it or not.
+    /// </para>
+    /// </remarks>
+    private protected SecureString ResolveSecret(string propertyName, SecureString? own)
+    {
+        if (TryGetSecretWithoutPlainText(propertyName, out SecureString? direct))
+            return direct!;
+
+        string resolved = GetPropertyValue(propertyName, Unresolved);
+        if (!ReferenceEquals(resolved, Unresolved))
+            return resolved.ConvertToSecureString();
+
+        return own?.Copy() ?? new SecureString();
+    }
+
+    /// <summary>
+    /// A source that already holds this secret as a <see cref="SecureString"/>, if one applies.
+    /// </summary>
+    /// <remarks>
+    /// Overridden where a connection can be bound to a credential record. The base record has no
+    /// such binding, so it answers for itself.
+    /// </remarks>
+    private protected virtual bool TryGetSecretWithoutPlainText(string propertyName, out SecureString? secret)
+    {
+        secret = null;
+        return false;
     }
 
     private void SetSecureStringField(ref SecureString? field, string value, string? propertyName = null)

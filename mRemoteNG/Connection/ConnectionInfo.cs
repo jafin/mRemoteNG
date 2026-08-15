@@ -5,6 +5,7 @@ using System.Globalization;
 using System.Linq;
 using System.Reflection;
 using System.Runtime.Versioning;
+using System.Security;
 using mRemoteNG.App;
 using mRemoteNG.Connection.Protocol;
 using mRemoteNG.Connection.Protocol.ARD;
@@ -220,7 +221,16 @@ public class ConnectionInfo : AbstractConnectionRecord, IHasParent, IInheritable
     protected virtual IEnumerable<PropertyInfo> GetProperties(string[] excludedPropertyNames)
     {
         PropertyInfo[] properties = typeof(ConnectionInfo).GetProperties();
-        IEnumerable<PropertyInfo> filteredProperties = properties.Where((prop) => !excludedPropertyNames.Contains(prop.Name));
+
+        // Read-only properties are not serializable state: nothing can write one back, so a
+        // round trip through this list can only ever fail on them. `ConnectionPropertyReflector`
+        // already draws the line here (`serializable = prop.CanWrite`) and this did not, so the two
+        // answers to "which properties are serializable" disagreed — with only `ConstantID` named by
+        // hand in both lists to paper over it. A read-only view added later would silently be
+        // enrolled in serialization, presets and default-connection copying by one of them.
+        IEnumerable<PropertyInfo> filteredProperties = properties
+            .Where(prop => prop.CanWrite && !excludedPropertyNames.Contains(prop.Name));
+
         return filteredProperties;
     }
 
@@ -301,6 +311,45 @@ public class ConnectionInfo : AbstractConnectionRecord, IHasParent, IInheritable
             Inheritance.InheritanceActive &&
             ParentIsValidInheritanceTarget() &&
             IsInheritanceTurnedOnForThisProperty(propertyName);
+    }
+
+    /// <summary>
+    /// Answers a secret straight from the bound credential record, which already holds it as a
+    /// <see cref="SecureString"/>.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// This is the route worth intercepting. <see cref="TryGetCredentialRecordValue"/> converts the
+    /// record's <see cref="SecureString"/> to a plain string on <i>every</i> read of
+    /// <see cref="Password"/>, and the property grid re-reads a displayed connection constantly — so
+    /// a connection using a credential record was shedding an unzeroable copy of that credential's
+    /// password on every repaint, for as long as it was selected.
+    /// </para>
+    /// <para>
+    /// Only the password. Username and domain are credential properties too, and neither is a
+    /// secret; <see cref="ICredentialRecord"/> holds them as plain strings already.
+    /// </para>
+    /// </remarks>
+    private protected override bool TryGetSecretWithoutPlainText(string propertyName, out SecureString? secret)
+    {
+        secret = null;
+
+        // Deliberately mirrors TryGetCredentialRecordValue's guards rather than sharing them: that
+        // method is generic over the property type and returns strings, and threading a second
+        // return type through it would complicate the path every non-secret property takes.
+        if (!string.Equals(propertyName, nameof(Password), StringComparison.Ordinal))
+            return false;
+
+        string credId = CredentialId;
+        if (string.IsNullOrEmpty(credId)) return false;
+        if (!Guid.TryParse(credId, out Guid credentialId)) return false;
+
+        ICredentialRecord? record = Runtime.CredentialProviderCatalog.GetCredentialRecord(credentialId);
+        if (record?.Password is null) return false;
+
+        // A copy, so disposing what the caller was given cannot reach into the credential store.
+        secret = record.Password.Copy();
+        return true;
     }
 
     private bool TryGetCredentialRecordValue<TPropertyType>(string propertyName, out TPropertyType credentialValue)

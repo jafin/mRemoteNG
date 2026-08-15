@@ -22,18 +22,30 @@ pass every existing test.
 - **THEN** the stored value is not replaced
 - **AND** no change notification is raised
 
-### Requirement: Secrets are decrypted per field rather than eagerly
+### Requirement: A decrypted secret is held only as a SecureString
 
-The system SHALL decrypt a stored secret when that record's secret is required, and SHALL NOT
-decrypt every secret in the connection file when the file is opened.
+The system SHALL place a secret decrypted from the connection file into the record's `SecureString`
+storage, and SHALL NOT retain it in a plain-text field on the record.
 
-Opening a connection file would otherwise place every password in the process at once, for the
-lifetime of the session, to serve the connections a user actually opens — usually a handful.
+**This replaces a requirement stating that secrets are decrypted per field rather than eagerly,
+which was proposed on a false premise and is not met.** The proposal cited a deferral in the
+deserializer; that deferral is real but it collects every encrypted attribute during the XML walk and
+decrypts *all of them in one batch* before the load returns. It batches the key derivation for speed
+and does nothing for lifetime. Opening a connection file therefore does place every password in the
+process at once, and the batch materialises them as a `string[]` — immutable, unzeroable, alive until
+collected — before each is copied into its record's `SecureString`.
+
+That is a wider exposure than the property-getter copies this capability narrows, and it is recorded
+here rather than quietly dropped. Closing it means making decryption lazy per record, which changes
+how the deserializer, the tree model and every consumer of a loaded record behave, and belongs to its
+own change with its own risk assessment. `ConnectionSecretDecryptionTimingTests` pins the current
+behaviour so the day it changes is visible.
 
 #### Scenario: Opening a connection file
 
 - **WHEN** a connection file is loaded
-- **THEN** secrets are not decrypted as part of loading
+- **THEN** each decrypted secret is held on its record as a `SecureString`
+- **AND** no record holds a secret in a plain-text field
 
 ### Requirement: Callers that can consume a SecureString are given one
 
@@ -42,14 +54,37 @@ and the plain-text property SHALL exist only for the property grid and interop t
 string.
 
 Converting to `string` and back produces immutable copies that cannot be zeroed. Where the consumer
-accepts a `SecureString` — SSH.NET's credential path and the transfer backends built on it — the
-round trip creates the exposure it is meant to avoid.
+accepts a `SecureString` the round trip creates the exposure it is meant to avoid.
 
-#### Scenario: An SSH-backed caller reads a password
+**The named consumer is the credential store, not SSH.** The proposal expected `SshCredentialResolver`
+to be the adopter; it deals in `string` throughout — the external credential providers return strings,
+the default password unprotects to one, and `ResolvedSshCredential` takes a string and converts it to
+a `char[]` it zeroes, with a remark already recording that the string entry point is out of scope.
+Handing that path a `SecureString` would mean converting back for every provider branch, which is
+worse than what it does today.
+
+The real round trip is at the credential-record boundary, and it is worse than the one proposed:
+a connection bound to a credential record converted that record's `SecureString` into a plain string
+on *every* read of its password, and the property grid re-reads a displayed connection constantly.
+
+Where a secret resolves through inheritance or a connection link, the plain-text property is used
+deliberately: those routes answer by reading another record's string property, including a walk that
+skips parents holding an empty credential, and a second implementation of those rules could drift
+from the first. An accessor that returns a different password than the property beside it is a worse
+outcome than the copy it would save.
+
+#### Scenario: A caller reads a password backed by a credential record
 
 - **WHEN** a caller able to consume a `SecureString` requires a connection's password
-- **THEN** it obtains a `SecureString`
+- **AND** the connection is bound to a credential record
+- **THEN** it obtains a `SecureString` copy of the credential's own secret
 - **AND** no plain-text copy is created on its behalf
+
+#### Scenario: A caller disposes what it was given
+
+- **WHEN** a caller disposes the `SecureString` it obtained
+- **THEN** the connection record's own secret is unaffected
+- **AND** the credential record's secret is unaffected
 
 #### Scenario: The property grid displays a connection
 

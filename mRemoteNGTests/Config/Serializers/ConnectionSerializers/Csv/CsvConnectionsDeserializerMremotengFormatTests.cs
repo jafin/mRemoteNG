@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Security;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Csv;
 using mRemoteNG.Connection;
 using mRemoteNG.Connection.Protocol;
@@ -206,9 +207,14 @@ public class CsvConnectionsDeserializerMremotengFormatTests
                 nameof(ConnectionInfo.ConstantID),
                 nameof(ConnectionInfo.Parent)
             };
+            // SecureString properties are read-only views of a secret that is already excluded — see
+            // the Password skip below, which they are views of. Comparing them by value would compare
+            // two SecureString instances, which are never equal, and there is nothing of theirs in
+            // the CSV to round-trip in the first place.
             var properties = typeof(ConnectionInfo)
                 .GetProperties()
-                .Where(property => !ignoreProperties.Contains(property.Name));
+                .Where(property => property.PropertyType != typeof(SecureString) &&
+                                   !ignoreProperties.Contains(property.Name));
             var testCases = new List<TestCaseData>();
             var testConnectionInfo = GetTestConnection();
 
