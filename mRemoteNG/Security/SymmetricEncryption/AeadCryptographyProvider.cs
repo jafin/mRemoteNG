@@ -58,6 +58,13 @@ public class AeadCryptographyProvider : ICryptographyProvider
     private int _cachedDecryptIterations;
     private HashAlgorithmName _cachedDecryptPrf;
 
+    /// <summary>
+    /// True: GCM's authentication tag is checked on every decryption, so a value that fails to
+    /// decrypt was altered or written under another key. It is never a plain value this provider
+    /// merely failed to recognise.
+    /// </summary>
+    public bool DetectsTampering => true;
+
     //Preconfigured Encryption Parameters
     protected virtual int NonceBitSize { get; set; } = 128;
     protected virtual int MacBitSize { get; set; } = 128;

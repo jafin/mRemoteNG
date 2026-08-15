@@ -667,9 +667,13 @@ public class DataTableSerializer(SaveFilter saveFilter, ICryptographyProvider cr
                 dataRow["InheritVNCClipboardRedirect"].Equals(false);
         }
 
-        //bool pwd = dataRow["Password"].Equals(_saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password?.ConvertToUnsecureString(), _encryptionKey) : "") &&
-        //          dataRow["VNCProxyPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.VNCProxyPassword, _encryptionKey)) &&
-        //          dataRow["RDGatewayPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.RDGatewayPassword, _encryptionKey));
+        // Note that this comparison is false for any connection that has a password, whichever
+        // provider is in use: both generate fresh randomness per encryption — a random IV in the
+        // legacy provider, a random GCM nonce in the authenticated one — so encrypting the same
+        // password twice never produces the same ciphertext. Rows with a password are therefore
+        // always treated as changed and always rewritten. That is wasteful rather than wrong, it
+        // predates this change, and comparing plaintext instead would mean decrypting every stored
+        // row on every save to answer a question about whether to write it.
         bool pwd = dataRow["Password"].Equals(_saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password, _encryptionKey) : "") &&
                    dataRow["VNCProxyPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.VNCProxyPassword, _encryptionKey)) &&
                    dataRow["RDGatewayPassword"].Equals(_cryptographyProvider.Encrypt(connectionInfo.RDGatewayPassword, _encryptionKey));
@@ -732,7 +736,6 @@ public class DataTableSerializer(SaveFilter saveFilter, ICryptographyProvider cr
         dataRow["OpeningCommand"] = connectionInfo.OpeningCommand;
         dataRow["Panel"] = connectionInfo.Panel;
         dataRow["ParentID"] = connectionInfo.Parent?.ConstantID ?? "";
-        //dataRow["Password"] = _saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password?.ConvertToUnsecureString(), _encryptionKey) : "";
         dataRow["Password"] = _saveFilter.SavePassword ? _cryptographyProvider.Encrypt(connectionInfo.Password, _encryptionKey) : "";
         dataRow["Port"] = connectionInfo.Port;
         dataRow["PositionID"] = _currentNodeIndex;

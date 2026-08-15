@@ -10,6 +10,7 @@ using mRemoteNG.Connection.Protocol.Http;
 using mRemoteNG.Connection.Protocol.RDP;
 using mRemoteNG.Connection.Protocol.VNC;
 using mRemoteNG.Container;
+using mRemoteNG.Messages;
 using mRemoteNG.Security;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree;
@@ -325,16 +326,48 @@ public class DataTableDeserializer(ICryptographyProvider cryptographyProvider, S
             connectionInfo.Inheritance.VNCClipboardRedirect = MiscTools.GetBooleanValue(dataRow["InheritVNCClipboardRedirect"]);
     }
 
+    /// <summary>
+    /// Decrypts one secret column, and decides what a failure means.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The fallback is not universal, and treating it as if it were would throw away the reason
+    /// for authenticating the ciphertext at all.</b> Returning the value unchanged is right for a
+    /// provider that cannot tell "somebody altered this" from "this was never encrypted": databases
+    /// old enough to hold plain values exist, and refusing to load them would help nobody.
+    /// </para>
+    /// <para>
+    /// It is wrong for a provider that <i>can</i> tell. Under authenticated encryption a failure
+    /// means the stored text was altered, or was written under a different key — and passing it
+    /// through would hand a connection its own base64 ciphertext as a password. The tamper detection
+    /// would be doing its work and reporting nothing, which is the worst of both.
+    /// </para>
+    /// <para>
+    /// So the value becomes empty and the user is told. Not an aborted load: one altered row must
+    /// not deny access to every other connection in the database, and a password that is visibly
+    /// missing on one connection, with a message naming it, is something a person can act on.
+    /// </para>
+    /// </remarks>
     private string DecryptValue(string cipherText)
     {
         try
         {
             return _cryptographyProvider.Decrypt(cipherText, _decryptionKey);
         }
-        catch (EncryptionException)
+        catch (Exception ex) when (ex is EncryptionException or FormatException)
         {
-            // value may not be encrypted
-            return cipherText;
+            // FormatException as well as EncryptionException: the authenticated provider reads the
+            // base64 before it reaches the cipher, so text mangled badly enough fails there instead
+            // — the same event, and it would otherwise escape and fail the whole load.
+            if (!_cryptographyProvider.DetectsTampering)
+                return cipherText;
+
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg,
+                "A stored password in the SQL database could not be decrypted. It has been altered " +
+                "since it was written, or was written under a different master password. The " +
+                "connection is loaded without it rather than with a wrong value.");
+
+            return string.Empty;
         }
     }
 

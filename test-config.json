@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "total_expected": 4303,
+    "total_expected": 4312,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-15",
     "stats": {
@@ -37,7 +37,7 @@
       {
         "name": "Config.Other",
         "filter": "FullyQualifiedName~mRemoteNGTests.Config&FullyQualifiedName!~Serializers.ConnectionSerializers.Xml",
-        "expected": 731
+        "expected": 740
       },
       {
         "name": "Config.Xml",
