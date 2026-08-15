@@ -2186,6 +2186,15 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string similar to Nothing was saved. This database still stores its passwords with the old, weak encryption, and {0} will not write to it. Open Tools &gt; Options &gt; SQL Server and upgrade the database to protect them. Your connections in the database are unchanged and can still be opened..
+        /// </summary>
+        internal static string ErrorDatabaseNotUpgradedForEncryption {
+            get {
+                return ResourceManager.GetString("ErrorDatabaseNotUpgradedForEncryption", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to The database is at version {0}, which is newer than this copy of {1} supports (up to version {2}). No connections were loaded. Upgrade {1} on this computer to open it..
         /// </summary>
         internal static string ErrorDatabaseVersionNewerThanClient {

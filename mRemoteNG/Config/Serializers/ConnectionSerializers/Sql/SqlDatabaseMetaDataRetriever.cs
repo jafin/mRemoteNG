@@ -174,8 +174,15 @@ public class SqlDatabaseMetaDataRetriever : ISqlDatabaseMetaDataRetriever
                 // save while its rows were written as AEAD, and the next load would read AEAD
                 // ciphertext with the legacy provider — the half-migrated state this design exists
                 // to make impossible.
+                //
+                // A database with no version yet is one this save is creating, and it is created at
+                // the authenticated version rather than the older schema. That follows from the
+                // saver refusing to write a legacy database: creating one at the legacy version
+                // would produce a database this build could read and never write to again — broken
+                // on its second save, by its own creator.
                 confVersionParam.Value =
-                    (databaseVersion ?? Versioning.SqlDatabaseVersionVerifier.SchemaVersion).ToString();
+                    (databaseVersion ?? Security.Factories.CryptoProviderFactoryFromSqlVersion
+                        .AuthenticatedEncryptionVersion).ToString();
                 cmd.Parameters.Add(confVersionParam);
 
                 cmd.ExecuteNonQuery();

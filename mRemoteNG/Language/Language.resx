@@ -595,6 +595,9 @@ Starting with new connections file.</value>
   <data name="ErrorConnectionListSaveFailed" xml:space="preserve">
     <value>The connection list could not be saved.</value>
   </data>
+  <data name="ErrorDatabaseNotUpgradedForEncryption" xml:space="preserve">
+    <value>Nothing was saved. This database still stores its passwords with the old, weak encryption, and {0} will not write to it. Open Tools &gt; Options &gt; SQL Server and upgrade the database to protect them. Your connections in the database are unchanged and can still be opened.</value>
+  </data>
   <data name="ErrorDatabaseVersionNewerThanClient" xml:space="preserve">
     <value>The database is at version {0}, which is newer than this copy of {1} supports (up to version {2}). No connections were loaded. Upgrade {1} on this computer to open it.</value>
   </data>

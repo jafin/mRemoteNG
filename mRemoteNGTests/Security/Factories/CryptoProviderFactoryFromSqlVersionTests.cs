@@ -61,9 +61,10 @@ public class CryptoProviderFactoryFromSqlVersionTests
     [Test]
     public void TheSchemaVersionAndTheAuthenticatedVersionDoNotOverlap()
     {
-        // A database this build creates is legacy, and it is upgraded deliberately. If these two
-        // ever became the same value, creating a database would silently choose the format that
-        // upstream mRemoteNG cannot read, for a team that never asked.
+        // Every database in the field is at the schema version and is legacy; nothing upgrades one
+        // except a deliberate act. If these two ever became the same value, every existing database
+        // would appear already upgraded and would be read with a provider its contents were never
+        // written by.
         Assert.Multiple(() =>
         {
             Assert.That(CryptoProviderFactoryFromSqlVersion.UsesAuthenticatedEncryption(
@@ -82,6 +83,34 @@ public class CryptoProviderFactoryFromSqlVersionTests
 
         Assert.That(built.GetType(),
             Is.EqualTo(CryptoProviderFactoryFromSqlVersion.ProviderFor(version).GetType()));
+    }
+
+    [Test]
+    public void ANewDatabaseIsCreatedAtAVersionThisBuildCanWriteTo()
+    {
+        // The trap §3 introduced and this catches. The saver refuses to write a database that still
+        // stores its secrets weakly, so a database created at the older version would be readable
+        // and permanently unwritable — broken on its second save, by the build that made it.
+        Assert.That(CryptoProviderFactoryFromSqlVersion.UsesAuthenticatedEncryption(
+            CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion),
+            "a database created at this version must be one the saver will accept");
+    }
+
+    [Test]
+    public void TheRefusalTellsTheUserWhatToDoAndWhatIsSafe()
+    {
+        // A refused save is the one place in this change a user is stopped, and the message is most
+        // of its value: it has to name the remedy, and it has to say the connections already in the
+        // database are unharmed — which is the first thing anyone will ask.
+        string message = mRemoteNG.Resources.Language.Language.ErrorDatabaseNotUpgradedForEncryption;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.Contain("Nothing was saved"),
+                "the user must not believe their change was stored");
+            Assert.That(message, Does.Contain("SQL Server"), "and must be told where to go");
+            Assert.That(message, Does.Contain("unchanged"), "and that nothing was harmed");
+        });
     }
 
     [Test]

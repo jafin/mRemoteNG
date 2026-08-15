@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "total_expected": 4272,
+    "total_expected": 4274,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-15",
     "stats": {
@@ -52,7 +52,7 @@
       {
         "name": "Security",
         "filter": "FullyQualifiedName~mRemoteNGTests.Security",
-        "expected": 499
+        "expected": 501
       },
       {
         "name": "Remaining",

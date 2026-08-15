@@ -13,15 +13,17 @@ namespace mRemoteNG.Config.Serializers.Versioning;
 public class SqlDatabaseVersionVerifier : ISqlDatabaseVersionVerifier
 {
     /// <summary>
-    /// The schema this build creates and upgrades to. Secrets at this version are legacy-encrypted.
+    /// The schema every existing database is at. Secrets at this version are legacy-encrypted.
     /// </summary>
     /// <remarks>
-    /// A database this build creates is created here rather than at
-    /// <see cref="Security.Factories.CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion"/>,
-    /// for the same reason a new connection file is written classic: the stronger format cannot be
-    /// read by upstream mRemoteNG, which reaches these same databases, and choosing that for a team
-    /// is a decision to be made deliberately rather than inherited from whoever happened to create
-    /// the database.
+    /// <b>This is not the version a new database is created at</b>, and §2 of this change recorded
+    /// that it was. The reasoning then was the connection file's: write the older format so upstream
+    /// mRemoteNG can still read it, and let the stronger one be chosen deliberately. §3 makes that
+    /// untenable — the saver refuses to write a legacy database, so creating one here would produce
+    /// a database this build could read and never write to again, broken on its second save by its
+    /// own creator. New databases are created at
+    /// <see cref="Security.Factories.CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion"/>.
+    /// What remains true is that an <i>existing</i> database is never upgraded except deliberately.
     /// </remarks>
     public static readonly Version SchemaVersion = new(3, 5);
 

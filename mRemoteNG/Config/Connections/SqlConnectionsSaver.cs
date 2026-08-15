@@ -2,9 +2,11 @@
 using System.Collections.Generic;
 using System.Data;
 using System.Data.Common;
+using System.Globalization;
 using System.Linq;
 using System.Runtime.Versioning;
 using mRemoteNG.App;
+using mRemoteNG.App.Info;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Config.DataProviders;
 using mRemoteNG.Config.Serializers;
@@ -80,6 +82,8 @@ public class SqlConnectionsSaver : ISaver<ConnectionTreeModel>
                 throw new InvalidOperationException(Language.ErrorConnectionListSaveFailed);
             }
 
+            ThrowIfTheDatabaseStillStoresSecretsWeakly(metaData);
+
             // Safety check: prevent truncating a non-empty database when the in-memory
             // tree is empty — this indicates a failed or incomplete load (#1351)
             int connectionCount = rootTreeNode.GetRecursiveChildList().Count();
@@ -100,10 +104,12 @@ public class SqlConnectionsSaver : ISaver<ConnectionTreeModel>
             using DbTransaction transaction = dbConnector.DbConnection().BeginTransaction();
             try
             {
-                // Null for a brand-new database, whose metadata row this save is about to insert.
-                // `CryptoProviderFactoryFromSqlVersion` reads that as legacy, which is what a new
-                // database is created at — it is upgraded deliberately, like any other.
-                Version? databaseVersion = metaData?.ConfVersion;
+                // Null for a brand-new database, whose metadata row this save is about to insert
+                // at the authenticated version. The rows below are written with whatever provider
+                // that version selects, so the two always agree — a database created legacy and
+                // written AEAD, or the reverse, is the state that cannot be recovered from.
+                Version databaseVersion = metaData?.ConfVersion
+                    ?? CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion;
 
                 metaDataRetriever.WriteDatabaseMetaData(rootTreeNode, dbConnector, transaction, databaseVersion);
                 UpdateConnectionsTable(rootTreeNode, dbConnector, databaseVersion, transaction);
@@ -119,6 +125,51 @@ public class SqlConnectionsSaver : ISaver<ConnectionTreeModel>
         }
 
         Runtime.MessageCollector.AddMessage(MessageClass.DebugMsg, "Saved connections to database");
+    }
+
+    /// <summary>
+    /// Refuses to write connections into a database that still stores its secrets with the legacy
+    /// provider.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Every save into a legacy database writes passwords under an unsalted MD5 key with no
+    /// authentication tag</b> — recoverable at GPU speed, and modifiable by anyone with write access
+    /// to the table. Continuing to write it is not a neutral act: it is the defect this change
+    /// exists to remove, applied to whatever the user just typed.
+    /// </para>
+    /// <para>
+    /// <b>Why refusing, when a classic connection file is still writable.</b> The connection file
+    /// can offer its owner a choice, because the person prompted is the person affected. A database
+    /// is shared: upgrading it decides for a whole team, cannot be undone without restoring a
+    /// backup, and locks out every client not yet upgraded — so it is deliberately never prompted
+    /// (see design.md). With no prompt available, refusing the write is the only way the decision
+    /// gets made at all, rather than the weak format persisting indefinitely because nobody looked
+    /// in the options page.
+    /// </para>
+    /// <para>
+    /// <b>It is loud on purpose.</b> This throws rather than returning, because a save that quietly
+    /// does nothing is worse than the encryption it declined to use: the user believes their change
+    /// is stored. The message names the remedy and says the existing connections are unharmed,
+    /// which is the first thing anyone will want to know.
+    /// </para>
+    /// <para>
+    /// A null <paramref name="metaData"/> is a database being created by this very save, which
+    /// <see cref="SqlDatabaseMetaDataRetriever"/> creates at the authenticated version. There is
+    /// nothing to refuse and nothing to upgrade.
+    /// </para>
+    /// </remarks>
+    private static void ThrowIfTheDatabaseStillStoresSecretsWeakly(SqlConnectionListMetaData? metaData)
+    {
+        if (metaData is null ||
+            CryptoProviderFactoryFromSqlVersion.UsesAuthenticatedEncryption(metaData.ConfVersion))
+            return;
+
+        string message = string.Format(CultureInfo.InvariantCulture,
+            Language.ErrorDatabaseNotUpgradedForEncryption, GeneralAppInfo.ProductName);
+
+        Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, message);
+        throw new InvalidOperationException(message);
     }
 
     /// <summary>

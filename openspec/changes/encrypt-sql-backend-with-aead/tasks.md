@@ -39,9 +39,24 @@ version would have reported every database in the field as unsupported.
 
 ## 3. Refuse to write a legacy database
 
-- [ ] 3.1 Make `SqlConnectionsSaver` refuse when the database is below the new version, with a message naming the upgrade.
-- [ ] 3.2 Confirm the refusal surfaces where a user will see it rather than only in the log — a save that silently does nothing is worse than the weak encryption it avoids.
-- [ ] 3.3 Tests: a save against a legacy database does not write and reports; a save against an upgraded database writes AEAD ciphertext.
+- [x] 3.1 Make `SqlConnectionsSaver` refuse when the database is below the new version, with a message naming the upgrade. — `ThrowIfTheDatabaseStillStoresSecretsWeakly`, before anything is written. Recorded there is *why* this refuses where a classic connection file is still writable: the file can offer its owner a choice, because the person prompted is the person affected. A database is shared, so the upgrade is deliberately never prompted — and with no prompt available, refusing the write is the only thing that makes the decision happen at all, rather than the weak format persisting because nobody opened the options page.
+- [x] 3.2 Confirm the refusal surfaces where a user will see it rather than only in the log — a save that silently does nothing is worse than the weak encryption it avoids. — Throws as well as reporting, matching the version-check refusal beside it, so the save cannot appear to succeed. `ErrorDatabaseNotUpgradedForEncryption` opens with "Nothing was saved", names **Tools → Options → SQL Server**, and says the connections already in the database are unchanged and still open — the first thing anyone will ask.
+- [ ] 3.3 Tests: a save against a legacy database does not write and reports; a save against an upgraded database writes AEAD ciphertext. — **Needs a real database; deferred to the Testcontainers fixture.** What is asserted meanwhile: the refusal message says the three things it must, and a new database is created at a version the saver will accept. The end-to-end pair is the point of this task and is not yet done.
+
+**§3 invalidates a decision recorded in §2, and the note there has been corrected rather than left
+to be discovered.** §2 said a new database is created at the schema version, reasoning from the
+connection file: write the older format so upstream mRemoteNG can still read it, and let the
+stronger one be chosen deliberately. Once the saver refuses to write a legacy database that becomes
+untenable — creating one at the schema version would produce a database this build could read and
+never write to again, broken on its second save by the build that made it. New databases are now
+created at the authenticated version. An *existing* database is still never upgraded except
+deliberately, which is the part of the original reasoning that survives.
+
+**Worth a decision before this ships.** The refusal makes every existing SQL installation read-only
+until an administrator upgrades, and because saves are debounced and automatic, an ordinary edit
+raises an error. That is what the proposal asks for and the security argument is sound — every save
+into a legacy database writes passwords under an unsalted MD5 key. But it must ship in the same
+release as §4, or users get the refusal with no way to act on it.
 
 ## 4. Upgrade
 
