@@ -159,7 +159,7 @@ Added in v1.82.1
 
 Select more than one connection in the Connections panel and press **Enter** to open them all in one go. Hold **Shift** and use the arrow keys to pick a run of neighbouring connections, or hold **Ctrl** and click to pick them one at a time.
 
-Folders in a multiple selection are skipped, so a Shift-selection that sweeps across a folder opens only the connections it caught, not everything filed under that folder.
+Folders and the **Connections** root are skipped when a multiple selection sweeps them up, so a Shift-selection that runs across a folder opens only the connections it caught, not everything filed under that folder. A folder with its own **Hostname** is the exception: that is a connection in its own right, so it opens like any other. Selecting a single folder and pressing **Enter** is unchanged — it still opens the folder itself.
 
 :::warning
 
