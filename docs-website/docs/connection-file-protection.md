@@ -86,7 +86,8 @@ session — opening a second file protected by the same password does not ask ag
 
 ## Sharing a file with your team
 
-A connection file on a share works, and each person types the recovery password **once**.
+A connection file on a share works, and each person who saves it types the recovery password
+**once**.
 
 The first time a colleague opens the file, their Windows account is not one it recognises yet, so
 they are asked for the recovery password. The next time they **save**, mRemoteNG adds an unlock for
