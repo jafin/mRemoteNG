@@ -132,30 +132,39 @@ public class IntegratedProgram : ExternalProcessProtocolBase
             if (_handle == IntPtr.Zero)
             {
                 Runtime.MessageCollector?.AddMessage(MessageClass.WarningMsg,
-                    $"IntegratedProgram: Could not find a window handle for '{_externalTool.DisplayName}' (PID {processId}). " +
-                    "The application may have opened in a separate window.");
+                    BuildNoEmbeddableWindowMessage(_externalTool.DisplayName, processId,
+                        IsCommonShellTool(_externalTool, parsedFileName)));
+
+                // There is nothing to embed, so this panel would stay blank forever. Give it up
+                // and let the tool live in its own window — the same outcome a tool with
+                // "Try to integrate" turned off gets. Detaching _process is what keeps it alive:
+                // returning false sends ProtocolBase.Close() into
+                // ExternalProcessProtocolBase.Close(), which kills whatever _process still holds,
+                // and killing a shell the user is looking at would be worse than not docking it.
+                _process.Exited -= ProcessExited;
+                _process.Dispose();
+                _process = null;
+                return false;
             }
-            else
+
+            _ = NativeMethods.GetWindowThreadProcessId(_handle, out uint windowPid);
+            if (windowPid != (uint)_process.Id)
             {
-                _ = NativeMethods.GetWindowThreadProcessId(_handle, out uint windowPid);
-                if (windowPid != (uint)_process.Id)
+                try
                 {
-                    try
-                    {
-                        Process windowProcess = Process.GetProcessById((int)windowPid);
+                    Process windowProcess = Process.GetProcessById((int)windowPid);
 
-                        _process.Exited -= ProcessExited;
-                        _process = windowProcess;
-                        _process.EnableRaisingEvents = true;
-                        _process.Exited += ProcessExited;
+                    _process.Exited -= ProcessExited;
+                    _process = windowProcess;
+                    _process.EnableRaisingEvents = true;
+                    _process.Exited += ProcessExited;
 
-                        Runtime.MessageCollector?.AddMessage(MessageClass.InformationMsg,
-                            $"IntegratedProgram: Tracking process changed from PID {processId} to PID {windowPid}", true);
-                    }
-                    catch (Exception ex)
-                    {
-                        Runtime.MessageCollector?.AddExceptionMessage("IntegratedProgram: Failed to attach to window owner process.", ex);
-                    }
+                    Runtime.MessageCollector?.AddMessage(MessageClass.InformationMsg,
+                        $"IntegratedProgram: Tracking process changed from PID {processId} to PID {windowPid}", true);
+                }
+                catch (Exception ex)
+                {
+                    Runtime.MessageCollector?.AddExceptionMessage("IntegratedProgram: Failed to attach to window owner process.", ex);
                 }
             }
 
@@ -164,8 +173,7 @@ public class IntegratedProgram : ExternalProcessProtocolBase
             // Give keyboard focus to the embedded window after re-parenting.
             // Required for Java-based apps (e.g. TigerVNC) where the Java AWT focus model
             // does not automatically acquire Win32 keyboard focus after SetParent (#1442).
-            if (_handle != IntPtr.Zero)
-                NativeMethods.SetFocus(_handle);
+            NativeMethods.SetFocus(_handle);
 
             Runtime.MessageCollector?.AddMessage(MessageClass.InformationMsg, Language.IntAppStuff, true);
             Runtime.MessageCollector?.AddMessage(MessageClass.InformationMsg,
@@ -207,6 +215,27 @@ public class IntegratedProgram : ExternalProcessProtocolBase
     #endregion
 
     #region Private Methods
+
+    /// <summary>
+    /// Explains a failed embed in terms the user can act on, naming the specific cause for
+    /// console tools rather than leaving them to guess why the panel never appeared.
+    /// </summary>
+    internal static string BuildNoEmbeddableWindowMessage(string displayName, int processId, bool isConsoleTool)
+    {
+        string message =
+            $"'{displayName}' (PID {processId}) started, but it has no window that can be docked, " +
+            "so it is running in its own window instead of in a panel.";
+
+        if (isConsoleTool)
+            message +=
+                " Console tools hand their window to the Windows default terminal application. When that is " +
+                "Windows Terminal — the default on Windows 11 — the console lives in a separate process that " +
+                "cannot be docked. To dock this tool, set the default terminal application to " +
+                "\"Windows Console Host\" under Settings > System > For developers, or in Windows Terminal " +
+                "under Startup.";
+
+        return message;
+    }
 
     private static ExternalTool? CreateBuiltInShellPresetForIntegration(string extAppName)
     {

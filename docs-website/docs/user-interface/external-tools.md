@@ -85,6 +85,23 @@ Sometimes also called switches and parameters. This is where you tell the applic
 Working directory  
 From where should this Tool/Item be ran.
 
+Try to integrate  
+Dock the tool inside mRemoteNG instead of letting it open its own window. When this is ticked, launching the tool opens a tab in a panel named **Tools**, and mRemoteNG moves the tool's window into that tab.
+
+## Docking a tool inside mRemoteNG
+
+Tick **Try to integrate** on the tool, then launch it. The tool appears as a tab rather than as a separate window.
+
+Not every application can be docked. mRemoteNG can only move a window it can find, so a tool that draws its window somewhere else — or draws no window at all — keeps running in its own window. When that happens the tab closes again and the reason appears in the notifications panel; the tool itself is left running, so nothing you started is lost.
+
+:::note
+
+Command prompts are the common case that cannot be docked. On Windows 11 the default terminal application is Windows Terminal, and a console tool such as `cmd` or `powershell` hands its console to that separate program, which mRemoteNG cannot move into a tab.
+
+To dock console tools, set the default terminal application back to **Windows Console Host** — either under **Settings → System → For developers → Terminal**, or in Windows Terminal under **Settings → Startup → Default terminal application**. Existing sessions keep their current terminal, so open a new one after changing it.
+
+:::
+
 ## Variables
 
 Variables and arguments can be used to tell the external tool what to do.

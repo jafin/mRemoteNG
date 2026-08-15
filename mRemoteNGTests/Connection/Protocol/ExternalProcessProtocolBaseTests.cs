@@ -63,6 +63,33 @@ public class ExternalProcessProtocolBaseTests
 
     #endregion
 
+    #region IsEmbeddableWindow
+
+    [Test]
+    public void IsEmbeddableWindow_ZeroHandle_ReturnsFalse()
+    {
+        Assert.That(TestProtocol.TestIsEmbeddableWindow(IntPtr.Zero), Is.False);
+    }
+
+    // The class-name filter exists to reject console handoff placeholders. Its risk is rejecting
+    // ordinary windows too, which would stop every integrated tool from docking.
+    [Test]
+    public void IsEmbeddableWindow_OrdinaryVisibleWindow_ReturnsTrue()
+    {
+        using var form = new System.Windows.Forms.Form { Text = "embeddable probe" };
+        form.Show();
+        try
+        {
+            Assert.That(TestProtocol.TestIsEmbeddableWindow(form.Handle), Is.True);
+        }
+        finally
+        {
+            form.Close();
+        }
+    }
+
+    #endregion
+
     #region PollMainWindowHandle
 
     [Test]
@@ -258,6 +285,8 @@ public class ExternalProcessProtocolBaseTests
 
         public static IntPtr TestFindWindowInDescendantProcesses(int rootPid, int timeoutMs, int maxDepth)
             => FindWindowInDescendantProcesses(rootPid, timeoutMs, maxDepth);
+
+        public static bool TestIsEmbeddableWindow(IntPtr hWnd) => IsEmbeddableWindow(hWnd);
 
         public void SetProcess(Process? process) => _process = process;
         public void SetHandle(IntPtr handle) => _handle = handle;

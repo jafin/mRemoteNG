@@ -5,6 +5,7 @@ using System.Drawing;
 using System.Globalization;
 using System.Management;
 using System.Runtime.Versioning;
+using System.Text;
 using System.Threading;
 using System.Windows.Forms;
 using mRemoteNG.App;
@@ -27,6 +28,35 @@ public abstract class ExternalProcessProtocolBase : ProtocolBase
     #region Window Finding
 
     /// <summary>
+    /// Class name of the placeholder window left behind when a console is hosted out of process.
+    /// </summary>
+    private const string PseudoConsoleWindowClass = "PseudoConsoleWindow";
+
+    /// <summary>
+    /// True when <paramref name="hWnd"/> is a visible top-level window that can actually be
+    /// reparented into a panel.
+    /// </summary>
+    /// <remarks>
+    /// Visibility alone is not enough. When Windows' default terminal application is Windows
+    /// Terminal — the default on Windows 11 — starting a console tool hands the console off to
+    /// WindowsTerminal.exe, and all that remains in the tool's own process is a 0x0 placeholder
+    /// window of class <c>PseudoConsoleWindow</c>. It reports itself visible, so without this
+    /// check it is exactly what window discovery finds and embeds: the panel then shows nothing
+    /// while the real shell runs in a separate Windows Terminal window.
+    /// </remarks>
+    protected static bool IsEmbeddableWindow(IntPtr hWnd)
+    {
+        if (!NativeMethods.IsWindowVisible(hWnd))
+            return false;
+
+        StringBuilder className = new(256);
+        if (NativeMethods.GetClassName(hWnd, className, className.Capacity) <= 0)
+            return true; // Unreadable class name is not evidence against embedding.
+
+        return !string.Equals(className.ToString(), PseudoConsoleWindowClass, StringComparison.Ordinal);
+    }
+
+    /// <summary>
     /// Polls Process.MainWindowHandle for up to <paramref name="timeoutMs"/> milliseconds.
     /// Works for direct GUI apps (PuTTY, Notepad++, etc.).
     /// </summary>
@@ -43,7 +73,9 @@ public abstract class ExternalProcessProtocolBase : ProtocolBase
                 process.Refresh();
                 if (!string.Equals(process.MainWindowTitle, "Default IME", StringComparison.Ordinal))
                 {
-                    handle = process.MainWindowHandle;
+                    IntPtr mainWindow = process.MainWindowHandle;
+                    if (mainWindow != IntPtr.Zero && IsEmbeddableWindow(mainWindow))
+                        handle = mainWindow;
                 }
             }
             catch (InvalidOperationException)
@@ -72,7 +104,7 @@ public abstract class ExternalProcessProtocolBase : ProtocolBase
             NativeMethods.EnumWindows((hWnd, lParam) =>
             {
                 _ = NativeMethods.GetWindowThreadProcessId(hWnd, out uint windowPid);
-                if (windowPid == (uint)processId && NativeMethods.IsWindowVisible(hWnd))
+                if (windowPid == (uint)processId && IsEmbeddableWindow(hWnd))
                 {
                     found = hWnd;
                     return false; // Stop enumeration
@@ -104,7 +136,7 @@ public abstract class ExternalProcessProtocolBase : ProtocolBase
                 NativeMethods.EnumWindows((hWnd, lParam) =>
                 {
                     _ = NativeMethods.GetWindowThreadProcessId(hWnd, out uint windowPid);
-                    if (windowPid == (uint)childPid && NativeMethods.IsWindowVisible(hWnd))
+                    if (windowPid == (uint)childPid && IsEmbeddableWindow(hWnd))
                     {
                         found = hWnd;
                         return false;
@@ -138,7 +170,7 @@ public abstract class ExternalProcessProtocolBase : ProtocolBase
                 NativeMethods.EnumWindows((hWnd, lParam) =>
                 {
                     _ = NativeMethods.GetWindowThreadProcessId(hWnd, out uint windowPid);
-                    if (windowPid == (uint)descendantPid && NativeMethods.IsWindowVisible(hWnd))
+                    if (windowPid == (uint)descendantPid && IsEmbeddableWindow(hWnd))
                     {
                         found = hWnd;
                         return false;
