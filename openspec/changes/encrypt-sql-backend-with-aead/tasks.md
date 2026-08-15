@@ -39,24 +39,21 @@ version would have reported every database in the field as unsupported.
 
 ## 3. Refuse to write a legacy database
 
-- [x] 3.1 Make `SqlConnectionsSaver` refuse when the database is below the new version, with a message naming the upgrade. — `ThrowIfTheDatabaseStillStoresSecretsWeakly`, before anything is written. Recorded there is *why* this refuses where a classic connection file is still writable: the file can offer its owner a choice, because the person prompted is the person affected. A database is shared, so the upgrade is deliberately never prompted — and with no prompt available, refusing the write is the only thing that makes the decision happen at all, rather than the weak format persisting because nobody opened the options page.
-- [x] 3.2 Confirm the refusal surfaces where a user will see it rather than only in the log — a save that silently does nothing is worse than the weak encryption it avoids. — Throws as well as reporting, matching the version-check refusal beside it, so the save cannot appear to succeed. `ErrorDatabaseNotUpgradedForEncryption` opens with "Nothing was saved", names **Tools → Options → SQL Server**, and says the connections already in the database are unchanged and still open — the first thing anyone will ask.
-- [ ] 3.3 Tests: a save against a legacy database does not write and reports; a save against an upgraded database writes AEAD ciphertext. — **Needs a real database; deferred to the Testcontainers fixture.** What is asserted meanwhile: the refusal message says the three things it must, and a new database is created at a version the saver will accept. The end-to-end pair is the point of this task and is not yet done.
+- [x] 3.1 ~~Make `SqlConnectionsSaver` refuse when the database is below the new version~~ — **task rewritten after implementing it.** The saver now warns once per database and saves anyway. Refusing was a bigger hammer than this change's own reasoning called for: design.md establishes that the *upgrade* must not be prompted, because it decides for a whole team and is irreversible — which says nothing about whether a legacy database should keep accepting writes. Refusing improves nothing today (the weak encryption is the state these databases are already in), stops work until an administrator acts, and because saves are automatic and debounced it lands on an ordinary rename. It also contradicted this fork's own precedent, where a classic connection file stays fully writable and hardening is offered rather than imposed. `WarnOnceIfTheDatabaseStillStoresSecretsWeakly`, keyed on server and database name so two stores on one server are warned about separately.
+- [x] 3.2 Confirm the refusal surfaces where a user will see it rather than only in the log — a save that silently does nothing is worse than the weak encryption it avoids. — Moot in its original form, since nothing is refused, but the concern behind it decided the shape of the warning. It goes to the message channel and **never to a modal**: a save can run on the debounce timer rather than on the user's action, so a dialog could appear over unrelated work or off the UI thread. The text says the change *was* saved — it must not read as a failure — names **Tools → Options → SQL Server**, and states what upgrading costs: older builds and other mRemoteNG installations stop being able to open the database. That last part is the piece nobody can find out for themselves before acting.
+- [ ] 3.3 Tests: a save against a legacy database does not write and reports; a save against an upgraded database writes AEAD ciphertext. — **Restated by the change above and still outstanding.** The first half is now "a save against a legacy database writes legacy ciphertext and warns once", not "does not write". Both halves need a real database and belong with the Testcontainers fixture. Asserted meanwhile: the warning says all four things it must, and a new database is created at a version whose provider the saver agrees with.
 
-**§3 invalidates a decision recorded in §2, and the note there has been corrected rather than left
-to be discovered.** §2 said a new database is created at the schema version, reasoning from the
-connection file: write the older format so upstream mRemoteNG can still read it, and let the
-stronger one be chosen deliberately. Once the saver refuses to write a legacy database that becomes
-untenable — creating one at the schema version would produce a database this build could read and
-never write to again, broken on its second save by the build that made it. New databases are now
-created at the authenticated version. An *existing* database is still never upgraded except
-deliberately, which is the part of the original reasoning that survives.
+**The cost of this decision, recorded so it is not lost:** a team that never opens the SQL options
+page keeps the weak format indefinitely. Refusing writes would have forced the issue. What replaces
+that pressure is the options page's status line, which reaches the person who can actually decide —
+and the warning, which at least means nobody can say they were not told.
 
-**Worth a decision before this ships.** The refusal makes every existing SQL installation read-only
-until an administrator upgrades, and because saves are debounced and automatic, an ordinary edit
-raises an error. That is what the proposal asks for and the security argument is sound — every save
-into a legacy database writes passwords under an unsalted MD5 key. But it must ship in the same
-release as §4, or users get the refusal with no way to act on it.
+**§3 also invalidates a decision recorded in §2, and the note there has been corrected rather than
+left to be discovered.** §2 said a new database is created at the schema version, reasoning from the
+connection file: write the older format so upstream mRemoteNG can still read it. Nothing reads a
+database this build has only just created, so there is nobody to stay compatible with and no reason
+to start it weak; new databases are created at the authenticated version. An *existing* database is
+still never upgraded except deliberately, which is the part of the original reasoning that survives.
 
 ## 4. Upgrade
 

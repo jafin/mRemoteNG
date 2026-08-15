@@ -1,4 +1,4 @@
-# Design
+﻿# Design
 
 ## Context
 
@@ -54,6 +54,28 @@ work — the worst available outcome, because it looks like data loss rather tha
 This is the one part of the change that has to ship **before** anyone upgrades a database. It belongs
 in a release that precedes the one offering the upgrade, or the protection is not there when it is
 first needed.
+
+### A legacy database stays writable
+
+Decided while implementing, against this proposal's original wording. The reasoning above is about
+the *upgrade* — that it decides for a whole team, is irreversible without a backup, and locks out
+un-upgraded clients, so it must not be put in front of whoever opens the application first. That
+argument does not extend to refusing writes.
+
+Refusing makes nobody safer today. The weak encryption is the state these databases are already in;
+declining to write does not improve it, it stops work until an administrator acts. Saves here run on
+a debounce timer, so the refusal lands on an ordinary rename and reads as a broken release. And a
+classic connection file — the same problem, one user instead of a team — stays fully writable in this
+fork, with hardening offered rather than imposed.
+
+So a legacy database is read and written as before, and the client says once per session that it is
+storing passwords weakly, names the options page, and says what upgrading costs. The message goes to
+the message channel and never to a modal: an automatic save must not raise a dialog over unrelated
+work.
+
+The cost, stated rather than hidden: a team that never opens the SQL options page keeps the legacy
+format for ever. The options page's own status line is what addresses that, and it reaches the person
+who can actually decide.
 
 ### Upgrade lives in the SQL options page, and is never prompted
 

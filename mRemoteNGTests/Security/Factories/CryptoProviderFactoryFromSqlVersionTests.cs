@@ -97,19 +97,22 @@ public class CryptoProviderFactoryFromSqlVersionTests
     }
 
     [Test]
-    public void TheRefusalTellsTheUserWhatToDoAndWhatIsSafe()
+    public void TheWarningSaysWorkContinuesAndWhatUpgradingCosts()
     {
-        // A refused save is the one place in this change a user is stopped, and the message is most
-        // of its value: it has to name the remedy, and it has to say the connections already in the
-        // database are unharmed — which is the first thing anyone will ask.
-        string message = mRemoteNG.Resources.Language.Language.ErrorDatabaseNotUpgradedForEncryption;
+        // The message carries the whole of this decision. It must not read as a failure — the save
+        // succeeded — and it must state the one thing a user cannot find out for themselves before
+        // acting: upgrading locks out older builds and other mRemoteNG installations. A warning that
+        // only said "upgrade this" would push people into an irreversible change for a whole team
+        // without telling them what it costs.
+        string message = mRemoteNG.Resources.Language.Language.WarningDatabaseNotUpgradedForEncryption;
 
         Assert.Multiple(() =>
         {
-            Assert.That(message, Does.Contain("Nothing was saved"),
-                "the user must not believe their change was stored");
-            Assert.That(message, Does.Contain("SQL Server"), "and must be told where to go");
-            Assert.That(message, Does.Contain("unchanged"), "and that nothing was harmed");
+            Assert.That(message, Does.Contain("saved"), "the change was written; this is not a failure");
+            Assert.That(message, Does.Contain("continues to work"), "and nothing is broken by it");
+            Assert.That(message, Does.Contain("SQL Server"), "the remedy is named");
+            Assert.That(message, Does.Contain("no longer be able to open it"),
+                "and so is what the remedy costs, which is the part nobody can guess");
         });
     }
 
