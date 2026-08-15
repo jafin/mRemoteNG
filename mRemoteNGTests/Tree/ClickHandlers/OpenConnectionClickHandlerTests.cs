@@ -2,6 +2,7 @@
 using mRemoteNG.Connection;
 using mRemoteNG.Container;
 using mRemoteNG.Tree.ClickHandlers;
+using mRemoteNG.Tree.Root;
 using NSubstitute;
 using NUnit.Framework;
 
@@ -48,5 +49,35 @@ public class OpenConnectionClickHandlerTests
     public void ThrowWhenExecuteGivenNullArg()
     {
         Assert.Throws<ArgumentNullException>(() => _clickHandler.Execute(null));
+    }
+
+    [Test]
+    public void ConnectionIsConnectable()
+    {
+        Assert.That(OpenConnectionClickHandler.IsConnectable(new ConnectionInfo()), Is.True);
+    }
+
+    [Test]
+    public void FolderWithoutHostnameIsNotConnectable()
+    {
+        Assert.That(OpenConnectionClickHandler.IsConnectable(new ContainerInfo()), Is.False);
+    }
+
+    [Test]
+    public void FolderWithHostnameIsConnectable()
+    {
+        Assert.That(OpenConnectionClickHandler.IsConnectable(new ContainerInfo { Hostname = "server1" }), Is.True);
+    }
+
+    [Test]
+    public void RootNodeIsNotConnectable()
+    {
+        Assert.That(OpenConnectionClickHandler.IsConnectable(new RootNodeInfo(RootNodeType.Connection)), Is.False);
+    }
+
+    [Test]
+    public void ThrowWhenIsConnectableGivenNullArg()
+    {
+        Assert.Throws<ArgumentNullException>(() => OpenConnectionClickHandler.IsConnectable(null));
     }
 }

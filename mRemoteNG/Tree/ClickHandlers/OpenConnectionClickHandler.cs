@@ -16,16 +16,25 @@ public class OpenConnectionClickHandler : ITreeNodeClickHandler<ConnectionInfo>
         _connectionInitiator = connectionInitiator;
     }
 
+    /// <summary>
+    /// Whether opening this node would actually dial something. Folders without a hostname
+    /// and the root node would otherwise be dialled by name.
+    /// </summary>
+    public static bool IsConnectable(ConnectionInfo node)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+
+        var nodeType = node.GetTreeNodeType();
+        return nodeType == TreeNodeType.Connection ||
+               nodeType == TreeNodeType.PuttySession ||
+               (nodeType == TreeNodeType.Container && !string.IsNullOrEmpty(node.Hostname));
+    }
+
     public void Execute(ConnectionInfo clickedNode)
     {
         ArgumentNullException.ThrowIfNull(clickedNode);
 
-        var nodeType = clickedNode.GetTreeNodeType();
-        bool isConnectable = nodeType == TreeNodeType.Connection ||
-                             nodeType == TreeNodeType.PuttySession ||
-                             (nodeType == TreeNodeType.Container && !string.IsNullOrEmpty(clickedNode.Hostname));
-
-        if (!isConnectable) return;
+        if (!IsConnectable(clickedNode)) return;
 
         // Ctrl+DoubleClick opens a new connection tab even if one is already open (#397)
         var force = Control.ModifierKeys.HasFlag(Keys.Control) || Properties.Settings.Default.DoubleClickOpensNewConnection
