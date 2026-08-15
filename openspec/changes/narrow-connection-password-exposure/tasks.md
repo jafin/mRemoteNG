@@ -27,15 +27,25 @@ draws the same line, which is what the reflector's own comment says the rule is.
 
 ## 3. RDP conversion window
 
-- [ ] 3.1 In `RdpProtocol`, move the password read from line 978 down to the assignment at line 1151.
-- [ ] 3.2 Trace every branch between them first — external credential providers, Remote Credential Guard, restricted admin, gateway credentials — and confirm which of them replace the password and which fall through. The local is read by more than one path.
-- [ ] 3.3 Leave `AdvancedSettings2.ClearTextPassword` taking a `string`. It is COM; the conversion cannot be removed.
-- [ ] 3.4 Tests: each branch supplies the password it did before. Coverage here matters more than the change.
+- [x] 3.1 In `RdpProtocol`, move the password read from line 978 down to the assignment at line 1151. — The local starts as `null` rather than as the connection's password, and the connection's secret is read in `AssignPassword`, immediately before the COM property that needs it. **Null and empty had to become different answers:** null means nothing supplied a password, so the connection's own is used; empty means a provider ran and returned nothing, which falls through to the configured default and does **not** fall back to the connection's own secret. Collapsing the two would quietly send a stored password when a vault deliberately returned none.
+- [x] 3.2 Trace every branch between them first — external credential providers, Remote Credential Guard, restricted admin, gateway credentials — and confirm which of them replace the password and which fall through. The local is read by more than one path. — Traced. The local is written by **eight** `out` parameters, not one: six external providers in the main cascade (Delinea, Passwordstate, 1Password, PasswordSafe, Vault/OpenBao, LAPS) and four more inside the empty-username `custom` fallback, which runs only when no username resolved. Between the old read and the assignment **nothing reads it** — the intervening code handles username and domain — so moving the read is safe. A provider that throws before assigning leaves the local as it was, which under the old code meant the connection's password and under the new means null, resolving to the same thing. Restricted Admin and Remote Credential Guard skip the assignment entirely, so for those the secret is now never read rather than read and discarded.
+- [x] 3.3 Leave `AdvancedSettings2.ClearTextPassword` taking a `string`. It is COM; the conversion cannot be removed. — Left alone. One plain-text copy remains, made from the `SecureString` on the line that assigns it.
+- [x] 3.4 Tests: each branch supplies the password it did before. Coverage here matters more than the change. — The decision is split out as `ChoosePasswordSource`, which is pure and takes what the branches produce, and `RdpProtocolPasswordSourceTests` pins all eleven cases. Nothing about the rule is new; it is pulled out because a green suite otherwise says nothing whatever about RDP credentials — the ten provider paths, Restricted Admin and Remote Credential Guard cannot be exercised without a real host and a real ActiveX control. Pinned in particular: a provider's answer beats the connection's own, an empty provider answer does not fall back to it, the configured default is `Ordinal`-matched on `"custom"` so `"Custom"` does not qualify, and "no password anywhere" assigns nothing at all rather than an empty string — the RDP client prompts, which is what a connection with no password has always done.
+
+An existing guard test caught the first version of §3 and was right to. `EverySecretSettingIsReadThroughTheProtector`
+refuses any statement that touches `Default.DefaultPassword` without the protector, and the decision
+function had been handed the stored value so it could ask whether one was configured — a question
+about ciphertext, since the stored form is an `aead1:` string. It now decides the *source* without the
+value, and the value is unprotected only in the branch that uses it. That is both narrower — a
+connection with its own password never runs the protector at all — and more correct than what it
+replaced: the old code tested the stored form for emptiness, so a configured default that unprotected
+to nothing would have been sent to the host as an empty password. The old code passed the guard only
+because the `if` and its body fell inside one `;`-delimited chunk.
 
 ## 4. Verification
 
-- [ ] 4.1 Full build; zero new analyzer warnings.
-- [ ] 4.2 Full test suite; zero failures, no `[Ignore]`.
-- [ ] 4.3 `openspec validate narrow-connection-password-exposure --strict`.
+- [x] 4.1 Full build; zero new analyzer warnings.
+- [x] 4.2 Full test suite; zero failures, no `[Ignore]`. — 4250 passed. Fifteen failures along the way, all from §2 and all real: see the note under §2.
+- [x] 4.3 `openspec validate narrow-connection-password-exposure --strict`.
 - [ ] 4.4 Manual against a real RDP host — **required, not optional.** A green suite does not cover the RDP credential paths, and breaking authentication there costs far more than the exposure this closes. Verify: a saved password; an inherited password; a gateway with its own credentials; an external credential provider; Remote Credential Guard; restricted admin.
 - [ ] 4.5 Manual: an SSH connection, an SFTP session and a file transfer, confirming the new accessor changed nothing about what authenticates.
