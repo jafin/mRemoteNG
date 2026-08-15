@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Tree.Root;
 
@@ -90,19 +90,25 @@ public static class StorageFormatUpgrade
     /// already chosen one on the assumption that they alone would use it.
     /// </para>
     /// </remarks>
-    /// <param name="willWriteMachineProtector">
-    /// From <see cref="FileProtection.MachineProtectorPolicy.ShouldWriteMachineProtector"/>.
+    /// <param name="storeMayBeShared">
+    /// Whether the store sits outside the user's profile — from
+    /// <see cref="FileProtection.MachineProtectorPolicy.IsInsideUserProfile"/>, negated.
+    /// <para>
+    /// This used to be "will a machine protector be written", because those were the same question:
+    /// a shared file got no machine protector, so it got the extra paragraph. Key slots separate
+    /// them. A shared file now gets machine protectors — one per member — and still deserves the
+    /// paragraph, because everyone who opens it types the recovery password the first time.
+    /// </para>
     /// </param>
     /// <param name="isPortableEdition">
-    /// Kept apart from the parameter above because they suppress the machine protector for different
-    /// reasons and only one of them is about sharing. Telling a portable user their file might be
-    /// shared with colleagues would be a guess presented as a fact.
+    /// Kept apart from the parameter above because only one of them is about sharing. Telling a
+    /// portable user their file might be shared with colleagues would be a guess presented as a fact.
     /// </param>
-    public static string BuildRecoveryPasswordExplanation(bool willWriteMachineProtector, bool isPortableEdition)
+    public static string BuildRecoveryPasswordExplanation(bool storeMayBeShared, bool isPortableEdition)
     {
         string explanation = Language.RecoveryPasswordWhy;
 
-        if (!willWriteMachineProtector && !isPortableEdition)
+        if (storeMayBeShared && !isPortableEdition)
             explanation += Environment.NewLine + Environment.NewLine + Language.RecoveryPasswordSharedStore;
 
         return explanation;

@@ -77,7 +77,7 @@ public class SettingsSecretCallSiteTests
         get
         {
             DirectoryInfo? directory = new(TestContext.CurrentContext.TestDirectory);
-            while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "mRemoteNG.sln")))
+            while (directory is not null && !File.Exists(Path.Combine(directory.FullName, "mRemoteNG.slnx")))
                 directory = directory.Parent;
 
             Assert.That(directory, Is.Not.Null, "could not locate the repository root from the test directory");

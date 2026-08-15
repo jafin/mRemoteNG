@@ -3132,7 +3132,7 @@ Keep it somewhere other than this computer. It is the only way back if this Wind
   <data name="RecoveryPasswordSharedStore" xml:space="preserve">
     <value>This connection file is outside your user profile, so it may be shared with other people or kept on a network location.
 
-It will be protected by the recovery password alone. The automatic unlock is tied to a single Windows account, and on a shared file it would work for one person and ask everyone else for the password on every open. Everyone who uses this file will need the recovery password.</value>
+Everyone who uses this file will need the recovery password the first time they open it. After they save, their own Windows account unlocks it automatically, as yours does — so it is typed once per person and per computer, not on every open.</value>
   </data>
   <data name="StorageFormatDeclined" xml:space="preserve">
     <value>The storage format was not changed. The connection file is unchanged and still opens as it did before, here and in the other applications that read it.</value>
@@ -3172,6 +3172,40 @@ The next save writes the hardened format.</value>
   <data name="StorageFormatUpgradeExportFirst" xml:space="preserve">
     <value>Export a classic copy first
 Keeps a copy upstream mRemoteNG can open. The store is not hardened by doing this.</value>
+  </data>
+  <data name="RekeyMenuItem" xml:space="preserve">
+    <value>&amp;Rekey Connection File...</value>
+  </data>
+  <data name="RekeyTitle" xml:space="preserve">
+    <value>Rekey Connection File</value>
+  </data>
+  <data name="RekeyInstruction" xml:space="preserve">
+    <value>Give this connection file a new key and a new recovery password?</value>
+  </data>
+  <data name="RekeyWhat" xml:space="preserve">
+    <value>Everything in the file is re-encrypted under a brand new key. The old recovery password stops working, and every computer that could open this file without being asked for a password will be asked once more - including your own on any other machine.
+
+Use this when someone who had this file should no longer be able to open it.</value>
+  </data>
+  <data name="RekeyLimit" xml:space="preserve">
+    <value>It cannot reach a copy that has already been taken. Anyone who kept a copy of the file, or of a backup, can still open it with the old recovery password and read everything it held up to the moment they took it. What a rekey changes is what they can see from now on.
+
+Passwords stored in this file should be treated as known to them and changed on the systems themselves.</value>
+  </data>
+  <data name="RekeyBackup" xml:space="preserve">
+    <value>A backup of the file as it is now is taken first, beside it. That backup still opens with the old recovery password - keep it only as long as you need it.</value>
+  </data>
+  <data name="RekeyNewPasswordName" xml:space="preserve">
+    <value>New recovery password</value>
+  </data>
+  <data name="RekeyDeclined" xml:space="preserve">
+    <value>Nothing was changed. The connection file still has the key and the recovery password it had before.</value>
+  </data>
+  <data name="RekeyNotProtected" xml:space="preserve">
+    <value>This connection file is not protected by a key of its own, so there is nothing to rekey. Use File - Storage Format to harden it first.</value>
+  </data>
+  <data name="RekeyDone" xml:space="preserve">
+    <value>The connection file has been rekeyed. Everyone who uses it needs the new recovery password the first time they open it.</value>
   </data>
   <data name="ExportClassicFormatTitle" xml:space="preserve">
     <value>Export Uses the Classic Format</value>

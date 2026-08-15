@@ -1,0 +1,60 @@
+<Solution>
+  <Configurations>
+    <BuildType Name="Debug" />
+    <BuildType Name="Release" />
+    <BuildType Name="Release Self-Contained" />
+    <Platform Name="Any CPU" />
+    <Platform Name="arm64" />
+    <Platform Name="x64" />
+    <Platform Name="x86" />
+  </Configurations>
+  <Project Path="ExternalConnectors/ExternalConnectors.csproj">
+    <BuildType Solution="Release Self-Contained|x86" Project="?" />
+    <Platform Solution="*|arm64" Project="arm64" />
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="Debug|x86" Project="x86" />
+    <Platform Solution="Release Self-Contained|x86" Project="?" />
+    <Platform Solution="Release|x86" Project="x86" />
+    <Build Solution="Release Self-Contained|x86" Project="false" />
+  </Project>
+  <Project Path="mRemoteNG.Plugins/mRemoteNG.Plugins.csproj">
+    <BuildType Solution="Release Self-Contained|arm64" Project="Release" />
+    <BuildType Solution="Release Self-Contained|x64" Project="Release" />
+    <BuildType Solution="Release Self-Contained|x86" Project="?" />
+    <Platform Solution="Release Self-Contained|x86" Project="?" />
+    <Build Solution="Release Self-Contained|x86" Project="false" />
+  </Project>
+  <Project Path="mRemoteNG/mRemoteNG.csproj">
+    <BuildType Solution="Release Self-Contained|x86" Project="?" />
+    <Platform Solution="*|arm64" Project="arm64" />
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="Debug|x86" Project="x86" />
+    <Platform Solution="Release Self-Contained|x86" Project="?" />
+    <Platform Solution="Release|x86" Project="x86" />
+    <Build Solution="Release Self-Contained|x86" Project="false" />
+  </Project>
+  <Project Path="mRemoteNGSpecs/mRemoteNGSpecs.csproj">
+    <BuildType Solution="Release Self-Contained|Any CPU" Project="Debug" />
+    <BuildType Solution="Release Self-Contained|arm64" Project="Release" />
+    <BuildType Solution="Release Self-Contained|x64" Project="Debug" />
+    <BuildType Solution="Release Self-Contained|x86" Project="Debug" />
+    <Platform Solution="*|Any CPU" Project="x86" />
+    <Platform Solution="*|arm64" Project="arm64" />
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|x86" Project="x86" />
+  </Project>
+  <Project Path="mRemoteNGTests/mRemoteNGTests.csproj">
+    <BuildType Solution="Release Self-Contained|*" Project="Debug" />
+    <Platform Solution="*|Any CPU" Project="x86" />
+    <Platform Solution="*|arm64" Project="arm64" />
+    <Platform Solution="*|x64" Project="x64" />
+    <Platform Solution="*|x86" Project="x86" />
+  </Project>
+  <Project Path="ObjectListView/ObjectListView.NetCore.csproj">
+    <BuildType Solution="Release Self-Contained|arm64" Project="Release" />
+    <BuildType Solution="Release Self-Contained|x64" Project="Release" />
+    <BuildType Solution="Release Self-Contained|x86" Project="?" />
+    <Platform Solution="Release Self-Contained|x86" Project="?" />
+    <Build Solution="Release Self-Contained|x86" Project="false" />
+  </Project>
+</Solution>

@@ -29,10 +29,34 @@ namespace mRemoteNG.Security.FileProtection;
 /// </remarks>
 public static class MachineProtectorPolicy
 {
-    /// <param name="storePath">Where the store will be written. Unknown counts as outside.</param>
+    /// <param name="storePath">
+    /// Where the store will be written. No longer consulted, and kept so that every caller states
+    /// which store it is asking about — see the remarks on the location rule below.
+    /// </param>
     /// <param name="isPortableEdition">Normally <c>Runtime.IsPortableEdition</c>.</param>
+    /// <remarks>
+    /// <para>
+    /// <b>Two rules used to share one implementation and no longer do.</b> This once answered
+    /// "portable, or outside the user profile?" as a single question, because the machine protector
+    /// was a single value: on a file a team shares, one protector serves whoever wrote it and costs
+    /// every other member the recovery password on every open, so writing none was the only
+    /// defensible answer. With <see cref="ConnectionFileKeyProtection.MachineSlots"/> that is no
+    /// longer true — each member earns their own slot — so the location no longer suppresses
+    /// anything.
+    /// </para>
+    /// <para>
+    /// The portable rule is untouched and is about the <i>edition</i>, not the location: a build
+    /// carried to another machine has no account worth binding to, and a slot per machine visited
+    /// would grow without bound and serve nobody.
+    /// </para>
+    /// <para>
+    /// <see cref="IsInsideUserProfile"/> remains, because "is this file likely shared?" is still a
+    /// real question — it decides what the user is told before they choose a recovery password. It
+    /// simply no longer decides what is written.
+    /// </para>
+    /// </remarks>
     public static bool ShouldWriteMachineProtector(string? storePath, bool isPortableEdition) =>
-        !isPortableEdition && IsInsideUserProfile(storePath);
+        !isPortableEdition;
 
     /// <summary>
     /// Whether a path lies under the current user's profile directory.

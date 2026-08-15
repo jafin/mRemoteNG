@@ -135,9 +135,9 @@ jobs:
         shell: pwsh
         run: |
           if ('${{ matrix.selfcontained }}' -eq 'true') {
-            dotnet restore mRemoteNG.sln --runtime win-${{ matrix.arch }} /p:PublishReadyToRun=true
+            dotnet restore mRemoteNG.slnx --runtime win-${{ matrix.arch }} /p:PublishReadyToRun=true
           } else {
-            dotnet restore mRemoteNG.sln
+            dotnet restore mRemoteNG.slnx
           }
 
       - name: (07) Build Release
@@ -146,7 +146,7 @@ jobs:
           CRASH_REPORT_TOKEN: ${{ secrets.CRASH_REPORT_TOKEN }}
         run: |
           $msbuildArgs = @(
-            "`"$Env:GITHUB_WORKSPACE\mRemoteNG.sln`""
+            "`"$Env:GITHUB_WORKSPACE\mRemoteNG.slnx`""
             "-p:Configuration=Release"
             "-p:Platform=${{ matrix.platform }}"
             "-p:CrashReportToken=$env:CRASH_REPORT_TOKEN"

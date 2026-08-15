@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Security;
@@ -107,8 +107,13 @@ public static class StorageFormatUpgradePrompt
         bool machineProtector = MachineProtectorPolicy.ShouldWriteMachineProtector(
             Runtime.ConnectionsService.ConnectionFileName, Runtime.IsPortableEdition);
 
+        // Two questions now, where one used to answer both: whether this account gets a slot, and
+        // whether the file looks like one other people also open. A shared file gets both.
+        bool mayBeShared = !MachineProtectorPolicy.IsInsideUserProfile(
+            Runtime.ConnectionsService.ConnectionFileName);
+
         MessageBox.Show(owner,
-            StorageFormatUpgrade.BuildRecoveryPasswordExplanation(machineProtector, Runtime.IsPortableEdition),
+            StorageFormatUpgrade.BuildRecoveryPasswordExplanation(mayBeShared, Runtime.IsPortableEdition),
             Language.RecoveryPasswordTitle, MessageBoxButtons.OK, MessageBoxIcon.Information);
 
         Optional<SecureString> supplied = PasswordPrompt(Language.RecoveryPasswordName);

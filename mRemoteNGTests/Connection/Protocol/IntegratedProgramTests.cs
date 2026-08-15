@@ -76,6 +76,41 @@ public class IntegratedProgramTests
         Assert.That(appInitialized, Is.False);
     }
 
+    // A tool that starts but exposes no dockable window used to leave a blank panel open with no
+    // explanation. The message is the whole fix for that case, so its content is worth asserting.
+    [Test]
+    public void NoEmbeddableWindowMessageSaysTheToolIsRunningOutsideAPanel()
+    {
+        var message = IntegratedProgram.BuildNoEmbeddableWindowMessage("notepad", 1234, isConsoleTool: false);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.Contain("notepad"));
+            Assert.That(message, Does.Contain("1234"));
+            Assert.That(message, Does.Contain("its own window"));
+        });
+    }
+
+    [Test]
+    public void NoEmbeddableWindowMessageNamesTheDefaultTerminalForConsoleTools()
+    {
+        var message = IntegratedProgram.BuildNoEmbeddableWindowMessage("cmd.exe", 1234, isConsoleTool: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(message, Does.Contain("Windows Terminal"));
+            Assert.That(message, Does.Contain("Windows Console Host"));
+        });
+    }
+
+    [Test]
+    public void NoEmbeddableWindowMessageOmitsTerminalAdviceForNonConsoleTools()
+    {
+        var message = IntegratedProgram.BuildNoEmbeddableWindowMessage("notepad", 1234, isConsoleTool: false);
+
+        Assert.That(message, Does.Not.Contain("Windows Console Host"));
+    }
+
     private static void SetExternalToolList(params ExternalTool[] externalTools)
     {
         Runtime.ExternalToolsService.ExternalTools = new FullyObservableCollection<ExternalTool>(externalTools);

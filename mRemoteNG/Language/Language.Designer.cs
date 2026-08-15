@@ -8789,7 +8789,7 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
-        ///   Looks up a localized string explaining that a shared store gets the recovery protector alone.
+        ///   Looks up a localized string explaining that everyone sharing a store types the recovery password once each.
         /// </summary>
         internal static string RecoveryPasswordSharedStore {
             get {
@@ -8902,6 +8902,96 @@ namespace mRemoteNG.Resources.Language {
         internal static string StorageFormatUpgradeExportFirst {
             get {
                 return ResourceManager.GetString("StorageFormatUpgradeExportFirst", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string for the File menu item that rekeys the connection file.
+        /// </summary>
+        internal static string RekeyMenuItem {
+            get {
+                return ResourceManager.GetString("RekeyMenuItem", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string titling the rekey confirmation.
+        /// </summary>
+        internal static string RekeyTitle {
+            get {
+                return ResourceManager.GetString("RekeyTitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string asking whether to rekey the connection file.
+        /// </summary>
+        internal static string RekeyInstruction {
+            get {
+                return ResourceManager.GetString("RekeyInstruction", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string explaining what a rekey changes.
+        /// </summary>
+        internal static string RekeyWhat {
+            get {
+                return ResourceManager.GetString("RekeyWhat", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string explaining that a rekey cannot reach a copy already taken.
+        /// </summary>
+        internal static string RekeyLimit {
+            get {
+                return ResourceManager.GetString("RekeyLimit", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string explaining that a backup is taken first and still opens with the old password.
+        /// </summary>
+        internal static string RekeyBackup {
+            get {
+                return ResourceManager.GetString("RekeyBackup", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string naming the new recovery password field.
+        /// </summary>
+        internal static string RekeyNewPasswordName {
+            get {
+                return ResourceManager.GetString("RekeyNewPasswordName", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string confirming that nothing was changed.
+        /// </summary>
+        internal static string RekeyDeclined {
+            get {
+                return ResourceManager.GetString("RekeyDeclined", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string explaining that an unhardened store has nothing to rekey.
+        /// </summary>
+        internal static string RekeyNotProtected {
+            get {
+                return ResourceManager.GetString("RekeyNotProtected", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string confirming the rekey and that everyone needs the new password once.
+        /// </summary>
+        internal static string RekeyDone {
+            get {
+                return ResourceManager.GetString("RekeyDone", resourceCulture);
             }
         }
 

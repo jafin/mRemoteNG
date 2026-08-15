@@ -261,6 +261,42 @@ public class PortableEditionInterchangeTests
     }
 
     [Test]
+    public void AMemberWhoOpenedWithTheRecoveryPasswordEarnsASlotOnSave()
+    {
+        // The shared-file promise, end to end and as close as one process can get to two accounts: a
+        // store carrying somebody else's machine protector, opened here with the recovery password.
+        // Before key slots this member was prompted on every open for ever, because the file had a
+        // machine protector and it was not theirs — which is why the preceding change wrote none at
+        // all for a file outside the profile.
+        PortableEdition.OverrideForTests(false);
+        Save(machineProtector: true);
+        ReplaceMachineProtectorWithOneThisAccountCannotUse();
+        string theirSlot = XElement.Load(_storePath)
+            .Attribute(ConnectionFileKeyProtection.MachineProtectorAttributeName)!.Value;
+
+        RecoveryPasswordSession.Clear();
+        PortableEdition.OverrideForTests(false);
+        ConnectionTreeModel opened = Reopen(() => Password("recovery"));
+        new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(opened);
+
+        string[] slots = XElement.Load(_storePath)
+            .Attribute(ConnectionFileKeyProtection.MachineProtectorAttributeName)!.Value
+            .Split(ConnectionFileKeyProtection.SlotSeparator);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(slots, Has.Length.EqualTo(2), "this account's slot is added, not substituted");
+            Assert.That(slots[0], Is.EqualTo(theirSlot),
+                "the other member's slot is untouched, so their silent open survives this save");
+        });
+
+        // And the prompt is gone for this account from here on.
+        RecoveryPasswordSession.Clear();
+        PortableEdition.OverrideForTests(false);
+        Assert.That(Connection(Reopen(NeverAsked)).Password, Is.EqualTo("hunter2"));
+    }
+
+    [Test]
     public void AStoreThatAlreadyHasAMachineProtectorIsLeftAlone()
     {
         // Re-wrapping would be harmless but wasteful, and it would churn the file on every save —

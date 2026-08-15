@@ -743,6 +743,30 @@
           Link="TerminalAssets\%(RecursiveDir)%(Filename)%(Extension)"
           CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
+  <!--
+    Microsoft.Web.WebView2 ships as one flat package, and its own Common.targets adds Core,
+    WinForms *and* Wpf references unconditionally for every net5.0+ target — there is no opt-out
+    property. We use only Core and WinForms (UseWPF removed, see above), and the WPF assembly
+    could not load even if something asked for it: it binds against PresentationFramework, which
+    a WinForms-only app never deploys. Drop it, along with the packages' XML doc files, which are
+    a build-time aid with no runtime role. build-msi.ps1 harvests bin\ recursively and excludes
+    only .pdb/.log, so anything left here is shipped to users.
+  -->
+  <Target Name="DropWebView2WpfReference" BeforeTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <Reference Remove="@(Reference)" Condition="'%(Filename)' == 'Microsoft.Web.WebView2.Wpf'" />
+    </ItemGroup>
+  </Target>
+  <!--
+    The XML docs are discovered by RAR as related files of the remaining references, so they can
+    only be dropped once RAR has run.
+  -->
+  <Target Name="DropWebView2XmlDocs" AfterTargets="ResolveAssemblyReferences">
+    <ItemGroup>
+      <ReferenceCopyLocalPaths Remove="@(ReferenceCopyLocalPaths)"
+                               Condition="'%(Extension)' == '.xml' And $([System.String]::Copy('%(Filename)').StartsWith('Microsoft.Web.WebView2'))" />
+    </ItemGroup>
+  </Target>
   <!-- T4 TextTemplating: import only when the targets file exists (VS2026 BuildTools) -->
   <Import Project="$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v18.0\TextTemplating\Microsoft.TextTemplating.targets"
           Condition="Exists('$(MSBuildExtensionsPath)\Microsoft\VisualStudio\v18.0\TextTemplating\Microsoft.TextTemplating.targets')" />
