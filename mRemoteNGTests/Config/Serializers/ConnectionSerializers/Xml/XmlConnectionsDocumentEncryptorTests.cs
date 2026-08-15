@@ -7,6 +7,7 @@ using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
+using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
 namespace mRemoteNGTests.Config.Serializers.ConnectionSerializers.Xml;
@@ -20,7 +21,7 @@ public class XmlConnectionsDocumentEncryptorTests
     public void Setup()
     {
         var connectionTreeModel = SetupConnectionTreeModel();
-        var cryptoProvider = new CryptoProviderFactory(BlockCipherEngines.AES, BlockCipherModes.GCM).Build();
+        var cryptoProvider = new CryptoProviderFactory(BlockCipherEngines.AES, BlockCipherModes.GCM).Build().AtTestSpeed();
         var connectionNodeSerializer = new XmlConnectionNodeSerializer28(
             cryptoProvider,
             connectionTreeModel.RootNodes.OfType<RootNodeInfo>().First().PasswordString.ConvertToSecureString(),

@@ -24,7 +24,7 @@ public class XmlSerializationLifeCycleTests
     public void Setup()
     {
         _originalModel = SetupConnectionTreeModel();
-        var cryptoProvider = _cryptoFactory.Build();
+        var cryptoProvider = _cryptoFactory.Build().AtTestSpeed();
         var nodeSerializer = new XmlConnectionNodeSerializer28(
             cryptoProvider,
             _originalModel.RootNodes.OfType<RootNodeInfo>().First().PasswordString.ConvertToSecureString(),
@@ -93,7 +93,7 @@ public class XmlSerializationLifeCycleTests
         // The level and the function are set from different places, so nothing but this stops a
         // caller producing a file that claims to be classic and is not. Upstream would ignore the
         // KdfPrf attribute, derive with SHA-1, and report it to the user as a wrong password.
-        var hardenedProvider = _cryptoFactory.Build();
+        var hardenedProvider = _cryptoFactory.Build().AtTestSpeed();
         hardenedProvider.KeyDerivationPrf = mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.Hardened;
 
         // Asserted against the root serializer rather than XmlConnectionsSerializer, which catches
@@ -174,7 +174,7 @@ public class XmlSerializationLifeCycleTests
     [Test]
     public void AHardenedProviderRecordsItsFunctionAndTheFileStillReadsBack()
     {
-        var cryptoProvider = _cryptoFactory.Build();
+        var cryptoProvider = _cryptoFactory.Build().AtTestSpeed();
         cryptoProvider.KeyDerivationPrf = mRemoteNG.Security.KeyDerivation.KeyDerivationPrf.Hardened;
 
         // The store is raised to match. A hardened function on a classic store is refused now — it
@@ -233,7 +233,7 @@ public class XmlSerializationLifeCycleTests
     [Test]
     public void SerializeAndDeserializeWithCustomKdfIterationsValue()
     {
-        var cryptoProvider = _cryptoFactory.Build();
+        var cryptoProvider = _cryptoFactory.Build().AtTestSpeed();
         cryptoProvider.KeyDerivationIterations = 5000;
         var nodeSerializer = new XmlConnectionNodeSerializer28(
             cryptoProvider,

@@ -4,6 +4,7 @@ using mRemoteNG.Security;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
+using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
 namespace mRemoteNGTests.Config.Serializers.ConnectionSerializers.Xml;
@@ -17,7 +18,7 @@ public class XmlConnectionNodeSerializer28Tests
     [SetUp]
     public void Setup()
     {
-        _cryptographyProvider = new AeadCryptographyProvider();
+        _cryptographyProvider = new AeadCryptographyProvider().AtTestSpeed();
         var connectionTreeModel = new ConnectionTreeModel();
         var rootNode = new RootNodeInfo(RootNodeType.Connection);
         connectionTreeModel.AddRootNode(rootNode);

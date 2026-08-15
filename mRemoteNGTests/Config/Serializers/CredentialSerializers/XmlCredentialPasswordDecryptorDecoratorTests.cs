@@ -3,6 +3,7 @@ using System.Security;
 using mRemoteNG.Config.Serializers.CredentialSerializer;
 using mRemoteNG.Security;
 using mRemoteNG.Security.SymmetricEncryption;
+using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
 namespace mRemoteNGTests.Config.Serializers.CredentialSerializers;
@@ -38,7 +39,7 @@ public class XmlCredentialPasswordDecryptorDecoratorTests
 
     private string GenerateCredentialXml(bool includeAuthHeader = true)
     {
-        var cryptoProvider = new AeadCryptographyProvider();
+        var cryptoProvider = new AeadCryptographyProvider().AtTestSpeed();
         var authHeader = includeAuthHeader ? $"Auth=\"{cryptoProvider.Encrypt("someheader", _decryptionKey)}\"" : "";
         var encryptedPassword = cryptoProvider.Encrypt(_unencryptedPassword, _decryptionKey);
         return

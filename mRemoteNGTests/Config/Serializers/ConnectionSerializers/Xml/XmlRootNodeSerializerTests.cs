@@ -6,6 +6,7 @@ using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tree.Root;
+using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
 namespace mRemoteNGTests.Config.Serializers.ConnectionSerializers.Xml;
@@ -19,7 +20,7 @@ public class XmlRootNodeSerializerTests
     [SetUp]
     public void Setup()
     {
-        _cryptographyProvider = new AeadCryptographyProvider();
+        _cryptographyProvider = new AeadCryptographyProvider().AtTestSpeed();
         _rootNodeInfo = new RootNodeInfo(RootNodeType.Connection);
         _version = new Version(99, 1);
     }
@@ -79,7 +80,7 @@ public class XmlRootNodeSerializerTests
     [TestCaseSource(typeof(TestCaseSources), nameof(TestCaseSources.AllEngineAndModeCombos))]
     public void EncryptionEngineSerialized(BlockCipherEngines engine, BlockCipherModes mode)
     {
-        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
+        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build().AtTestSpeed();
         var element = XmlRootNodeSerializer.SerializeRootNodeInfo(_rootNodeInfo, cryptoProvider, _version);
         var attributeValue = element.Attribute(XName.Get("EncryptionEngine"))?.Value;
         Assert.That(attributeValue, Is.EqualTo(engine.ToString()));
@@ -88,7 +89,7 @@ public class XmlRootNodeSerializerTests
     [TestCaseSource(typeof(TestCaseSources), nameof(TestCaseSources.AllEngineAndModeCombos))]
     public void EncryptionModeSerialized(BlockCipherEngines engine, BlockCipherModes mode)
     {
-        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
+        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build().AtTestSpeed();
         var element = XmlRootNodeSerializer.SerializeRootNodeInfo(_rootNodeInfo, cryptoProvider, _version);
         var attributeValue = element.Attribute(XName.Get("BlockCipherMode"))?.Value;
         Assert.That(attributeValue, Is.EqualTo(mode.ToString()));
