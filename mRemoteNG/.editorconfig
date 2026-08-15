@@ -216,4 +216,11 @@ csharp_space_between_method_call_name_and_opening_parenthesis = false
 csharp_space_between_method_call_empty_parameter_list_parentheses = false
 
 [*.cs]
+# NOTE: this file sets `root = true` at the top, so the repository .editorconfig is NOT
+# inherited here. Any rule that must be suppressed for the mRemoteNG project has to be
+# repeated in this file — setting it only at the repository root has no effect.
 dotnet_diagnostic.IDE0007.severity = none
+# RCS1061: Merge if with nested if — see the note in the repository .editorconfig. Roughly
+# 13s of every build of this project, to suggest folding `if (a) { if (b) }` into
+# `if (a && b)`. Unlike IDE0007, Roslynator does honour `none` and skips the analyzer.
+dotnet_diagnostic.RCS1061.severity = none

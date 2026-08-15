@@ -33,7 +33,8 @@ Unless the user explicitly requests a documentation or orchestrator task, issue-
 
 - Work only in `mRemoteNG/`, `mRemoteNGTests/`, or `mRemoteNGSpecs/` — plus `docs-website/docs/` when the change is user-visible, per [User Documentation](#user-documentation).
 - Never read or modify `.project-roadmap/`.
-- Never modify `run-tests.ps1`, `build.ps1`, `mRemoteNG.slnx`, `Directory.Build.props`, or `Directory.Packages.props`.
+- Never modify `run-tests.ps1`, `build.ps1`, `mRemoteNG.slnx`, or `Directory.Packages.props`.
+- `Directory.Build.props` and `.editorconfig` (root and `mRemoteNG/`) may be changed when the user explicitly asks for build, analyzer, or code-style work. They stay off-limits for an ordinary issue fix — never retune analyzers or silence a rule to make your own change compile. Both are global: verify with a full build and the full suite, per [Verification Effort](#verification-effort), and say in the commit what the diagnostic output was before and after.
 - `.github/workflows/*` may be changed when the user explicitly asks for CI work. It stays off-limits for an ordinary issue fix — never edit a workflow as a side effect of another task.
 - Commit when the work is done and verified — see [Committing](#committing). Never `git push`, force-push, rewrite published history, or open a PR unless the user asks.
 - Preserve existing behavior outside the reported issue and never add interactive tests.
@@ -129,9 +130,28 @@ pwsh -NoProfile -ExecutionPolicy Bypass -File "D:\github\mRemoteNG\build.ps1" -N
 
 # Self-contained (embeds .NET runtime, output: bin\x64\Release\publish\):
 pwsh -NoProfile -ExecutionPolicy Bypass -File "D:\github\mRemoteNG\build.ps1" -SelfContained
+
+# CI parity — run the code-style analyzers a local build skips (~3x slower):
+pwsh -NoProfile -ExecutionPolicy Bypass -File "D:\github\mRemoteNG\build.ps1" -Analyzers
 ```
 
 `build.ps1` auto-detects VS installation (VS2026 > VS2022). Self-contained uses `-t:Publish` and restore MUST include `/p:PublishReadyToRun=true` (NETSDK1094).
+
+### Analyzers and build speed
+
+Analyzers are the overwhelming majority of this solution's build time. `Directory.Build.props` splits them in two:
+
+| | Local build | `-Analyzers` / CI |
+|---|---|---|
+| Correctness and quality (Meziantou, Roslynator, NetAnalyzers) | on | on |
+| Code style (`IDE*`, `EnforceCodeStyleInBuild`) | off | on |
+| Solution build after a one-file edit | ~18s | ~50s |
+
+The code-style rules report nothing on this tree — every `IDE*` rule is either set to `none` or already clean — so a local build and a CI build produce the **same** diagnostics. Turning them off does not weaken the IDE either: Visual Studio and Rider apply `.editorconfig` style live, independently of this property. Use `-Analyzers` before pushing if you want to confirm CI parity, or `-p:RunAnalyzers=false` for a bare-minimum inner loop.
+
+CI is detected from `$(CI)` / `$(GITHUB_ACTIONS)`. Do **not** switch that gate to `$(ContinuousIntegrationBuild)` — nothing sets it, so the checks would be off everywhere.
+
+:warning: `mRemoteNG/.editorconfig` declares `root = true`, so it does **not** inherit the repository `.editorconfig`. A rule suppressed only at the repository root has no effect on the main project; it must be repeated in `mRemoteNG/.editorconfig`.
 
 ## Testing
 
