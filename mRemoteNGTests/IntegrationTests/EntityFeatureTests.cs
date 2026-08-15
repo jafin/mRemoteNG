@@ -6,6 +6,7 @@ using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
+using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
 namespace mRemoteNGTests.IntegrationTests;
@@ -27,7 +28,7 @@ public class EntityFeatureTests
     {
         // Arrange
         var cryptoFactory = new CryptoProviderFactory(BlockCipherEngines.AES, BlockCipherModes.GCM);
-        var cryptoProvider = cryptoFactory.Build();
+        var cryptoProvider = cryptoFactory.Build().AtTestSpeed();
 
         var entity = new ContainerInfo { IsEntity = true, Name = "MyEntity" };
         var childConnection = new mRemoteNG.Connection.ConnectionInfo { Name = "ChildConnection", Hostname = "example.com" };

@@ -6,6 +6,7 @@ using mRemoteNG.Security.Factories;
 using mRemoteNG.Security.KeyDerivation;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
+using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
 namespace mRemoteNGTests.Security;
@@ -128,7 +129,7 @@ public class StorageFormatUpgradeTests
 
         StorageFormatUpgrade.Apply(root, StorageFormatUpgradeChoice.Decline);
 
-        var cryptoProvider = new CryptoProviderFactory(BlockCipherEngines.AES, BlockCipherModes.GCM).Build();
+        var cryptoProvider = new CryptoProviderFactory(BlockCipherEngines.AES, BlockCipherModes.GCM).Build().AtTestSpeed();
         XmlConnectionNodeSerializer28 nodeSerializer = new(
             cryptoProvider, root.PasswordString.ConvertToSecureString(), new SaveFilter());
         string serialized = new XmlConnectionsSerializer(cryptoProvider, nodeSerializer).Serialize(model);

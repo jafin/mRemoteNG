@@ -4,6 +4,7 @@ using System.Security;
 using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
 using mRemoteNG.Security.SymmetricEncryption;
+using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 using NUnit.Framework.Constraints;
 
@@ -19,7 +20,7 @@ public class AeadCryptographyProviderTests
     [SetUp]
     public void Setup()
     {
-        _cryptographyProvider = new AeadCryptographyProvider();
+        _cryptographyProvider = new AeadCryptographyProvider().AtTestSpeed();
         _encryptionKey = "mypassword111111".ConvertToSecureString();
         _plainText = "MySecret!";
     }
@@ -46,7 +47,7 @@ public class AeadCryptographyProviderTests
     [TestCaseSource(nameof(GetAllBlockCipherEngineAndModeCombinations))]
     public void DecryptedTextIsEqualToOriginalPlainText(BlockCipherEngines engine, BlockCipherModes mode)
     {
-        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
+        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build().AtTestSpeed();
         var cipherText = cryptoProvider.Encrypt(_plainText, _encryptionKey);
         var decryptedCipherText = cryptoProvider.Decrypt(cipherText, _encryptionKey);
         Assert.That(decryptedCipherText, Is.EqualTo(_plainText));
@@ -86,14 +87,14 @@ public class AeadCryptographyProviderTests
     [TestCaseSource(typeof(TestCaseSources), nameof(TestCaseSources.AllEngineAndModeCombos))]
     public void GetCipherEngine(BlockCipherEngines engine, BlockCipherModes mode)
     {
-        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
+        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build().AtTestSpeed();
         Assert.That(cryptoProvider.CipherEngine, Is.EqualTo(engine));
     }
 
     [TestCaseSource(typeof(TestCaseSources), nameof(TestCaseSources.AllEngineAndModeCombos))]
     public void GetCipherMode(BlockCipherEngines engine, BlockCipherModes mode)
     {
-        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build();
+        var cryptoProvider = new CryptoProviderFactory(engine, mode).Build().AtTestSpeed();
         Assert.That(cryptoProvider.CipherMode, Is.EqualTo(mode));
     }
 

@@ -9,6 +9,7 @@ using mRemoteNG.Container;
 using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
 using mRemoteNG.Tree.Root;
+using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
 
@@ -25,7 +26,7 @@ public class CredentialHarvesterTests
     public void Setup()
     {
         _credentialHarvester = new CredentialHarvester();
-        _cryptographyProvider = new CryptoProviderFactory(BlockCipherEngines.AES, BlockCipherModes.GCM).Build();
+        _cryptographyProvider = new CryptoProviderFactory(BlockCipherEngines.AES, BlockCipherModes.GCM).Build().AtTestSpeed();
         _key = "testKey123".ConvertToSecureString();
     }
 

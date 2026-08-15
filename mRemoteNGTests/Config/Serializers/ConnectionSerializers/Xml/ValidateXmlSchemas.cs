@@ -10,6 +10,7 @@ using mRemoteNG.Security;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
+using mRemoteNGTests.TestHelpers;
 using NUnit.Framework;
 
 namespace mRemoteNGTests.Config.Serializers.ConnectionSerializers.Xml;
@@ -29,7 +30,7 @@ public class ValidateXmlSchemas
         root.AddChild(new ConnectionInfo());
         _connectionTreeModel.AddRootNode(root);
 
-        _cryptographyProvider = new AeadCryptographyProvider();
+        _cryptographyProvider = new AeadCryptographyProvider().AtTestSpeed();
         var connectionNodeSerializer = new XmlConnectionNodeSerializer28(
             _cryptographyProvider,
             _connectionTreeModel.RootNodes.OfType<RootNodeInfo>().First().PasswordString.ConvertToSecureString(),
