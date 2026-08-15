@@ -1095,17 +1095,23 @@ public partial class ConnectionWindow : BaseWindow
 
     private void Connection_FormClosing(object sender, FormClosingEventArgs e)
     {
+        // Count only tabs that are still live. When the panel closes because its last
+        // tab was closed (AutoClosePanelOnLastTabClose), the user already answered the
+        // disconnect prompt for that tab - there is nothing left to confirm here, and
+        // the closed tab may still linger in connDock.Documents.
+        int openConnections = LiveConnectionTabCount();
+
         if (!FrmMain.Default.IsClosing &&
-            (Settings.Default.ConfirmCloseConnection == (int)ConfirmCloseEnum.All & connDock.Documents.Any() ||
+            (Settings.Default.ConfirmCloseConnection == (int)ConfirmCloseEnum.All & openConnections > 0 ||
              Settings.Default.ConfirmCloseConnection == (int)ConfirmCloseEnum.Multiple &
-             connDock.Documents.Count() > 1))
+             openConnections > 1))
         {
             DialogResult result = CTaskDialog.MessageBox(this, GeneralAppInfo.ProductName, string.Format(CultureInfo.CurrentCulture, Language.ConfirmCloseConnectionPanelMainInstruction, Text), "", "", "", Language.CheckboxDoNotShowThisMessageAgain, ETaskDialogButtons.DisconnectCancel, ESysIcons.Question, ESysIcons.Question);
             if (CTaskDialog.VerificationChecked)
             {
                 if (Settings.Default.ConfirmCloseConnection == (int)ConfirmCloseEnum.All)
                 {
-                    Settings.Default.ConfirmCloseConnection = connDock.Documents.Count() == 1
+                    Settings.Default.ConfirmCloseConnection = openConnections == 1
                         ? (int)ConfirmCloseEnum.Multiple
                         : (int)ConfirmCloseEnum.Exit;
                 }
@@ -1278,16 +1284,18 @@ public partial class ConnectionWindow : BaseWindow
             activeIc.Protocol?.Focus();
     }
 
-    private bool HasConnectionTabs()
+    private bool HasConnectionTabs() => LiveConnectionTabCount() > 0;
+
+    private int LiveConnectionTabCount()
     {
         if (connDock == null || connDock.IsDisposed)
         {
-            return false;
+            return 0;
         }
 
         return connDock.DocumentsToArray()
             .OfType<ConnectionTab>()
-            .Any(tab => !tab.IsDisposed && !tab.Disposing);
+            .Count(tab => !tab.IsDisposed && !tab.Disposing);
     }
 
     private void ClosePanelIfEmpty()
