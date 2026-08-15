@@ -47,5 +47,19 @@ because the `if` and its body fell inside one `;`-delimited chunk.
 - [x] 4.1 Full build; zero new analyzer warnings.
 - [x] 4.2 Full test suite; zero failures, no `[Ignore]`. — 4250 passed. Fifteen failures along the way, all from §2 and all real: see the note under §2.
 - [x] 4.3 `openspec validate narrow-connection-password-exposure --strict`.
-- [ ] 4.4 Manual against a real RDP host — **required, not optional.** A green suite does not cover the RDP credential paths, and breaking authentication there costs far more than the exposure this closes. Verify: a saved password; an inherited password; a gateway with its own credentials; an external credential provider; Remote Credential Guard; restricted admin.
-- [ ] 4.5 Manual: an SSH connection, an SFTP session and a file transfer, confirming the new accessor changed nothing about what authenticates.
+- [x] 4.4 Manual against a real RDP host — **required, not optional.** A green suite does not cover the RDP credential paths, and breaking authentication there costs far more than the exposure this closes. Verify: a saved password; an inherited password; a gateway with its own credentials; an external credential provider; Remote Credential Guard; restricted admin. — Confirmed against a real host: all six connect as before. Remote Credential Guard and restricted admin are the two this change most affects, and they are the two that now never read the stored secret at all.
+- [x] 4.5 Manual: an SSH connection, an SFTP session and a file transfer, confirming the new accessor changed nothing about what authenticates. — Confirmed, and expected: the accessor was deliberately *not* adopted in the SSH path. See 2.2.
+
+## 5. What this change did not close
+
+The exposure found while writing §1 is larger than everything §2 and §3 narrowed, and it is
+deliberately left open rather than folded in. Opening a connection file decrypts **every** password
+in it, in one batch, and materialises them as a `string[]` — immutable, unzeroable, alive until
+collected — before each is copied into its record's `SecureString`. A file of two hundred connections
+puts two hundred passwords in the process to serve the two the user will open.
+
+Closing it means decrypting per record on demand, which changes the deserializer, the tree model and
+every consumer of a loaded record, and carries its own risk of a connection that silently fails to
+authenticate. It belongs to its own change with its own manual verification, not to a change whose
+proposal asserted the problem did not exist. `ConnectionSecretDecryptionTimingTests` pins the current
+behaviour so the day it changes is visible.
