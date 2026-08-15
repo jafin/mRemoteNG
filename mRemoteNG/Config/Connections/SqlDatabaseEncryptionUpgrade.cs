@@ -52,6 +52,40 @@ public static class SqlDatabaseEncryptionUpgrade
         !CryptoProviderFactoryFromSqlVersion.UsesAuthenticatedEncryption(metaData.ConfVersion);
 
     /// <summary>
+    /// Whether the caller must collect a master password before calling <see cref="Apply"/>.
+    /// </summary>
+    /// <remarks>
+    /// Asked so that a database with no master password does not put a password box in front of
+    /// someone who has never had one to type. It is answered by trying the built-in default key
+    /// against the sentinel rather than by guessing from the presence of the column: <c>Protected</c>
+    /// is never empty in a real database — an unprotected store holds "ThisIsNotProtected" encrypted
+    /// under the default key, not nothing at all.
+    /// <para>
+    /// A wrong answer here is harmless, which is why this can be a convenience rather than a
+    /// safeguard: <see cref="Apply"/> authenticates whatever it is handed and refuses on its own.
+    /// </para>
+    /// </remarks>
+    public static bool RequiresMasterPassword(SqlConnectionListMetaData metaData)
+    {
+        ArgumentNullException.ThrowIfNull(metaData);
+
+        if (string.IsNullOrEmpty(metaData.Protected))
+            return false;
+
+        ICryptographyProvider legacy = CryptoProviderFactoryFromSqlVersion.ProviderFor(metaData.ConfVersion);
+        SecureString defaultKey = new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString();
+
+        try
+        {
+            return !ConnectionFileDefaults.IsKnownSentinel(legacy.Decrypt(metaData.Protected, defaultKey));
+        }
+        catch (EncryptionException)
+        {
+            return true;
+        }
+    }
+
+    /// <summary>
     /// Re-encrypts every secret column with authenticated encryption and raises the recorded version.
     /// </summary>
     /// <param name="masterPassword">

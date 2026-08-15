@@ -210,9 +210,9 @@ public class SqlDatabaseEncryptionUpgradeTests
     private static SecureString DefaultKey() =>
         new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString();
 
-    private static ICryptographyProvider Legacy() => new LegacyRijndaelCryptographyProvider();
+    private static LegacyRijndaelCryptographyProvider Legacy() => new();
 
-    private static ICryptographyProvider Aead() => new AeadCryptographyProvider();
+    private static AeadCryptographyProvider Aead() => new();
 
     private void InsertLegacyConnection(string id, string password, string? masterPassword = null) =>
         InsertRawPassword(id, Legacy().Encrypt(password,

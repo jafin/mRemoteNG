@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "total_expected": 4292,
+    "total_expected": 4303,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-15",
     "stats": {
@@ -32,12 +32,12 @@
       {
         "name": "UI",
         "filter": "FullyQualifiedName~mRemoteNGTests.UI&Name!=FormBehavior&Name!=AllPagesExistWithIconsAndLoadCorrectSettings",
-        "expected": 421
+        "expected": 428
       },
       {
         "name": "Config.Other",
         "filter": "FullyQualifiedName~mRemoteNGTests.Config&FullyQualifiedName!~Serializers.ConnectionSerializers.Xml",
-        "expected": 727
+        "expected": 731
       },
       {
         "name": "Config.Xml",

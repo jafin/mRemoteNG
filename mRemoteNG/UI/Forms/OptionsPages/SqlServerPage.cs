@@ -25,6 +25,8 @@ public sealed partial class SqlServerPage
     private OptRegistrySqlServerPage pageRegSettingsInstance;
     private NumericUpDown numSQLReloadInterval;
     private MrngLabel lblSQLReloadInterval;
+    private MrngButton btnUpgradeEncryption;
+    private MrngLabel lblEncryptionStatus;
     private bool _loadingSettings;
 
     private static readonly (string TypeKey, string DisplayName)[] SqlTypeOptions =
@@ -40,6 +42,7 @@ public sealed partial class SqlServerPage
         InitializeComponent();
         InitializeSqlTypeSelector();
         InitializeReloadIntervalControl();
+        InitializeEncryptionUpgradeControls();
         ApplyTheme();
         PageIcon = Resources.ImageConverter.GetImageAsIcon(Properties.Resources.SQLDatabase_16x);
         pageRegSettingsInstance = new OptRegistrySqlServerPage(); // Initialize the field to avoid nullability issues
@@ -67,6 +70,81 @@ public sealed partial class SqlServerPage
 
         pnlSQLCon.Controls.Add(lblSQLReloadInterval, 0, 6);
         pnlSQLCon.Controls.Add(numSQLReloadInterval, 1, 6);
+    }
+
+    /// <summary>
+    /// The database's encryption state, and the only way to change it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is the whole user-facing half of the upgrade, and it lives here on purpose.</b>
+    /// Nothing offers it when a database is opened: the decision locks out every other client of a
+    /// shared database, so it belongs to whoever administers it rather than to whoever happened to
+    /// start mRemoteNG first. Somebody in this page is a far better guess at that person.
+    /// </para>
+    /// <para>
+    /// The status line matters as much as the button. A database that still stores its passwords
+    /// weakly is saved anyway, with one warning per session, so this line is what keeps the question
+    /// in front of the one person who can answer it.
+    /// </para>
+    /// <para>
+    /// Built here rather than in the designer, following the reload-interval control above: the
+    /// generated file is a single 1,300-line block and two hand-placed controls are easier to review
+    /// as five lines of code than as a designer diff.
+    /// </para>
+    /// </remarks>
+    private void InitializeEncryptionUpgradeControls()
+    {
+        lblEncryptionStatus = new MrngLabel
+        {
+            AutoSize = true,
+            Location = new Point(17, 528),
+            Name = "lblEncryptionStatus",
+            Text = ""
+        };
+
+        btnUpgradeEncryption = new MrngButton
+        {
+            Location = new Point(400, 522),
+            Size = new Size(183, 25),
+            Name = "btnUpgradeEncryption",
+            Text = Language.SqlUpgradeButton,
+            UseVisualStyleBackColor = true,
+
+            // Hidden until a connection has actually been made and the database has said it needs
+            // this. An always-visible button offering an irreversible, team-wide change is an
+            // invitation to press it and find out what it does.
+            Visible = false
+        };
+        btnUpgradeEncryption.Click += btnUpgradeEncryption_Click;
+
+        pnlServerBlock.Controls.Add(lblEncryptionStatus);
+        pnlServerBlock.Controls.Add(btnUpgradeEncryption);
+    }
+
+    private void btnUpgradeEncryption_Click(object? sender, EventArgs e)
+    {
+        SqlDatabaseEncryptionUpgradePrompt.Ask(this);
+        _ = RefreshEncryptionStatusAsync();
+    }
+
+    /// <summary>
+    /// Reads what state the database is in and says so, off the UI thread.
+    /// </summary>
+    /// <remarks>
+    /// Called only after a connection has succeeded. Reading the metadata of an empty database
+    /// creates the schema in it, which is a reasonable thing for a load to do and a rude one to do to
+    /// a database name somebody is still halfway through typing.
+    /// </remarks>
+    private async Task RefreshEncryptionStatusAsync()
+    {
+        (bool upgradeAvailable, string status) = await Task.Run(() => SqlDatabaseEncryptionUpgradePrompt.ReadStatus());
+
+        if (IsDisposed)
+            return;
+
+        lblEncryptionStatus.Text = status;
+        btnUpgradeEncryption.Visible = upgradeAvailable;
     }
 
     protected override void ApplyTheme()
@@ -306,6 +384,7 @@ public sealed partial class SqlServerPage
             if (IsDisposed) return;
             UpdateConnectionImage(true);
             lblTestConnectionResults.Text = Language.ConnectionSuccessful;
+            await RefreshEncryptionStatusAsync();
         }
         catch (OperationCanceledException)
         {
@@ -336,6 +415,7 @@ public sealed partial class SqlServerPage
         txtSQLType.Enabled = enabled;
         txtSQLAuthType.Enabled = enabled;
         btnTestConnection.Enabled = enabled;
+        btnUpgradeEncryption.Enabled = enabled;
     }
 
     private static void DisableSql()
@@ -417,6 +497,12 @@ public sealed partial class SqlServerPage
             case ConnectionTestResult.ConnectionSucceded:
                 UpdateConnectionImage(true);
                 lblTestConnectionResults.Text = Language.ConnectionSuccessful;
+
+                // Deliberately no encryption-status refresh here. This button tests whatever is
+                // currently typed into the page, which may be a different server from the saved one
+                // — and the status line would then be describing a database the Upgrade button does
+                // not act on. Offering an irreversible, team-wide change against the wrong database
+                // is not a risk worth taking for an earlier status line; it appears after Apply.
                 break;
             case ConnectionTestResult.ServerNotAccessible:
                 UpdateConnectionImage(false);
