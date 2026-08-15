@@ -17,11 +17,25 @@ work today. Only the newer case is refused.
 
 ## 2. Provider selection
 
-- [ ] 2.1 Add a version constant for authenticated encryption and a helper that returns the provider for a given `ConfVersion`, mirroring `CryptoProviderFactoryFromXml`'s role on the XML side.
-- [ ] 2.2 Replace the hardcoded `new LegacyRijndaelCryptographyProvider()` in `ConnectionsService.cs:309` with the helper, fed by the metadata the loader already retrieves.
-- [ ] 2.3 Replace the hardcoded provider in `SqlConnectionsSaver.cs:153` the same way.
-- [ ] 2.4 Check `SqlDatabaseMetaDataRetriever.cs:96`, which builds its own legacy provider, and route it through the helper or document why its use is version-independent.
-- [ ] 2.5 Tests: the helper returns legacy below the version and AEAD at or above it; the loader and saver agree for a given version.
+- [x] 2.1 Add a version constant for authenticated encryption and a helper that returns the provider for a given `ConfVersion`, mirroring `CryptoProviderFactoryFromXml`'s role on the XML side. — `CryptoProviderFactoryFromSqlVersion`, with `AuthenticatedEncryptionVersion` at 3.6. A null version reads as legacy, and the asymmetry is the reason: reading legacy ciphertext with the AEAD provider fails cleanly because GCM authenticates, while the reverse does not fail at all — AES-CBC has no tag, so it yields plausible nonsense and the user sees connections with empty passwords, which reads as data loss rather than a version problem.
+- [x] 2.2 Replace the hardcoded `new LegacyRijndaelCryptographyProvider()` in `ConnectionsService.cs:309` with the helper, fed by the metadata the loader already retrieves. — **The loader could not be given a provider at all.** It learns the version inside `Load()`, after the metadata is read, so the constructor now takes the *rule* — `Func<Version?, ICryptographyProvider>` — rather than a provider chosen before anything is known. One provider then serves both the sentinel and the rows, because they are encrypted together and a mismatch would authenticate a password that decrypts nothing.
+- [x] 2.3 Replace the hardcoded provider in `SqlConnectionsSaver.cs:153` the same way. — The saver already retrieves the metadata, so the version was to hand.
+- [x] 2.4 Check `SqlDatabaseMetaDataRetriever.cs:96`, which builds its own legacy provider, and route it through the helper or document why its use is version-independent. — Routed, and it is the **most** important field to route, not an afterthought. `Protected` is a fixed, published plaintext encrypted under the master password: at the legacy provider's unsalted MD5 derivation it is an ideal offline cracking oracle, testable at GPU speed by anyone with read access to `tblRoot`. Leaving it legacy while moving the rows to AEAD would preserve the cheapest attack on the whole database, and would also break the load, which reads both with one provider.
+- [x] 2.5 Tests: the helper returns legacy below the version and AEAD at or above it; the loader and saver agree for a given version. — Ten cases in `CryptoProviderFactoryFromSqlVersionTests`, including that each call gets its own provider instance (the AEAD provider caches derived keys in fields, so sharing one across the saver and a batch decrypt would give intermittent wrong answers rather than a clean failure) and that the schema version and the AEAD version never coincide, which is what stops a newly created database silently choosing the format upstream mRemoteNG cannot read.
+
+**Two defects found while wiring this, both outside what §2 asked for.**
+
+`WriteDatabaseMetaData` wrote `ConnectionsFileInfo.ConnectionFileVersion` — the XML file-format
+constant, **3.2** — into `tblRoot.ConfVersion` on every save. So a 3.5 database was stamped back to
+3.2 by each save and the next load re-ran the 3.2→3.5 schema upgraders to put it back. Survivable
+churn while nothing depended on the number; fatal once the number decides how secrets are encrypted,
+because an upgraded database would be marked 3.2 by the first ordinary save while its rows were
+written as AEAD — the half-migrated state design.md exists to make impossible, reached without anyone
+doing anything wrong. It now preserves the database's own version.
+
+`SqlDatabaseVersionVerifier` accepted exactly one version. Two are readable now — 3.5 and 3.6 share a
+schema and differ only in encryption — so the check is a range. An equality against the new highest
+version would have reported every database in the field as unsupported.
 
 ## 3. Refuse to write a legacy database
 

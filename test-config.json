@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "total_expected": 4250,
+    "total_expected": 4272,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-15",
     "stats": {
@@ -27,7 +27,7 @@
       {
         "name": "Connection",
         "filter": "FullyQualifiedName~mRemoteNGTests.Connection",
-        "expected": 1364
+        "expected": 1369
       },
       {
         "name": "UI",
@@ -37,7 +37,7 @@
       {
         "name": "Config.Other",
         "filter": "FullyQualifiedName~mRemoteNGTests.Config&FullyQualifiedName!~Serializers.ConnectionSerializers.Xml",
-        "expected": 725
+        "expected": 727
       },
       {
         "name": "Config.Xml",
@@ -52,7 +52,7 @@
       {
         "name": "Security",
         "filter": "FullyQualifiedName~mRemoteNGTests.Security",
-        "expected": 489
+        "expected": 499
       },
       {
         "name": "Remaining",
@@ -62,7 +62,7 @@
       {
         "name": "Tree+Container+Cred",
         "filter": "FullyQualifiedName~mRemoteNGTests.Tree|FullyQualifiedName~mRemoteNGTests.Container|FullyQualifiedName~mRemoteNGTests.Credential",
-        "expected": 184
+        "expected": 189
       },
       {
         "name": "Tools",

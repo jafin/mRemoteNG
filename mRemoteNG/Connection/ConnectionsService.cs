@@ -23,6 +23,7 @@ using mRemoteNG.Container;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Security;
+using mRemoteNG.Security.Factories;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree;
@@ -355,7 +356,10 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
                 sqlDataProvider,
                 metaDataRetriever,
                 versionVerifier,
-                new LegacyRijndaelCryptographyProvider(),
+                // Which provider protects this database is the database's business, not the
+                // application's: it is decided from the version the metadata carries, which the
+                // loader does not have until it has read it.
+                CryptoProviderFactoryFromSqlVersion.ProviderFor,
                 (filename) =>
                 {
                     // Return cached password on first call (avoids re-prompting on every reload — #1646)

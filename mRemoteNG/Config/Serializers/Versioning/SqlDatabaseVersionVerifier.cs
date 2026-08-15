@@ -12,7 +12,38 @@ namespace mRemoteNG.Config.Serializers.Versioning;
 [SupportedOSPlatform("windows")]
 public class SqlDatabaseVersionVerifier : ISqlDatabaseVersionVerifier
 {
-    private readonly Version _currentSupportedVersion = new(3, 5);
+    /// <summary>
+    /// The schema this build creates and upgrades to. Secrets at this version are legacy-encrypted.
+    /// </summary>
+    /// <remarks>
+    /// A database this build creates is created here rather than at
+    /// <see cref="Security.Factories.CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion"/>,
+    /// for the same reason a new connection file is written classic: the stronger format cannot be
+    /// read by upstream mRemoteNG, which reaches these same databases, and choosing that for a team
+    /// is a decision to be made deliberately rather than inherited from whoever happened to create
+    /// the database.
+    /// </remarks>
+    public static readonly Version SchemaVersion = new(3, 5);
+
+    /// <summary>The highest version this build can read. Above this a database is refused.</summary>
+    public static readonly Version HighestSupportedVersion =
+        Security.Factories.CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion;
+
+    private readonly Version _currentSupportedVersion = HighestSupportedVersion;
+
+    /// <summary>
+    /// The oldest version this build reads as it stands, without upgrading it.
+    /// </summary>
+    /// <remarks>
+    /// 3.5 and 3.6 share a schema exactly and differ only in how the secret columns are encrypted,
+    /// so both are readable and the version says which provider to read them with. This is why the
+    /// check below is a range rather than an equality: a 3.5 database is not out of date in the
+    /// sense the upgrader chain understands — there is nothing to upgrade — and running it through
+    /// the chain would find no upgrader and report a database that works perfectly as unsupported.
+    /// What a 3.5 database cannot do is accept a save; that refusal belongs to the saver, which is
+    /// the only place that knows a write is being attempted.
+    /// </remarks>
+    private readonly Version _oldestReadableVersion = SchemaVersion;
 
     private readonly IDatabaseConnector _databaseConnector;
 
@@ -25,13 +56,18 @@ public class SqlDatabaseVersionVerifier : ISqlDatabaseVersionVerifier
     public bool IsNewerThanSupported(Version dbVersion) =>
         dbVersion is not null && dbVersion.CompareTo(_currentSupportedVersion) > 0;
 
+    /// <summary>Whether this build reads the database at this version without changing it first.</summary>
+    private bool IsReadableAsItStands(Version databaseVersion) =>
+        databaseVersion.CompareTo(_oldestReadableVersion) >= 0 &&
+        databaseVersion.CompareTo(_currentSupportedVersion) <= 0;
+
     public bool VerifyDatabaseVersion(Version dbVersion)
     {
         try
         {
             Version databaseVersion = dbVersion;
 
-            if (databaseVersion.Equals(_currentSupportedVersion))
+            if (IsReadableAsItStands(databaseVersion))
             {
                 return true;
             }
@@ -73,8 +109,10 @@ public class SqlDatabaseVersionVerifier : ISqlDatabaseVersionVerifier
                 }
             }
 
-            // DB is at the highest current supported version
-            if (databaseVersion.CompareTo(_currentSupportedVersion) == 0)
+            // The upgraders end at the oldest readable version, so this is the same range check as
+            // above rather than an equality with the highest one — an upgraded database lands at
+            // 3.5, and 3.5 is readable.
+            if (IsReadableAsItStands(databaseVersion))
             {
                 return true;
             }

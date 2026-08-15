@@ -11,6 +11,7 @@ using mRemoteNG.App.Info;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
 using mRemoteNG.Security;
+using mRemoteNG.Security.Factories;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tree.Root;
 
@@ -91,9 +92,23 @@ public class SqlDatabaseMetaDataRetriever : ISqlDatabaseMetaDataRetriever
         WriteDatabaseMetaData(rootTreeNode, databaseConnector, null);
     }
 
-    public void WriteDatabaseMetaData(RootNodeInfo rootTreeNode, IDatabaseConnector databaseConnector, DbTransaction? transaction)
+    /// <param name="databaseVersion">
+    /// Decides how the <c>Protected</c> sentinel is encrypted, and it must match how the rows are.
+    /// </param>
+    /// <remarks>
+    /// <b>The sentinel is not exempt from this, and is arguably the most important field in it.</b>
+    /// It is a fixed, published plaintext encrypted under the master password — so at the legacy
+    /// provider's unsalted MD5 key derivation it is an ideal offline cracking oracle: an attacker
+    /// with read access to <c>tblRoot</c> can test master-password guesses at GPU speed against a
+    /// value whose correct plaintext they already know. Leaving it legacy while moving the rows to
+    /// AEAD would keep the cheapest attack on the whole database. It would also break the load,
+    /// which reads both with one provider.
+    /// </remarks>
+    public void WriteDatabaseMetaData(RootNodeInfo rootTreeNode, IDatabaseConnector databaseConnector,
+                                      DbTransaction? transaction, Version? databaseVersion = null)
     {
-        LegacyRijndaelCryptographyProvider cryptographyProvider = new();
+        ICryptographyProvider cryptographyProvider =
+            CryptoProviderFactoryFromSqlVersion.ProviderFor(databaseVersion);
 
         string strProtected;
 
@@ -150,7 +165,17 @@ public class SqlDatabaseMetaDataRetriever : ISqlDatabaseMetaDataRetriever
 
                 DbParameter confVersionParam = cmd.CreateParameter();
                 confVersionParam.ParameterName = "@ConfVersion";
-                confVersionParam.Value = ConnectionsFileInfo.ConnectionFileVersion.ToString();
+                // The database's own version, preserved. **This used to write
+                // `ConnectionsFileInfo.ConnectionFileVersion` — the XML file-format constant, 3.2 —
+                // so every save stamped a 3.5 database back down to 3.2**, and the next load ran the
+                // 3.2→3.5 schema upgraders again to put it back. That churn was survivable while
+                // nothing depended on the number. It is fatal once the number decides how secrets
+                // are encrypted: an upgraded database would be marked 3.2 by the first ordinary
+                // save while its rows were written as AEAD, and the next load would read AEAD
+                // ciphertext with the legacy provider — the half-migrated state this design exists
+                // to make impossible.
+                confVersionParam.Value =
+                    (databaseVersion ?? Versioning.SqlDatabaseVersionVerifier.SchemaVersion).ToString();
                 cmd.Parameters.Add(confVersionParam);
 
                 cmd.ExecuteNonQuery();

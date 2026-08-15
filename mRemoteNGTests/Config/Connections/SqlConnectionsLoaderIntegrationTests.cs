@@ -82,7 +82,11 @@ public class SqlConnectionsLoaderIntegrationTests
             _sqlDataProviderMock,
             _metaDataRetrieverMock,
             _versionVerifierMock,
-            _cryptographyProvider,
+            // The loader no longer takes a provider, it takes the rule for choosing one — the
+            // database's version decides. These tests are about the loader's own control flow, so
+            // the rule they supply ignores the version and hands back the legacy provider they set
+            // their fixtures up with; `SqlDatabaseProviderSelectionTests` covers the choosing.
+            _ => _cryptographyProvider,
             authRequestor);
     }
 

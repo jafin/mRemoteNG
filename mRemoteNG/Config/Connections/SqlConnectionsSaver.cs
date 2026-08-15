@@ -15,6 +15,7 @@ using mRemoteNG.Container;
 using mRemoteNG.Messages;
 using mRemoteNG.Resources.Language;
 using mRemoteNG.Security;
+using mRemoteNG.Security.Factories;
 using mRemoteNG.Security.SymmetricEncryption;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree;
@@ -99,8 +100,13 @@ public class SqlConnectionsSaver : ISaver<ConnectionTreeModel>
             using DbTransaction transaction = dbConnector.DbConnection().BeginTransaction();
             try
             {
-                metaDataRetriever.WriteDatabaseMetaData(rootTreeNode, dbConnector, transaction);
-                UpdateConnectionsTable(rootTreeNode, dbConnector, transaction);
+                // Null for a brand-new database, whose metadata row this save is about to insert.
+                // `CryptoProviderFactoryFromSqlVersion` reads that as legacy, which is what a new
+                // database is created at — it is upgraded deliberately, like any other.
+                Version? databaseVersion = metaData?.ConfVersion;
+
+                metaDataRetriever.WriteDatabaseMetaData(rootTreeNode, dbConnector, transaction, databaseVersion);
+                UpdateConnectionsTable(rootTreeNode, dbConnector, databaseVersion, transaction);
                 UpdateUpdatesTable(dbConnector, transaction);
                 transaction.Commit();
             }
@@ -145,12 +151,15 @@ public class SqlConnectionsSaver : ISaver<ConnectionTreeModel>
         Runtime.MessageCollector.AddMessage(MessageClass.DebugMsg, "Saved local connection properties");
     }
 
-    private void UpdateConnectionsTable(RootNodeInfo rootTreeNode, IDatabaseConnector databaseConnector, DbTransaction? transaction = null)
+    private void UpdateConnectionsTable(RootNodeInfo rootTreeNode, IDatabaseConnector databaseConnector,
+                                        Version? databaseVersion, DbTransaction? transaction = null)
     {
         SqlDataProvider dataProvider = new(databaseConnector);
         DataTable currentDataTable = dataProvider.Load(transaction);
 
-        LegacyRijndaelCryptographyProvider cryptoProvider = new();
+        // The database decides, exactly as it does on the read side. Writing with whatever this
+        // build prefers is how the two ends came to disagree in the first place.
+        ICryptographyProvider cryptoProvider = CryptoProviderFactoryFromSqlVersion.ProviderFor(databaseVersion);
         DataTableSerializer serializer = new(_saveFilter, cryptoProvider, rootTreeNode.PasswordString.ConvertToSecureString());
         serializer.SetSourceDataTable(currentDataTable);
 
