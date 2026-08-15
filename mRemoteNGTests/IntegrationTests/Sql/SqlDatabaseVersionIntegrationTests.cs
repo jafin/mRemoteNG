@@ -124,9 +124,13 @@ public class SqlDatabaseVersionIntegrationTests
     [Test]
     public void ADatabaseNewerThanThisBuildIsRefused()
     {
-        // §1, against a real database rather than a substitute. An un-upgraded client that read one
-        // of these would decrypt AEAD ciphertext with the legacy provider and show empty passwords
-        // on connections that used to work — data loss to look at, a version mismatch in fact.
+        // §1, against a real database rather than a substitute. What an un-upgraded client actually
+        // does with one was measured for task 6.6, and it is not what this comment used to claim:
+        // it never reaches the rows at all. The `Protected` sentinel is AEAD ciphertext too, so the
+        // legacy provider fails on it first, and the client asks for a master password the database
+        // does not have — then reports "Could not load SQL connections" with nothing in the
+        // notification panel naming a version. Refusing by version is what turns that into a message
+        // somebody can act on.
         _retriever.GetDatabaseMetaData(_connector);
         SqlDatabaseVersionVerifier verifier = new(_connector);
 

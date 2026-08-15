@@ -46,14 +46,38 @@ and the re-encryption runs in the transaction that raises the version.
 ### Refuse a database newer than the build
 
 `SqlDatabaseVersionVerifier` already compares versions. It must treat "newer than I understand" as a
-refusal with a message naming the version, not as something to attempt. Without this, an un-upgraded
-client reads AEAD ciphertext with the legacy provider, gets plausible-looking garbage out of
-AES-CBC's unauthenticated decrypt, and shows a user empty passwords for connections that used to
-work — the worst available outcome, because it looks like data loss rather than a version mismatch.
+refusal with a message naming the version, not as something to attempt.
+
+**What an un-upgraded client does instead was assumed here and has since been measured** — task 6.6,
+a pre-§1 build against a database upgraded by this one. The prediction in this paragraph was that it
+would read AEAD ciphertext with the legacy provider and show empty passwords for connections that
+used to work. It does not get that far. The `Protected` sentinel is AEAD ciphertext as well, and it
+is read first, so the legacy provider fails on the sentinel before a single row is touched. The
+client then asks for a master password — for a database that has none, and which the user has
+therefore never set — and on being refused one reports `Could not load SQL connections`, with
+**nothing at all in the notification panel**. No version is named anywhere.
+
+That is a better outcome than the one feared, and still a bad one: an error naming nothing, after a
+password prompt that cannot be satisfied. Refusing by version is what turns it into a sentence
+somebody can act on, which is the whole point of shipping §1 first.
 
 This is the one part of the change that has to ship **before** anyone upgrades a database. It belongs
 in a release that precedes the one offering the upgrade, or the protection is not there when it is
 first needed.
+
+### The refusal is undone one level up
+
+6.6 also found that refusing is currently not enough, and this is a defect rather than a design note.
+`ConnectionsService.LoadConnections` catches any exception from a database load and, if a local SQL
+connections cache exists, loads **that** instead — warning "Loading from local cache in read-only
+mode". Nothing sets read-only. `UsingDatabase` stays true, the only read-only gate in the saver is
+the user's own `SQLReadOnly` setting, and the next save writes the stale cached tree back over the
+database under the legacy provider.
+
+So for exactly the population this protects — people who have loaded from SQL before, and therefore
+have a cache — §1's refusal turns into "silently work from a stale copy, then overwrite the upgraded
+database with it". The refusal is correct and lands in the wrong place. Fixing it is not part of this
+change; it is recorded here because the sequencing argument above depends on it.
 
 ### A legacy database stays writable
 
