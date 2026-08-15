@@ -82,10 +82,13 @@ still never upgraded except deliberately, which is the part of the original reas
 
 ## 6. Verification
 
-- [ ] 6.1 Full build; zero new analyzer warnings.
-- [ ] 6.2 Full test suite; zero failures, no `[Ignore]`.
-- [ ] 6.3 `openspec validate encrypt-sql-backend-with-aead --strict`.
-- [ ] 6.4 Manual, against a real SQL Server: load a legacy database, confirm connections decrypt and a save is refused.
-- [ ] 6.5 Manual: upgrade it, confirm connections still decrypt, confirm the stored ciphertext changed shape, confirm a save now succeeds.
-- [ ] 6.6 Manual: point a build from before task 1 at the upgraded database and record what it does. This is the failure the whole sequencing exists to prevent, and it is worth seeing once.
-- [ ] 6.7 Manual: alter a `Password` value in the database directly and confirm the client reports a decryption failure rather than returning a wrong value.
+- [x] 6.1 Full build; zero new analyzer warnings. — Clean. Two `CA1859` warnings introduced by §4's test helpers were fixed rather than left, so the tree is back to the warning set it had before this change.
+- [x] 6.2 Full test suite; zero failures, no `[Ignore]`. — 4,312 passed, 0 failed, including the SQL integration group against a real SQL Server in Docker. 31 of those tests are new in this change.
+- [x] 6.3 `openspec validate encrypt-sql-backend-with-aead --strict`. — Valid.
+
+**The four manual checks below are for the user, and three of them are now narrower than when they were written** — the automated coverage that arrived with §3, §4 and §5 has taken most of each. What is left is what a test genuinely cannot answer.
+
+- [ ] 6.4 Manual, against a real SQL Server: load a legacy database, confirm connections decrypt and a save is refused. — **Restated: a save is no longer refused, it warns** (see 3.1). `SqlSaverEncryptionIntegrationTests` already proves against a real database that a legacy store is written, that its secrets stay legacy, and that the warning is raised once per database rather than on every save. What is left to see by hand is that the warning reads as a warning and not as a failed save, in the notification panel, at the moment an ordinary rename triggers a debounced save.
+- [ ] 6.5 Manual: upgrade it, confirm connections still decrypt, confirm the stored ciphertext changed shape, confirm a save now succeeds. — The upgrade itself is covered end to end by `SqlDatabaseEncryptionUpgradeTests` against a real database, including the sentinel moving with the rows. What is left is the path through the options page: that the status line appears after **Apply**, that the button appears only for a legacy database, and that the confirmation is legible at the size the dialog gives it.
+- [ ] 6.6 Manual: point a build from before task 1 at the upgraded database and record what it does. This is the failure the whole sequencing exists to prevent, and it is worth seeing once. — **Unchanged, and the one no test can do.** It needs a second binary, and the whole release ordering rests on what it does.
+- [ ] 6.7 Manual: alter a `Password` value in the database directly and confirm the client reports a decryption failure rather than returning a wrong value. — **This found a real defect before it was ever run by hand** (see 5.1): the deserializer was returning the ciphertext as the password. `SqlSecretColumnRoundTripTests` now pins the corrected behaviour at the deserializer. Doing it by hand is still worth one pass, to see what the user actually sees — which connection is named, and whether the message reaches the panel during a load.
