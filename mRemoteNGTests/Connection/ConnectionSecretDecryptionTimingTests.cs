@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Reflection;
 using System.Security;
 using mRemoteNG.App.Info;
 using mRemoteNG.Config.Connections;
@@ -45,6 +46,7 @@ namespace mRemoteNGTests.Connection;
 public class ConnectionSecretDecryptionTimingTests
 {
     private const int FastIterations = 1000;
+    private static readonly string[] EverySecretInTheStore = ["first-secret", "second-secret", "third-secret"];
     private string _directory = "";
     private string _storePath = "";
 
@@ -70,16 +72,19 @@ public class ConnectionSecretDecryptionTimingTests
     [Test]
     public void LoadingAFileDecryptsEverySecretInIt()
     {
-        // Nothing reads a password between the load and the assertion, so the only thing that can
-        // have decrypted them is the load itself. If this ever fails, decryption became lazy and the
-        // capability's second requirement became true — update the spec rather than this test.
+        // Read the SecureString field rather than the property: the getter is exactly where a lazy
+        // implementation would do its decrypting, so asking it says nothing about when the work
+        // happened. Nothing touches a password between the load and this read, so the only thing
+        // that can have filled those fields is the load itself. If this ever fails, decryption
+        // became lazy and the capability's second requirement became true — update the spec rather
+        // than this test.
         SaveStoreWithPasswords();
 
         ConnectionTreeModel opened = Reopen();
 
-        string[] passwords = [.. Connections(opened).Select(c => c.Password)];
+        string[] stored = [.. Connections(opened).Select(StoredSecret)];
 
-        Assert.That(passwords, Is.EqualTo(new[] { "first-secret", "second-secret", "third-secret" }),
+        Assert.That(stored, Is.EqualTo(EverySecretInTheStore),
             "every password was in memory before anything asked for one");
     }
 
@@ -92,8 +97,14 @@ public class ConnectionSecretDecryptionTimingTests
 
         ConnectionTreeModel opened = Reopen();
         ConnectionInfo neverUsed = Connections(opened).Last();
+        string storedBeforeAnyoneAsked = StoredSecret(neverUsed);
 
-        Assert.That(neverUsed.Password, Is.EqualTo("third-secret"));
+        Assert.Multiple(() =>
+        {
+            Assert.That(storedBeforeAnyoneAsked, Is.EqualTo("third-secret"),
+                "the last connection's secret was decrypted by the load, not by the read below");
+            Assert.That(neverUsed.Password, Is.EqualTo("third-secret"));
+        });
     }
 
     [Test]
@@ -104,9 +115,7 @@ public class ConnectionSecretDecryptionTimingTests
         SaveStoreWithPasswords();
 
         ConnectionInfo connection = Connections(Reopen()).First();
-        SecureString? stored = (SecureString?)typeof(AbstractConnectionRecord)
-            .GetField("_password", System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
-            .GetValue(connection);
+        SecureString? stored = StoredSecureString(connection);
 
         Assert.Multiple(() =>
         {
@@ -138,6 +147,18 @@ public class ConnectionSecretDecryptionTimingTests
     private ConnectionTreeModel Reopen() =>
         new XmlConnectionsDeserializer(_storePath, NeverAsked)
             .Deserialize(File.ReadAllText(_storePath));
+
+    /// <summary>
+    /// The record's own <see cref="SecureString"/>, read without going through the property that
+    /// would decrypt it if decryption were lazy.
+    /// </summary>
+    private static SecureString? StoredSecureString(ConnectionInfo connection) =>
+        (SecureString?)typeof(AbstractConnectionRecord)
+            .GetField("_password", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .GetValue(connection);
+
+    private static string StoredSecret(ConnectionInfo connection) =>
+        StoredSecureString(connection)?.ConvertToUnsecureString() ?? "";
 
     private static ConnectionInfo[] Connections(ConnectionTreeModel model) =>
         [.. model.RootNodes.OfType<RootNodeInfo>().First().Children];

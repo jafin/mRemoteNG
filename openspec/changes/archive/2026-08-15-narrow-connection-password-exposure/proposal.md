@@ -28,6 +28,14 @@ run eagerly over the whole config (`XmlConnectionsDeserializer.cs:323`). The aud
 `RDGatewayPassword:601` and `VNCProxyPassword:1073` citations are against line numbers that hold
 different code here.
 
+> **Superseded — the per-field decryption claim above is wrong.** Writing the test for it is how that
+> was found. `XmlConnectionsDeserializer` collects every encrypted attribute while it walks the XML
+> and decrypts **all of them in one batch** (`ProcessPendingDecrypts`) before the load returns,
+> materialising them as a `string[]` first. The deferral is real, but it batches the key derivation
+> for speed; it does not narrow how long a secret is in memory. See
+> `ConnectionSecretDecryptionTimingTests` and §5 of `tasks.md`. The `SecureString` storage and the
+> stale-citation points in this paragraph still hold.
+
 The genuine residual is at the boundaries, and it is narrower than a HIGH:
 
 - The property type is still `string`, because the property grid binds to it. Every read materialises
