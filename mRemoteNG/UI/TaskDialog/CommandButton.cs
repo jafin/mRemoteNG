@@ -225,14 +225,27 @@ public sealed partial class CommandButton : Button
 
         if (Enabled)
         {
-            pevent.Graphics.FillRectangle(new SolidBrush(back), newRect);
-            pevent.Graphics.DrawRectangle(new Pen(border, 1), newRect);
+            using SolidBrush backBrush = new(back);
+            pevent.Graphics.FillRectangle(backBrush, newRect);
         }
         else
         {
-            LinearGradientBrush brush = new(newRect, back, back, mode);
+            using LinearGradientBrush brush = new(newRect, back, back, mode);
             pevent.Graphics.FillRectangle(brush, newRect);
-            pevent.Graphics.DrawRectangle(new Pen(border, 1), newRect);
+        }
+
+        using (Pen borderPen = new(border, 1))
+            pevent.Graphics.DrawRectangle(borderPen, newRect);
+
+        // Under an extended theme this paint path replaces the one Windows draws, which
+        // took the focus cue with it: tabbing between command buttons gave no feedback at
+        // all. Ring the inside of the border in the brighter hover colour, matching how
+        // MrngButton marks the focused button.
+        if (Focused && Enabled)
+        {
+            Rectangle focusRect = new(newRect.X + 1, newRect.Y + 1, newRect.Width - 2, newRect.Height - 2);
+            using Pen focusPen = new(palette.getColor("Button_Hover_Border"), 1);
+            pevent.Graphics.DrawRectangle(focusPen, focusRect);
         }
 
         string largetext = GetLargeText();

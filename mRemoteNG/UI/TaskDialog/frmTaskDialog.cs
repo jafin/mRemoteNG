@@ -563,9 +563,11 @@ public partial class frmTaskDialog : Form
         // may override button positions between BuildForm() and Show(). This second
         // call ensures buttons are correctly positioned after all layout passes (#55).
         RepositionButtons();
-        // Focus the default button so the user can see which one is active.
-        if (AcceptButton is Control acceptControl)
-            acceptControl.Focus();
+        // Focus the default button so the user can see which one is active. The Close and
+        // Cancel layouts have no AcceptButton, so fall back to the cancel button rather
+        // than letting focus land on whatever control happens to be first in tab order.
+        Control? defaultControl = AcceptButton as Control ?? CancelButton as Control;
+        defaultControl?.Focus();
         base.OnShown(e);
     }
 
