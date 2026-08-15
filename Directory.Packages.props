@@ -43,10 +43,19 @@
     <PackageVersion Include="Serilog" Version="4.4.0" />
     <PackageVersion Include="Serilog.Enrichers.Thread" Version="4.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
-    <PackageVersion Include="SSH.NET" Version="2025.1.0" />
+    <!-- 2026.0.0 is the first release fixing GHSA-q939-rpr3-3284 (high): ScpClient recursive
+         download writes arbitrary paths from server-controlled SCP filenames. mRemoteNG only
+         uploads over SCP (Tools/SecureTransfer.cs), so the vulnerable path was never reached
+         here — do not treat that as a reason to fall back. -->
+    <PackageVersion Include="SSH.NET" Version="2026.0.0" />
     <!-- Sits in the SSH authentication path. Pinned to an exact reviewed version (see
-         openspec design.md D4); do not float without re-reviewing the source. -->
-    <PackageVersion Include="SshNet.Agent" Version="[2024.2.0.5]" />
+         openspec design.md D4); do not float without re-reviewing the source.
+         Moved 2024.2.0.5 -> 2026.0.0 to unblock the SSH.NET security bump above. The
+         add-ssh-agent-credential-resolver design recorded this as "SshNet.Agent declares
+         SSH.NET < 2026.0.0 ... blocks SSH.NET upgrades until upstream moves. Accepted;
+         tracked" — upstream has now moved, and 2026.0.0 requires SSH.NET [2026.0.0,
+         2027.0.0), which is exactly the version the advisory needs. -->
+    <PackageVersion Include="SshNet.Agent" Version="[2026.0.0]" />
     <PackageVersion Include="System.Configuration.ConfigurationManager" Version="10.0.10" />
     <!-- Test-only. Starts the SFTP server the integration tests run against; never shipped. -->
     <PackageVersion Include="Testcontainers" Version="4.13.0" />

@@ -37,7 +37,7 @@ public class SftpSessionFileOperationTests : SftpIntegrationTestBase
         SftpSession session = await ConnectedSessionAsync();
 
         Dictionary<string, SftpEntry> byName =
-            (await session.ListDirectoryAsync(RemoteDirectory)).ToDictionary(e => e.Name);
+            (await session.ListDirectoryAsync(RemoteDirectory)).ToDictionary(e => e.Name, StringComparer.Ordinal);
 
         await session.DeleteAsync(byName["doomed.txt"]);
         await session.DeleteAsync(byName["doomed-dir"]);
@@ -54,7 +54,7 @@ public class SftpSessionFileOperationTests : SftpIntegrationTestBase
         await session.CreateFileAsync(RemotePath("made-file.txt"));
 
         Dictionary<string, SftpEntry> byName =
-            (await session.ListDirectoryAsync(RemoteDirectory)).ToDictionary(e => e.Name);
+            (await session.ListDirectoryAsync(RemoteDirectory)).ToDictionary(e => e.Name, StringComparer.Ordinal);
 
         Assert.Multiple(() =>
         {
@@ -75,7 +75,7 @@ public class SftpSessionFileOperationTests : SftpIntegrationTestBase
         SftpSession session = await ConnectedSessionAsync();
 
         SftpEntry directory = (await session.ListDirectoryAsync(RemoteDirectory))
-            .Single(e => e.Name == "full-dir");
+            .Single(e => string.Equals(e.Name, "full-dir", StringComparison.Ordinal));
 
         Exception? refusal = Assert.CatchAsync(async () => await session.DeleteAsync(directory));
 

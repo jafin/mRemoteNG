@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Threading.Tasks;
@@ -26,7 +27,7 @@ public class SftpSessionSymbolicLinkTests : SftpIntegrationTestBase
 
         SftpSession session = await ConnectedSessionAsync();
         SftpEntry link = (await session.ListDirectoryAsync(RemoteDirectory))
-            .Single(e => e.Name == "link-to-dir");
+            .Single(e => string.Equals(e.Name, "link-to-dir", StringComparison.Ordinal));
 
         Assert.Multiple(() =>
         {

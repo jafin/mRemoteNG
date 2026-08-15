@@ -94,7 +94,7 @@ public class SftpServerFixture
     [OneTimeSetUp]
     public async Task StartServerAsync()
     {
-        if (Environment.GetEnvironmentVariable(SkipVariable) == "1")
+        if (string.Equals(Environment.GetEnvironmentVariable(SkipVariable), "1", StringComparison.Ordinal))
         {
             Skipped = true;
 

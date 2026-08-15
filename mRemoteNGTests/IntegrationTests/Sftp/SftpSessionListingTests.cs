@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Versioning;
@@ -44,7 +45,7 @@ public class SftpSessionListingTests : SftpIntegrationTestBase
 
         SftpSession session = await ConnectedSessionAsync();
         Dictionary<string, SftpEntry> byName =
-            (await session.ListDirectoryAsync(RemoteDirectory)).ToDictionary(e => e.Name);
+            (await session.ListDirectoryAsync(RemoteDirectory)).ToDictionary(e => e.Name, StringComparer.Ordinal);
 
         Assert.Multiple(() =>
         {
@@ -89,7 +90,7 @@ public class SftpSessionListingTests : SftpIntegrationTestBase
 
         SftpSession session = await ConnectedSessionAsync();
         Dictionary<string, SftpEntry> byName =
-            (await session.ListDirectoryAsync(RemoteDirectory)).ToDictionary(e => e.Name);
+            (await session.ListDirectoryAsync(RemoteDirectory)).ToDictionary(e => e.Name, StringComparer.Ordinal);
 
         Assert.Multiple(() =>
         {

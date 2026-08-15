@@ -31,7 +31,7 @@ public class SftpSessionTransferTests : SftpIntegrationTestBase
 
         using MemoryStream destination = new();
         SftpEntry uploaded = (await session.ListDirectoryAsync(RemoteDirectory))
-            .Single(e => e.Name == "round-trip.txt");
+            .Single(e => string.Equals(e.Name, "round-trip.txt", StringComparison.Ordinal));
         await session.DownloadAsync(uploaded, destination);
 
         Assert.Multiple(() =>
@@ -58,7 +58,7 @@ public class SftpSessionTransferTests : SftpIntegrationTestBase
             new InlineProgress<SftpTransferProgress>(uploadProgress.Enqueue));
 
         SftpEntry uploaded = (await session.ListDirectoryAsync(RemoteDirectory))
-            .Single(e => e.Name == "progress.txt");
+            .Single(e => string.Equals(e.Name, "progress.txt", StringComparison.Ordinal));
 
         ConcurrentQueue<SftpTransferProgress> downloadProgress = new();
         using MemoryStream destination = new();
@@ -123,7 +123,7 @@ public class SftpSessionTransferTests : SftpIntegrationTestBase
 
         using MemoryStream destination = new();
         SftpEntry entry = (await session.ListDirectoryAsync(RemoteDirectory))
-            .Single(e => e.Name == "replaced.txt");
+            .Single(e => string.Equals(e.Name, "replaced.txt", StringComparison.Ordinal));
         await session.DownloadAsync(entry, destination);
 
         Assert.Multiple(() =>
