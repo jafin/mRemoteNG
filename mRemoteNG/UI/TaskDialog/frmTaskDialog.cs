@@ -187,8 +187,8 @@ public partial class frmTaskDialog : Form
         {
             pnlExpandedInfo.Visible = false;
             lbShowHideDetails.Visible = false;
-            cbVerify.Top = 12;
-            pnlButtons.Height = 40;
+            cbVerify.Top = 16;
+            pnlButtons.Height = 48;
         }
         else
         {
@@ -198,7 +198,7 @@ public partial class frmTaskDialog : Form
             lbShowHideDetails.Text = Expanded ? "        Hide details" : "        Show details";
             lbShowHideDetails.ImageIndex = Expanded ? 0 : 3;
             if (!showVerifyCheckbox)
-                pnlButtons.Height = 40;
+                pnlButtons.Height = 48;
             if (Expanded)
                 formHeight += pnlExpandedInfo.Height;
         }

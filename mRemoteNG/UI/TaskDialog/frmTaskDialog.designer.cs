@@ -193,7 +193,7 @@ namespace mRemoteNG.UI.TaskDialog
             // 
             this.bt1._mice = MrngButton.MouseState.HOVER;
             this.bt1.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.bt1.Location = new System.Drawing.Point(218, 8);
+            this.bt1.Location = new System.Drawing.Point(218, 12);
             this.bt1.Name = "bt1";
             this.bt1.Size = new System.Drawing.Size(75, 23);
             this.bt1.TabIndex = 0;
@@ -203,7 +203,7 @@ namespace mRemoteNG.UI.TaskDialog
             //
             this.bt2._mice = MrngButton.MouseState.HOVER;
             this.bt2.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.bt2.Location = new System.Drawing.Point(299, 8);
+            this.bt2.Location = new System.Drawing.Point(299, 12);
             this.bt2.Name = "bt2";
             this.bt2.Size = new System.Drawing.Size(75, 23);
             this.bt2.TabIndex = 1;
@@ -213,7 +213,7 @@ namespace mRemoteNG.UI.TaskDialog
             //
             this.bt3._mice = MrngButton.MouseState.HOVER;
             this.bt3.Anchor = ((System.Windows.Forms.AnchorStyles)((System.Windows.Forms.AnchorStyles.Top | System.Windows.Forms.AnchorStyles.Right)));
-            this.bt3.Location = new System.Drawing.Point(380, 8);
+            this.bt3.Location = new System.Drawing.Point(380, 12);
             this.bt3.Name = "bt3";
             this.bt3.Size = new System.Drawing.Size(75, 23);
             this.bt3.TabIndex = 2;
