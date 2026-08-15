@@ -40,10 +40,11 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             //
             // tableLayoutPanelPath
             //
-            tableLayoutPanelPath.ColumnCount = 3;
+            tableLayoutPanelPath.ColumnCount = 4;
             tableLayoutPanelPath.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 170F));
-            tableLayoutPanelPath.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
+            tableLayoutPanelPath.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 340F));
             tableLayoutPanelPath.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 96F));
+            tableLayoutPanelPath.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
             tableLayoutPanelPath.Controls.Add(lblConfigurationDirectory, 0, 0);
             tableLayoutPanelPath.Controls.Add(txtConfigurationDirectory, 1, 0);
             tableLayoutPanelPath.Controls.Add(btnBrowseConfigurationDirectory, 2, 0);
