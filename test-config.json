@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "total_expected": 4279,
+    "total_expected": 4284,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-15",
     "stats": {
@@ -47,7 +47,7 @@
       {
         "name": "Int.Other",
         "filter": "FullyQualifiedName~mRemoteNGTests.IntegrationTests&FullyQualifiedName!~mRemoteNGTests.IntegrationTests.Sftp",
-        "expected": 35
+        "expected": 40
       },
       {
         "name": "Security",
