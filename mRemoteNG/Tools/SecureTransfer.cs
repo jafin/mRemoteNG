@@ -103,7 +103,11 @@ internal sealed class SecureTransfer : IDisposable
 
         if (Protocol == SshTransferProtocol.Scp)
         {
-            ScpClt = new ScpClient(connectionInfo);
+            // SSH.NET 2026 deprecated the transformation-less constructor: its old default only
+            // wrapped the remote path in double quotes, which a POSIX shell still expands, so a
+            // filename carrying $(...) or a backtick ran as a command on the server. ShellQuote
+            // single-quotes and escapes instead, which is what an scp target on a unix host needs.
+            ScpClt = new ScpClient(connectionInfo, RemotePathTransformation.ShellQuote);
             ScpClt.Uploading += OnScpUploading;
         }
         else
