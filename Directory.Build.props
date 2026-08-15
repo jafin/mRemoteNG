@@ -12,9 +12,39 @@
     <WarningsAsErrors>CS0168;CS0219;CS0162;CS0164</WarningsAsErrors>
 
     <!-- Code quality analyzers -->
-    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
     <AnalysisLevel>latest-recommended</AnalysisLevel>
+
+    <!-- ==== Analyzer cost control ====================================================
+         Analyzers are 84% of this solution's build: ~60s of a ~70s compile of mRemoteNG.
+         CI pays that in full. A developer waiting on an inner loop should not have to.
+
+         RunFullAnalysis decides. It is on in CI, off on a developer machine, and can be
+         forced on locally to reproduce exactly what CI will report:
+
+             build.ps1 -Analyzers                 (or)  -p:RunFullAnalysis=true
+
+         Gated on the variables CI actually sets, the same pair build.ps1 tests. Do NOT
+         switch this to $(ContinuousIntegrationBuild): nothing in this repo or in GitHub
+         Actions sets that property, so the checks would silently be off everywhere.
+         ============================================================================== -->
+    <IsCIBuild Condition="'$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true'">true</IsCIBuild>
+    <RunFullAnalysis Condition="'$(RunFullAnalysis)' == ''">$(IsCIBuild)</RunFullAnalysis>
+    <RunFullAnalysis Condition="'$(RunFullAnalysis)' == ''">false</RunFullAnalysis>
+
+    <!-- IDE* code-style rules. Off locally: they cost ~30s of every build and report
+         nothing, because every IDE rule here is either set to `none` or already clean.
+         The worst offender is IDE0007 (prefer `var`) at 43s of analyzer CPU on its own,
+         and it cannot be switched off any other way — mRemoteNG/.editorconfig already
+         sets it to `none` and Roslyn runs it anyway, since the analyzer also owns IDE0008.
+         This does not weaken the IDE, which applies .editorconfig style live regardless. -->
+    <EnforceCodeStyleInBuild>$(RunFullAnalysis)</EnforceCodeStyleInBuild>
   </PropertyGroup>
+
+  <!-- Correctness and quality analyzers (Meziantou, Roslynator, NetAnalyzers) stay ON by
+       default even locally: they are ~25s of the build but they actually report, and a
+       developer should see MA/RCS/CA findings before pushing. For a genuinely minimal
+       inner loop, `-p:RunAnalyzers=false` still turns off everything — that is a stock
+       SDK property and needs nothing from this file. -->
 
   <ItemGroup>
     <PackageReference Include="Roslynator.Analyzers">

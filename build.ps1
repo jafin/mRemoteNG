@@ -1,8 +1,9 @@
-param(
+﻿param(
     [switch]$SelfContained,
     [switch]$Portable,     # Self-contained + portable.flag marker (settings in app folder, embeds .NET runtime)
     [switch]$Rebuild,
     [switch]$NoRestore,    # Skip dotnet restore (use for fast incremental builds)
+    [switch]$Analyzers,    # Run the full analyzer set, exactly as CI does (~4x slower)
     [string]$Configuration = "Release",
     [ValidateSet("x64", "x86", "ARM64")]
     [string]$Arch = "x64"
@@ -58,6 +59,12 @@ $sln = "$PSScriptRoot\mRemoteNG.slnx"
 # the build. Costs ~1s on repeat builds; correctness over the marginal speed.
 $env:MSBUILDDISABLENODEREUSE = '1'
 
+# Code-style analyzers are ~30s of every build and report nothing on this tree, so they are
+# off locally and on in CI -- see Directory.Build.props. -Analyzers forces the CI set on a
+# developer machine, for reproducing what a workflow will report before pushing.
+$analysisArgs = if ($Analyzers) { @('-p:RunFullAnalysis=true') } else { @() }
+if ($Analyzers) { Write-Host "Full analyzer set enabled (CI parity) -- expect a slower build." -ForegroundColor Yellow }
+
 $timer = [System.Diagnostics.Stopwatch]::StartNew()
 
 if ($Portable) {
@@ -69,7 +76,7 @@ if ($Portable) {
     # below, not by how the assembly was compiled -- see mRemoteNG\App\Info\PortableEdition.cs.
     # Passing it here also *replaced* the whole constant list, quietly dropping TRACE and RELEASE.
     # PublishReadyToRun=false avoids NETSDK1094 crossgen2 issue; startup impact is negligible.
-    msbuild $sln -m -nodeReuse:false "-verbosity:minimal" "-p:Configuration=Release" "-p:Platform=$platform" "-p:SelfContained=true" "-p:RuntimeIdentifier=$rid" "-p:PublishReadyToRun=false" "-p:SignAssembly=false" "-p:PublishDir=bin\$platform\Portable\" -t:Publish
+    msbuild $sln -m -nodeReuse:false "-verbosity:minimal" "-p:Configuration=Release" "-p:Platform=$platform" "-p:SelfContained=true" "-p:RuntimeIdentifier=$rid" "-p:PublishReadyToRun=false" "-p:SignAssembly=false" "-p:PublishDir=bin\$platform\Portable\" @analysisArgs -t:Publish
 
     # This file is what makes the build portable. Without it the same binaries are the installed
     # edition: settings under %APPDATA%, and connection files given a machine-bound protector.
@@ -101,7 +108,7 @@ if ($Portable) {
         dotnet restore $sln --runtime $rid /p:PublishReadyToRun=true
     }
     # PublishReadyToRun=false avoids NETSDK1094 crossgen2 issue on local builds.
-    msbuild $sln -m -nodeReuse:false "-verbosity:minimal" "-p:Configuration=Release" "-p:Platform=$platform" "-p:SelfContained=true" "-p:RuntimeIdentifier=$rid" "-p:PublishReadyToRun=false" "-p:PublishDir=bin\$platform\Release\publish\" -t:Publish
+    msbuild $sln -m -nodeReuse:false "-verbosity:minimal" "-p:Configuration=Release" "-p:Platform=$platform" "-p:SelfContained=true" "-p:RuntimeIdentifier=$rid" "-p:PublishReadyToRun=false" "-p:PublishDir=bin\$platform\Release\publish\" @analysisArgs -t:Publish
 } else {
     Write-Host "Building framework-dependent $Arch..."
     if (-not $NoRestore) {
@@ -110,6 +117,7 @@ if ($Portable) {
     $msbuildArgs = @('-m', '-nodeReuse:false', '-verbosity:minimal', "-p:Configuration=$Configuration", "-p:Platform=$platform", '-p:SignAssembly=false')
     if ($Rebuild) { $msbuildArgs += '-t:Rebuild' }
     if ($NoRestore) { $msbuildArgs += '-p:RestorePackages=false' }
+    $msbuildArgs += $analysisArgs
     msbuild $sln @msbuildArgs
 }
 
@@ -158,6 +166,7 @@ Write-Host "Build completed in ${elapsed}s" -ForegroundColor Cyan
 
 # Append timing to build log (CSV: timestamp, seconds, mode, arch, hostname)
 $buildMode = if ($Portable) { 'portable' } elseif ($SelfContained) { 'self-contained' } elseif ($NoRestore) { 'no-restore' } else { 'full' }
+if ($Analyzers) { $buildMode = "$buildMode+analyzers" }
 $logLine = "$([DateTime]::Now.ToString('yyyy-MM-dd HH:mm:ss')),$elapsed,$buildMode,$Arch,$env:COMPUTERNAME"
 $logFile = Join-Path $PSScriptRoot 'build-timing.log'
 if (-not (Test-Path $logFile)) {
