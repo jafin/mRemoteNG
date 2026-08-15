@@ -1,4 +1,5 @@
-using System;
+﻿using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Security;
@@ -28,26 +29,126 @@ namespace mRemoteNG.Security.FileProtection;
 [SupportedOSPlatform("windows")]
 public sealed class ConnectionFileKeyProtection
 {
-    /// <summary>Root attribute holding the DPAPI-wrapped file key. Absent in the portable edition.</summary>
+    /// <summary>
+    /// Root attribute holding the DPAPI-wrapped file keys, one per slot. Absent in the portable
+    /// edition.
+    /// </summary>
     public const string MachineProtectorAttributeName = "KeyProtectorMachine";
 
     /// <summary>Root attribute holding the recovery-password-wrapped file key. Always present.</summary>
     public const string RecoveryProtectorAttributeName = "KeyProtectorRecovery";
 
+    /// <summary>
+    /// Root attribute naming which key the file is on. Absent in files written before it existed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Written in the clear, and it says nothing: it is a random token whose only property is being
+    /// different from the last one. What it is for is a save from a session that has not seen the
+    /// rekey — the writer compares the file's token against the one it read, and refuses rather than
+    /// writing the contents back under the key and the recovery password the rekey removed.
+    /// </para>
+    /// <para>
+    /// <b>A token rather than a counter.</b> Two rekeys from two sessions each bump a counter to the
+    /// same number, so a counter can say "unchanged" about two different keys — which is the one
+    /// answer this must never give. Random tokens collide only by accident of 128 bits.
+    /// </para>
+    /// </remarks>
+    public const string GenerationAttributeName = "KeyGeneration";
+
+    /// <summary>
+    /// What separates one slot from the next.
+    /// </summary>
+    /// <remarks>
+    /// <b>Not a space.</b> <see cref="Convert.FromBase64String"/> ignores whitespace, so a
+    /// space-separated list read by a build that expects a single blob would sometimes concatenate
+    /// silently into a longer blob instead of failing — the outcome depending on whether the entries
+    /// happen to carry <c>=</c> padding. <c>|</c> is outside the base64 alphabet and is not
+    /// whitespace, so an older build fails the same way every time. Which exception it throws matters
+    /// less than that it always throws one.
+    /// </remarks>
+    public const char SlotSeparator = '|';
+
+    /// <summary>
+    /// The most slots a file may declare.
+    /// </summary>
+    /// <remarks>
+    /// Slots are tried in turn and each attempt costs a DPAPI call, so an unbounded list is a file
+    /// that takes minutes to refuse to open. The bound is checked before any slot is tried, which is
+    /// the part that matters — a file declaring a hundred thousand slots is rejected on its count
+    /// rather than on its hundred-thousandth failure. Generous for its purpose: a slot is one member
+    /// of a team sharing one file.
+    /// </remarks>
+    public const int MaxMachineSlots = 32;
+
     /// <summary>How many times a recovery password may be re-entered, matching <c>PasswordAuthenticator</c>.</summary>
     private const int MaxRecoveryPasswordAttempts = 3;
 
-    private ConnectionFileKeyProtection(string? machineProtector, string recoveryProtector)
+    private readonly string[] _machineSlots;
+
+    private ConnectionFileKeyProtection(string[] machineSlots, string recoveryProtector,
+                                        string? generation, bool hasSlotForThisAccount = false)
     {
-        MachineProtector = machineProtector;
+        _machineSlots = machineSlots;
         RecoveryProtector = recoveryProtector;
+        Generation = generation;
+        HasSlotForThisAccount = hasSlotForThisAccount;
     }
 
-    public string? MachineProtector { get; }
+    /// <summary>
+    /// Whether one of the slots is known to belong to the account running now — either because this
+    /// object just wrote one, or because one of them opened the file.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Not the same question as <see cref="HasMachineProtector"/>, and the difference is the whole
+    /// point of slots. A shared file carries other people's slots: it has machine protectors, and
+    /// none of them is yours, so you were asked for the recovery password. This is what the saver
+    /// tests to decide whether to earn you one.
+    /// </para>
+    /// <para>
+    /// False is the safe direction. Being wrong that way costs a duplicate slot on one file — a few
+    /// hundred bytes, and the count is bounded. Being wrong the other way leaves a member prompted
+    /// for the recovery password on every open with no way to fix it, which is the defect this change
+    /// exists to remove.
+    /// </para>
+    /// </remarks>
+    public bool HasSlotForThisAccount { get; private set; }
+
+    /// <summary>
+    /// The wrapped copies of the file key that this machine might be able to open — one per member
+    /// of a shared file, in the order the file lists them. Empty when the file carries none.
+    /// </summary>
+    /// <remarks>
+    /// Unlabelled, and deliberately: nothing records whose slot is whose. Labelling would put an
+    /// account identifier for every member of a team into a file that is on a share by definition,
+    /// to support removing one slot — which does not remove anyone's access, because they know the
+    /// recovery password and have had the file. Rekeying is the operation that does.
+    /// </remarks>
+    public IReadOnlyList<string> MachineSlots => _machineSlots;
 
     public string RecoveryProtector { get; }
 
-    public bool HasMachineProtector => !string.IsNullOrWhiteSpace(MachineProtector);
+    /// <summary>
+    /// Which key this store is on. Null for a file written before generations existed.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Changed by <see cref="Create"/> alone, which means by hardening and by a rekey — never by
+    /// adding a slot, changing the recovery password, or an ordinary save. It has to track the key
+    /// rather than the file, because the thing it protects against is contents written under a key
+    /// the file no longer uses.
+    /// </para>
+    /// <para>
+    /// Null propagates rather than being filled in. A file that predates this gains a generation when
+    /// it is next rekeyed and not before: adopting one on an ordinary save would give every other
+    /// session holding that file a token they had never seen, and their next save — an ordinary save,
+    /// which is meant to be last-writer-wins — would be refused for a rekey that never happened.
+    /// </para>
+    /// </remarks>
+    public string? Generation { get; }
+
+    public bool HasMachineProtector => _machineSlots.Length > 0;
 
     /// <param name="includeMachineProtector">
     /// False for the portable edition, which runs as whatever account happens to be at the keyboard
@@ -64,9 +165,18 @@ public sealed class ConnectionFileKeyProtection
         ArgumentNullException.ThrowIfNull(recoveryPassword);
 
         return new ConnectionFileKeyProtection(
-            includeMachineProtector ? DpapiKeyProtector.Wrap(fileKey) : null,
-            RecoveryPasswordKeyProtector.Wrap(fileKey, recoveryPassword, iterations, prf));
+            includeMachineProtector ? [DpapiKeyProtector.Wrap(fileKey)] : [],
+            RecoveryPasswordKeyProtector.Wrap(fileKey, recoveryPassword, iterations, prf),
+            NewGeneration(),
+            hasSlotForThisAccount: includeMachineProtector);
     }
+
+    /// <summary>
+    /// A token for a key that has just been made. Never derived from the key: the generation is
+    /// written in the clear beside the protectors, so anything computed from key material would be
+    /// key material published.
+    /// </summary>
+    private static string NewGeneration() => Convert.ToHexString(RandomNumberGenerator.GetBytes(16));
 
     /// <summary>
     /// Recovers the file key, trying the machine protector first and asking for the recovery password
@@ -106,33 +216,55 @@ public sealed class ConnectionFileKeyProtection
     {
         if (HasMachineProtector)
         {
-            ConnectionFileKey? candidate = null;
-            try
-            {
-                candidate = DpapiKeyProtector.Unwrap(MachineProtector);
-                if (Accepts(candidate, keyValidator))
-                {
-                    ConnectionFileKey opened = candidate;
-                    candidate = null;
-                    return opened;
-                }
+            KeyProtectionException? machineFailure = null;
 
-                // Usable protector, wrong key. Reported the same way an unusable one is, because the
-                // user's situation is identical — this protector is not going to open the file — and
-                // falls through to the recovery password rather than failing outright.
-                onMachineProtectorFailed?.Invoke(new KeyProtectionException(
-                    KeyProtector.Machine, KeyProtectionFailure.Unusable,
-                    "The machine protector on this connection file belongs to a different key, so it " +
-                    "was left over from an earlier one or copied from another file."));
-            }
-            catch (KeyProtectionException ex)
+            // The slot that opened this file last time, first. Nothing else knows which slot belongs
+            // to this account — there is no index and no label — so without the session's memory
+            // every read walks the list again, and on a file shared by a team the member listed last
+            // pays for every member ahead of them on every read.
+            foreach (string slot in InSessionOrder(_machineSlots))
             {
-                onMachineProtectorFailed?.Invoke(ex);
+                ConnectionFileKey? candidate = null;
+                try
+                {
+                    candidate = DpapiKeyProtector.Unwrap(slot);
+                    if (Accepts(candidate, keyValidator))
+                    {
+                        ConnectionFileKey opened = candidate;
+                        candidate = null;
+                        MachineSlotSession.Remember(slot);
+                        HasSlotForThisAccount = true;
+                        return opened;
+                    }
+
+                    // Unwrapped, and not this file's key. `ProtectedData.Unprotect` succeeding proves
+                    // the blob was written by this account, not that it belongs to this file: a slot
+                    // copied from another file the same user owns unwraps perfectly and yields the
+                    // wrong key. So the search continues rather than stopping at the first slot this
+                    // account can open — accepting it would open the store onto contents that do not
+                    // decrypt, with no prompt and nothing reported.
+                    machineFailure ??= new KeyProtectionException(
+                        KeyProtector.Machine, KeyProtectionFailure.Unusable,
+                        "A machine protector on this connection file belongs to a different key, so it " +
+                        "was left over from an earlier one or copied from another file.");
+                }
+                catch (KeyProtectionException ex)
+                {
+                    // Another member's slot, in the ordinary case: it was written by an account that
+                    // is not this one, and DPAPI refuses it quickly and without asking for anything.
+                    machineFailure ??= ex;
+                }
+                finally
+                {
+                    candidate?.Dispose();
+                }
             }
-            finally
-            {
-                candidate?.Dispose();
-            }
+
+            // Reported once, after the whole list, rather than once per slot. On a shared file most
+            // of the slots are expected to fail — they belong to other people — and a warning per
+            // member would turn a normal open into a wall of alarming text.
+            if (machineFailure is not null)
+                onMachineProtectorFailed?.Invoke(machineFailure);
         }
 
         if (recoveryPasswordRequestor is null)
@@ -196,6 +328,19 @@ public sealed class ConnectionFileKeyProtection
         keyValidator is null || keyValidator(key);
 
     /// <summary>
+    /// The slots, with the one this session already opened a file with moved to the front.
+    /// </summary>
+    private static IEnumerable<string> InSessionOrder(string[] slots)
+    {
+        string? remembered = MachineSlotSession.Peek();
+        if (remembered is null || slots.Length < 2)
+            return slots;
+
+        int index = Array.IndexOf(slots, remembered);
+        return index <= 0 ? slots : slots.Skip(index).Concat(slots.Take(index));
+    }
+
+    /// <summary>
     /// Sets or replaces the recovery password, leaving the machine protector and the file's contents
     /// untouched.
     /// </summary>
@@ -213,18 +358,45 @@ public sealed class ConnectionFileKeyProtection
         ArgumentNullException.ThrowIfNull(fileKey);
         ArgumentNullException.ThrowIfNull(recoveryPassword);
 
-        return new ConnectionFileKeyProtection(MachineProtector,
-            RecoveryPasswordKeyProtector.Wrap(fileKey, recoveryPassword, iterations, prf));
+        // The generation is carried over, because this is the same key: nothing another session holds
+        // has been invalidated, and refusing their next save would be a lie about what happened here.
+        return new ConnectionFileKeyProtection(_machineSlots,
+            RecoveryPasswordKeyProtector.Wrap(fileKey, recoveryPassword, iterations, prf),
+            Generation, HasSlotForThisAccount);
     }
 
     /// <summary>
-    /// Adds a machine protector to a file that has none — a portable file opened by the installed
-    /// edition, or one whose profile has been rebuilt.
+    /// Adds a slot for this account, keeping the slots already there.
     /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Additive, because the slots already in the file belong to other people. Replacing them would
+    /// make a shared file serve one member at a time, each save locking out whoever saved before —
+    /// which is the defect this change exists to remove, not a smaller version of it.
+    /// </para>
+    /// <para>
+    /// <b>A lost slot costs one prompt.</b> Two members saving at once loses one of the writes, as it
+    /// does today for the whole file, and if the lost write carried a slot that member supplies the
+    /// recovery password on their next open and is slotted again when they next save. That is why
+    /// this needs no locking. Note what it depends on: the repair happens when *they* next save, so a
+    /// member who only ever reads is prompted every time and never repaired.
+    /// </para>
+    /// </remarks>
+    /// <exception cref="KeyProtectionException">The file already carries the maximum number of slots.</exception>
     public ConnectionFileKeyProtection WithMachineProtector(ConnectionFileKey fileKey)
     {
         ArgumentNullException.ThrowIfNull(fileKey);
-        return new ConnectionFileKeyProtection(DpapiKeyProtector.Wrap(fileKey), RecoveryProtector);
+
+        if (_machineSlots.Length >= MaxMachineSlots)
+            throw new KeyProtectionException(KeyProtector.Machine, KeyProtectionFailure.Unusable,
+                $"This connection file already carries {MaxMachineSlots} machine protectors, which is " +
+                "the most it may have. Rekeying the file drops them and starts again.");
+
+        // Same key, so same generation. A slot earned on save must not make anyone else's next save
+        // look like a save from before a rekey — that is an ordinary save, and ordinary saves are
+        // last-writer-wins by design.
+        return new ConnectionFileKeyProtection([.. _machineSlots, DpapiKeyProtector.Wrap(fileKey)],
+            RecoveryProtector, Generation, hasSlotForThisAccount: true);
     }
 
     /// <summary>
@@ -239,9 +411,16 @@ public sealed class ConnectionFileKeyProtection
     /// <exception cref="KeyProtectionException">
     /// The file declares a machine protector and no recovery protector.
     /// </exception>
-    public static ConnectionFileKeyProtection? Read(string? machineProtector, string? recoveryProtector)
+    /// <param name="generation">
+    /// The file's key generation, or null in a file written before generations existed. Present and
+    /// blank is refused for the same reason an empty slot list is: nothing this application writes
+    /// produces it, and reading it as "no generation" would silently disarm the check that stops a
+    /// stale session undoing a rekey.
+    /// </param>
+    public static ConnectionFileKeyProtection? Read(string? machineProtector, string? recoveryProtector,
+                                                    string? generation = null)
     {
-        bool hasMachine = !string.IsNullOrWhiteSpace(machineProtector);
+        bool hasMachine = machineProtector is not null;
         bool hasRecovery = !string.IsNullOrWhiteSpace(recoveryProtector);
 
         if (!hasMachine && !hasRecovery)
@@ -252,7 +431,45 @@ public sealed class ConnectionFileKeyProtection
                 "This connection file carries a machine protector but no recovery protector, so it " +
                 "could never be opened anywhere else. It was not written by this application.");
 
-        return new ConnectionFileKeyProtection(hasMachine ? machineProtector : null, recoveryProtector!);
+        if (generation is not null && string.IsNullOrWhiteSpace(generation))
+            throw new KeyProtectionException(KeyProtector.Machine, KeyProtectionFailure.Unusable,
+                "This connection file declares a key generation that holds nothing. It was not " +
+                "written by this application.");
+
+        return new ConnectionFileKeyProtection(ReadSlots(machineProtector), recoveryProtector!, generation);
+    }
+
+    /// <summary>
+    /// Splits the machine protector attribute into slots, refusing the shapes that mean something
+    /// went wrong.
+    /// </summary>
+    /// <remarks>
+    /// An absent attribute is a file with no machine protector, which is a portable file or one
+    /// written outside the user profile before slots existed. An attribute that is <i>present</i> and
+    /// holds nothing is not the same thing and is refused: nothing this application writes produces
+    /// it, so reading it as "no machine protector" would silently accept a file that something else
+    /// has damaged, and then prompt for the recovery password as though that were normal.
+    /// </remarks>
+    private static string[] ReadSlots(string? machineProtector)
+    {
+        if (machineProtector is null)
+            return [];
+
+        string[] slots = machineProtector.Split(SlotSeparator, StringSplitOptions.TrimEntries);
+
+        if (slots.Length == 0 || slots.Any(string.IsNullOrWhiteSpace))
+            throw new KeyProtectionException(KeyProtector.Machine, KeyProtectionFailure.Unusable,
+                "This connection file declares a machine protector that holds nothing, or that has an " +
+                "empty entry in its list. It was not written by this application.");
+
+        // Before any of them is tried, which is the point: the cost of a slot is a DPAPI call, so a
+        // file declaring a hundred thousand would otherwise take minutes to be refused.
+        if (slots.Length > MaxMachineSlots)
+            throw new KeyProtectionException(KeyProtector.Machine, KeyProtectionFailure.Unusable,
+                $"This connection file declares {slots.Length} machine protectors, and no file written " +
+                $"by this application has more than {MaxMachineSlots}.");
+
+        return slots;
     }
 
     public void WriteTo(XElement rootElement)
@@ -264,9 +481,16 @@ public sealed class ConnectionFileKeyProtection
         // machine protector is the worst possible leftover: it still unwraps, but to the previous
         // file key, and Unwrap prefers it over the recovery protector. The file would open onto
         // contents that no longer decrypt, with no prompt and nothing reported.
+        // One slot writes exactly what it wrote before the list existed, so a file with a single
+        // member is byte-identical to what the preceding change produced: no old form, no new form,
+        // no version flag on the attribute, nothing to migrate.
         rootElement.SetAttributeValue(XName.Get(MachineProtectorAttributeName),
-                                      HasMachineProtector ? MachineProtector : null);
+                                      HasMachineProtector ? string.Join(SlotSeparator, _machineSlots) : null);
 
         rootElement.SetAttributeValue(XName.Get(RecoveryProtectorAttributeName), RecoveryProtector);
+
+        // Null removes it, which is what keeps a file written before generations existed free of one
+        // until it is rekeyed. See <see cref="Generation"/> for why it is not filled in here.
+        rootElement.SetAttributeValue(XName.Get(GenerationAttributeName), Generation);
     }
 }

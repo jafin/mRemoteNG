@@ -327,7 +327,8 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
     {
         ConnectionFileKeyProtection? protection = ConnectionFileKeyProtection.Read(
             rootXmlElement.Attributes?[ConnectionFileKeyProtection.MachineProtectorAttributeName]?.Value,
-            rootXmlElement.Attributes?[ConnectionFileKeyProtection.RecoveryProtectorAttributeName]?.Value);
+            rootXmlElement.Attributes?[ConnectionFileKeyProtection.RecoveryProtectorAttributeName]?.Value,
+            rootXmlElement.Attributes?[ConnectionFileKeyProtection.GenerationAttributeName]?.Value);
 
         if (protection is null)
             return false;
@@ -401,6 +402,10 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
                 RecoveryPasswordSession.Remember(supplied);
 
             _rootNodeInfo.KeyProtection = protection;
+            // What the file said, kept apart from what the store may later be given: a rekey changes
+            // the protection's generation and leaves this one alone, and the difference is what lets
+            // the writer tell the session that rekeyed from a session that has not seen it.
+            _rootNodeInfo.KeyGenerationSeen = protection.Generation;
             _rootNodeInfo.FileKey = fileKey;
             _decryptor = new XmlConnectionsDecryptor(new PerFileKeyCryptographyProvider(fileKey), _rootNodeInfo);
             return true;

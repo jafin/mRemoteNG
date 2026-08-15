@@ -119,6 +119,25 @@ public class RootNodeInfo(RootNodeType rootType, string uniqueId) : ContainerInf
     public Security.FileProtection.ConnectionFileKeyProtection? KeyProtection { get; set; }
 
     /// <summary>
+    /// The key generation this session last saw in the file itself, which is not always the one
+    /// <see cref="KeyProtection"/> now carries.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The two differ for exactly as long as a rekey is unsaved: the store has been given a new key
+    /// and the file on disk still holds the old one. The writer compares the file against <i>this</i>
+    /// rather than against the protection's own generation, so the session that did the rekey can
+    /// save it and every session that did not is refused.
+    /// </para>
+    /// <para>
+    /// Set by the reader from the file, and by the writer once a save has landed. Null for a store
+    /// that was never read from a file, and for every file written before generations existed.
+    /// </para>
+    /// </remarks>
+    [Browsable(false)]
+    public string? KeyGenerationSeen { get; set; }
+
+    /// <summary>
     /// The unwrapped key, held for as long as the store is open.
     /// </summary>
     /// <remarks>

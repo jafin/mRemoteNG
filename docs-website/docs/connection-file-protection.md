@@ -73,7 +73,10 @@ You need the recovery password anywhere that automatic unlock cannot work:
 The recovery password is the only way back into the file if this Windows account is lost. A note in
 a password manager on your phone is fine; a text file next to the connection file is not.
 
-There is currently no screen for changing it, so choose one you can keep.
+Nothing changes the recovery password on its own. **File → Rekey Connection File...** sets a new
+one, but it gives the file a new key at the same time — see
+[Removing someone's access](#removing-someones-access) for what that costs. Choose a password you
+can keep.
 
 :::
 
@@ -81,22 +84,93 @@ When mRemoteNG needs it, you get an ordinary password prompt naming the connecti
 three attempts, and once a password has worked, it is remembered for the rest of that mRemoteNG
 session — opening a second file protected by the same password does not ask again.
 
+## Sharing a file with your team
+
+A connection file on a share works, and each person who saves it types the recovery password
+**once**.
+
+The first time a colleague opens the file, their Windows account is not one it recognises yet, so
+they are asked for the recovery password. The next time they **save**, mRemoteNG adds an unlock for
+their account alongside everyone else's, and the file opens silently for them from then on. Nobody's
+unlock replaces anybody else's.
+
+Two things follow from that happening on save rather than on open:
+
+- Someone who only ever **reads** the file never earns one, and is asked for the recovery password
+  every time. Saving is what earns it.
+- If two people save at the same moment, one save overwrites the other — as it already does for the
+  rest of the file. If the lost one carried an unlock, that person is asked for the password once
+  more, and has it back when they next save.
+
+:::note Everyone still needs the recovery password once
+
+Share it the way you would any team secret. It is also what opens the file on a machine that has
+never seen it.
+
+:::
+
+## Removing someone's access
+
+:::info Version
+
+**File → Rekey Connection File...** is new. Earlier versions had no way to take a connection file
+away from someone it had been shared with.
+
+:::
+
+When someone leaves the team, they still have the recovery password — and they may have a copy of
+the connection file. Rekeying is what removes their access. It does four things in one step:
+
+1. Gives the file a **new key**.
+2. Asks you for a **new recovery password**, which you then share with the people who stay.
+3. Drops **every automatic unlock** on the file, including everyone else's.
+4. Takes a **backup** of the file as it was, before any of it happens.
+
+Everyone who stays is asked for the new recovery password the first time they open the file
+afterwards, exactly as they were on their first open, and is unlocked automatically again when they
+next save.
+
+:::warning Rekeying does not reach a copy already taken
+
+Anyone who kept a copy of the file can still open it with the old recovery password, and it still
+holds every password that was in it when they took the copy. **Treat those passwords as known and
+change them on the systems themselves.** Rekeying stops the next copy, not the one already gone.
+
+The backup it takes is one of those copies: it opens with the *old* recovery password. Keep it as
+carefully as you kept the original, and delete it when you are sure the rekey worked.
+
+:::
+
+There is deliberately no way to remove one person's unlock and leave the rest. It would not remove
+their access — they know the recovery password and have had the file — and it would tell you it had.
+
+### "This file has been rekeyed since you opened it"
+
+If a colleague rekeys the file while you have it open, your next save is refused with that message.
+Nothing has been written, and **your unsaved changes are still on screen**.
+
+This is deliberate. Your copy of mRemoteNG is still holding the old key and the old recovery
+password, so saving would write the whole file back the way it was and quietly undo the rekey —
+letting back in the person it was meant to shut out.
+
+To carry on:
+
+1. Use **File → Save As...** to keep your unsaved changes somewhere else, if you have any that
+   matter.
+2. Close and re-open the connection file. It asks for the new recovery password once.
+3. Redo the changes you saved aside.
+
+Ordinary saves are not affected. Two people editing one connection file has always been
+last-writer-wins, and it still is — only a rekey refuses anything.
+
 ## When every open asks for the password
 
-Two situations get the recovery password and no automatic unlock. This is deliberate, and mRemoteNG
-tells you which one applies before you commit:
+**You are running the [portable edition](./portable-edition.md).** A key tied to one Windows account
+defeats a copy whose whole purpose is to run from a USB stick on someone else's machine, so the
+portable edition uses the recovery password alone and adds no automatic unlock, wherever the file is
+kept.
 
-**The file lives outside your user profile** — a network share, a redirected Documents folder, a
-folder several people use. The automatic unlock is tied to one Windows account, so on a shared file
-it would work for exactly one person and ask everyone else on every open, with no way to fix it.
-The recovery password becomes a shared secret for the team. It is still a real improvement over the
-published key — it is yours rather than printed in public — but it is a smaller one than a
-single-user file gets.
-
-**You are running the [portable edition](./portable-edition.md)** — a key tied to one Windows
-account defeats a copy whose whole purpose is to run from a USB stick on someone else's machine.
-
-Because both use the recovery password alone, files they produce open in the other edition too.
+Files it writes open in the installed edition, and vice versa.
 
 ## Moving a file to another computer
 
