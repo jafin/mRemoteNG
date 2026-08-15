@@ -33,7 +33,7 @@ Unless the user explicitly requests a documentation or orchestrator task, issue-
 
 - Work only in `mRemoteNG/`, `mRemoteNGTests/`, or `mRemoteNGSpecs/` — plus `docs-website/docs/` when the change is user-visible, per [User Documentation](#user-documentation).
 - Never read or modify `.project-roadmap/`.
-- Never modify `run-tests.ps1`, `build.ps1`, `mRemoteNG.sln`, `Directory.Build.props`, or `Directory.Packages.props`.
+- Never modify `run-tests.ps1`, `build.ps1`, `mRemoteNG.slnx`, `Directory.Build.props`, or `Directory.Packages.props`.
 - `.github/workflows/*` may be changed when the user explicitly asks for CI work. It stays off-limits for an ordinary issue fix — never edit a workflow as a side effect of another task.
 - Commit when the work is done and verified — see [Committing](#committing). Never `git push`, force-push, rewrite published history, or open a PR unless the user asks.
 - Preserve existing behavior outside the reported issue and never add interactive tests.

@@ -61,7 +61,7 @@ jobs:
       - name: Build with MSBuild
         shell: pwsh
         run: |
-          msbuild "$env:GITHUB_WORKSPACE\mRemoteNG.sln" /restore /m /verbosity:minimal -p:Configuration=Release -p:Platform=x64
+          msbuild "$env:GITHUB_WORKSPACE\mRemoteNG.slnx" /restore /m /verbosity:minimal -p:Configuration=Release -p:Platform=x64
 
       - name: Install coverage tool
         shell: pwsh
