@@ -14,12 +14,12 @@ using System.Resources;
 
 // General Information
 [assembly: AssemblyTitle("mRemoteNG")]
-[assembly: AssemblyDescription("Multi-Remote Next Generation Connection Manager")]
+[assembly: AssemblyDescription("Multi-Remote Connection Manager")]
 [assembly: AssemblyConfiguration("x64")]
-[assembly: AssemblyCompany("Profi-KOM Ltd.")]
-[assembly: AssemblyProduct("mRemoteNG Connection Manager")]
+[assembly: AssemblyCompany("mRemoteNG")]
+[assembly: AssemblyProduct("mRemoteNG")]
 [assembly: AssemblyCopyright("(c) 2026 mRemoteNG")]
-[assembly: AssemblyTrademark("Profi-KOM LTd.")]
+[assembly: AssemblyTrademark("mRemoteNG")]
 [assembly: AssemblyCulture("")]
 
 // Version information

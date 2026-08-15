@@ -30,8 +30,8 @@
          MarkupCompilePass2 temp assembly recompilation (~32s per build). -->
     <SupportedOSPlatformVersion>10.0.17763.0</SupportedOSPlatformVersion>
     <SignAssembly>False</SignAssembly>
-    <Title>Multi-Remote Next Generation Connection Manager</Title>
-    <Product>mRemoteNG Connection Manager</Product>
+    <Title>Multi-Remote Connection Manager</Title>
+    <Product>mRemoteNG</Product>
     <Company>mRemoteNG Open Source Project</Company>
     <Authors>mRemoteNG Dev Team</Authors>
     <RepositoryUrl>https://github.com/robertpopa22/mRemoteNG.git</RepositoryUrl>

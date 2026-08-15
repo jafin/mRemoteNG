@@ -81,7 +81,7 @@ public class FrmSplashScreenNew : Form
 
         // Subtitle
         using Font subtitleFont = new("Segoe UI", 14f, FontStyle.Bold);
-        const string subtitle = "Multi-Remote Next Generation Connection Manager";
+        const string subtitle = "Multi-Remote Connection Manager";
         SizeF subtitleSize = g.MeasureString(subtitle, subtitleFont);
         g.DrawString(subtitle, subtitleFont, whiteBrush, (Width - subtitleSize.Width) / 2f, 165f);
 
