@@ -149,6 +149,24 @@ There are multiple ways to open a connection in mRemoteNG, but the easiest way i
 
 ![Connections open](../images/connections_open.png)
 
+### Opening several connections at once
+
+:::info Version
+
+Added in v1.82.1
+
+:::
+
+Select more than one connection in the Connections panel and press **Enter** to open them all in one go. Hold **Shift** and use the arrow keys to pick a run of neighbouring connections, or hold **Ctrl** and click to pick them one at a time.
+
+Folders in a multiple selection are skipped, so a Shift-selection that sweeps across a folder opens only the connections it caught, not everything filed under that folder.
+
+:::warning
+
+Every selected connection opens at once, each in its own tab. Selecting a large run and pressing **Enter** will start all of them together, which can be slow on a busy machine.
+
+:::
+
 To close the connection you can do any of the following:
 
 - Log off in the start menu (Closes the connection and logs you out completely from RDP)

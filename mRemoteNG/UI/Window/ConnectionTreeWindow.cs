@@ -571,9 +571,7 @@ public partial class ConnectionTreeWindow
             if (e.KeyCode == Keys.Enter)
             {
                 e.Handled = true;
-                if (SelectedNode == null)
-                    return;
-                Runtime.ConnectionInitiator.OpenConnection(SelectedNode);
+                OpenSelectedConnections();
             }
             else if (e.Control && e.KeyCode == Keys.F)
             {
@@ -586,6 +584,31 @@ public partial class ConnectionTreeWindow
         {
             Runtime.MessageCollector.AddExceptionStackTrace("tvConnections_KeyDown (UI.Window.ConnectionTreeWindow) failed", ex);
         }
+    }
+
+    /// <summary>
+    /// Opens every connection the user has selected. ObjectListView reports SelectedObject
+    /// — and so SelectedNode — as null once more than one row is selected, so Enter used to
+    /// do nothing at all on a multi-selection (#3252).
+    /// </summary>
+    private void OpenSelectedConnections()
+    {
+        List<ConnectionInfo> selectedNodes = ConnectionTree.GetSelectedNodes();
+        if (selectedNodes.Count == 0)
+            return;
+
+        // A single selection keeps its long-standing behaviour, unfiltered: Enter on a
+        // folder still opens it the way it always has. A range selection, though, routinely
+        // sweeps up folders and the root, and opening those would dial a host named after
+        // the folder — so open only what a double-click would.
+        if (selectedNodes.Count == 1)
+        {
+            Runtime.ConnectionInitiator.OpenConnection(selectedNodes[0]);
+            return;
+        }
+
+        foreach (ConnectionInfo node in selectedNodes.Where(OpenConnectionClickHandler.IsConnectable))
+            Runtime.ConnectionInitiator.OpenConnection(node);
     }
 
     #endregion
