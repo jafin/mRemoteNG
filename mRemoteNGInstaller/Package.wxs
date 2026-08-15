@@ -10,7 +10,7 @@
            InstallerVersion="500"
            Scope="perMachine">
 
-    <SummaryInformation Description="mRemoteNG - Multi-Remote Next Generation Connection Manager" />
+    <SummaryInformation Description="mRemoteNG - Multi-Remote Connection Manager" />
 
     <!-- #120: nightlies all share MSI ProductVersion (prerelease suffix stripped),
          so AllowSameVersionUpgrades is required for the upgrade to fire; and
