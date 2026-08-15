@@ -4,10 +4,10 @@
     "min_total_threshold": 3800,
     "last_updated": "2026-08-15",
     "stats": {
-      "unique_methods": 1300,
-      "static_test_cases": 1395,
+      "unique_methods": 1340,
+      "static_test_cases": 1418,
       "dynamic_source_methods": 22,
-      "note": "static_test_cases counts [Test] as 1, each [TestCase] as 1. dynamic_source_methods use [TestCaseSource] generating N cases at runtime. total_expected = the sum of the runner's groups plus the isolated tests, and the groups partition the assembly: every test belongs to exactly one. Before 2026-08-12 the negated clauses carried a literal backslash (\\!~), which VSTest silently treats as matching everything rather than excluding, so Remaining re-ran the whole assembly and the reported total was roughly double the real test count."
+      "note": "These three count what the inventory below lists, which is not everything: 96 of the assembly's test classes have never been added to it, so treat it as a partial index rather than a census. The runner does not read it — what the runner reads is the groups' expected counts, and those are checked against a real run. static_test_cases counts [Test] as 1, each [TestCase] as 1. dynamic_source_methods use [TestCaseSource] generating N cases at runtime. total_expected = the sum of the runner's groups plus the isolated tests, and the groups partition the assembly: every test belongs to exactly one. Before 2026-08-12 the negated clauses carried a literal backslash (\\!~), which VSTest silently treats as matching everything rather than excluding, so Remaining re-ran the whole assembly and the reported total was roughly double the real test count."
     }
   },
   "runner": {
@@ -135,6 +135,18 @@
       },
       "Connections": {
         "_classes": {
+          "PortableEditionInterchangeTests": {
+            "APortableStoreWritesNoMachineProtectorIntoTheFile": 1,
+            "APortableStoreOpensOnItsRecoveryPasswordAndNothingElse": 1,
+            "AnInstalledStoreOpensInThePortableEditionWithItsRecoveryPassword": 1,
+            "APortableStoreOpensInTheInstalledEditionAndCanBeGivenAMachineProtector": 1,
+            "TheTwoEditionsDoNotProduceAFormatSplit": 1,
+            "SavingInsideTheProfileGivesARecoveryOnlyStoreItsMachineProtector": 1,
+            "AdoptingKeepsTheStoresOwnKeyAndItsRecoveryPassword": 1,
+            "ThePortableEditionAdoptsNothing": 1,
+            "AMemberWhoOpenedWithTheRecoveryPasswordEarnsASlotOnSave": 1,
+            "AStoreThatAlreadyHasAMachineProtectorIsLeftAlone": 1
+          },
           "SqlConnectionsLoaderIntegrationTests": {
             "DatabaseConnectorFactory_WithMsSqlSqlAuthentication_UsesCustomCredentials": 1,
             "DatabaseConnectorFactory_WithMsSqlWindowsAuthentication_UsesIntegratedSecurity": 1,
@@ -1304,6 +1316,27 @@
       },
       "FileProtection": {
         "_classes": {
+          "ConnectionFileMigrationTests": {
+            "AStoreInTheUsersOwnProfileGetsBothProtectors": 1,
+            "AStoreOutsideTheProfileNowGetsAMachineProtectorToo": 3,
+            "ThePortableEditionNeverGetsAMachineProtectorEvenInsideTheProfile": 1,
+            "AStoreLocationThisCannotResolveIsTreatedAsOutside": 4,
+            "AProfileOnAShareStillCountsAsInside": 1,
+            "MigratingGivesTheStoreANewKeyUnderBothProtectors": 1,
+            "MigratingAlwaysGeneratesAFreshKey": 1,
+            "ASharedStoreIsMigratedWithNoMachineProtector": 1,
+            "AnEmptyRecoveryPasswordIsRefusedAndLeavesTheStoreAlone": 1,
+            "AStoreThatWasNeverMigratedIsNotReportedAsProtected": 1,
+            "ASharedStoreIsToldItWillNeedThePasswordEverywhere": 1,
+            "APrivateStoreIsNotToldAboutSharing": 1,
+            "ThePortableEditionIsNotToldItsFileMightBeShared": 1,
+            "GivingAnAlreadyHardenedStoreAKeyCountsAsAChange": 1,
+            "AStoreAlreadyAtTheHardenedLevelCanStillBeGivenAKey": 1,
+            "DecliningIsToldPlainlyThatTheKeyIsPublishedInOurSource": 1,
+            "DecliningOnlyTheRecoveryPasswordIsToldTheSameThing": 1,
+            "AStoreWithAMasterPasswordIsNotToldItsKeyIsPublished": 1,
+            "WhetherTheKeyIsThePublishedOneIsReadFromTheStoreRatherThanAssumed": 1
+          },
           "MachineKeySlotTests": {
             "OneSlotIsExactlyWhatTheSingleValueFormWas": 1,
             "AnAbsentAttributeStillMeansNoMachineProtector": 1,

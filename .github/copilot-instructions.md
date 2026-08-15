@@ -26,10 +26,10 @@ mRemoteNG is an open-source, multi-protocol, tabbed remote connections manager f
 dotnet restore
 
 # Build the solution
-msbuild mRemoteNG.sln -p:Configuration=Release -p:Platform=x64
+msbuild mRemoteNG.slnx -p:Configuration=Release -p:Platform=x64
 
 # Or for ARM64
-msbuild mRemoteNG.sln -p:Configuration=Release -p:Platform=arm64
+msbuild mRemoteNG.slnx -p:Configuration=Release -p:Platform=arm64
 ```
 
 ### Running Tests

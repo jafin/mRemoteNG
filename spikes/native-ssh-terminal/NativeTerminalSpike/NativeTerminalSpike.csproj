@@ -2,7 +2,7 @@
 
   <!--
     Throwaway spike for openspec change add-native-ssh-terminal, tasks 1.1 / 1.2 / 1.3.
-    Deliberately NOT in mRemoteNG.sln: it must not affect build.ps1, CI or the test run.
+    Deliberately NOT in mRemoteNG.slnx: it must not affect build.ps1, CI or the test run.
     Build it directly:  dotnet build spikes/native-ssh-terminal/NativeTerminalSpike
   -->
 

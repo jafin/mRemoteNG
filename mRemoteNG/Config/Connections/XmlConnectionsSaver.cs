@@ -2,6 +2,7 @@
 using System.IO;
 using System.Linq;
 using System.Runtime.Versioning;
+using System.Security.Cryptography;
 using System.Xml;
 using mRemoteNG.App;
 using mRemoteNG.Config.DataProviders;
@@ -34,6 +35,7 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
     /// Writes the store.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// <b>Why concurrent saves cannot produce a file whose slots and contents disagree.</b> That is
     /// the one race here that would be destructive rather than annoying — a file that opens, on a key
     /// that decrypts nothing in it. It cannot happen: the protectors and the contents are produced by
@@ -42,6 +44,19 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
     /// step, so a reader sees one writer's whole file or the other's, never halves of both. Two
     /// members saving at once therefore loses a write, which is what saving a shared file has always
     /// done; it does not corrupt one.
+    /// </para>
+    /// <para>
+    /// <b>The rekey check is not a lock, and the residual window is stated rather than implied.</b>
+    /// The generation is read from disk when the save begins and again immediately before the
+    /// replace, so a rekey landing during the expensive part — deriving the key, serializing and
+    /// encrypting the tree — is caught. One landing after the second read is not: closing that would
+    /// need the file held open exclusively from the first read to the last write, which would make
+    /// one member's save block everyone else's rather than lose to it. What remains is a window of
+    /// the replace itself, in which a save begun before a rekey can still write the superseded key
+    /// back. A rekey is a deliberate act taken when someone is being removed, so the file being
+    /// re-saved in that same instant by a session that has not seen it is worth naming and not worth
+    /// serialising every save for.
+    /// </para>
     /// </remarks>
     public void Save(ConnectionTreeModel connectionTreeModel, string propertyNameTrigger = "")
     {
@@ -67,6 +82,15 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
 
             if (string.IsNullOrEmpty(xml))
                 throw new InvalidOperationException("Serialized XML is empty");
+
+            // Asked a second time, immediately before the replace. Everything between the two reads
+            // — building the provider, deriving its key, serializing and encrypting the whole tree —
+            // is time another member's rekey can land in, and a save that started before it would
+            // otherwise write the old key and the old recovery protector back over the new ones.
+            // Nothing holds the file across the two steps, so this narrows the window to the replace
+            // itself rather than closing it; see the remarks on Save.
+            (_, string? generationBeforeWriting) = ReadExistingRoot();
+            ThrowIfRekeyedSinceThisSessionRead(rootNode, generationBeforeWriting);
 
             FileDataProviderWithRollingBackup fileDataProvider = new(_connectionFileName);
             fileDataProvider.Save(xml);
@@ -154,6 +178,18 @@ public class XmlConnectionsSaver : ISaver<ConnectionTreeModel>
                 $"Connection file '{_connectionFileName}' has no room for another machine protector, " +
                 "so this account will keep being asked for the recovery password. Rekeying the file " +
                 "clears the list.", ex, Messages.MessageClass.WarningMsg);
+            return;
+        }
+        catch (CryptographicException ex)
+        {
+            // DPAPI itself refused. Same trade as above — the save goes ahead without the slot —
+            // but deliberately a different message: rekeying clears a full list and would do
+            // nothing for a Protect call that failed, so saying so here would send the user off to
+            // destroy everyone else's unlock for no reason.
+            Runtime.MessageCollector?.AddExceptionMessage(
+                $"Windows could not protect a key for connection file '{_connectionFileName}' on " +
+                "this account, so it will keep being asked for the recovery password. The file was " +
+                "saved.", ex, Messages.MessageClass.WarningMsg);
             return;
         }
 

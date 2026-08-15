@@ -43,7 +43,7 @@ jobs:
       - name: Build with MSBuild
         shell: pwsh
         run: |
-          msbuild "$env:GITHUB_WORKSPACE\mRemoteNG.sln" /restore /m /verbosity:minimal -p:Configuration=Release -p:Platform=x64
+          msbuild "$env:GITHUB_WORKSPACE\mRemoteNG.slnx" /restore /m /verbosity:minimal -p:Configuration=Release -p:Platform=x64
 
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@bb471cdcf4dda2c934c5b656f554d43c1434ed13 # v4

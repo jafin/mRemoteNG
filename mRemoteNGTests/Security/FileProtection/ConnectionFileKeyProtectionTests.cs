@@ -256,6 +256,15 @@ public class ConnectionFileKeyProtectionTests
     [Test]
     public void AFileWithNeitherProtectorIsNotAPerFileKeyFile()
     {
+        // A real recovery protector, so the refusal below can only be about the machine attribute.
+        // Passing whitespace instead would be refused one rule earlier — for having a machine
+        // protector and no recovery protector — and the test would pass with the empty-slot rule
+        // deleted.
+        using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
+        string recovery = ConnectionFileKeyProtection
+            .Create(fileKey, Password("recovery"), includeMachineProtector: false, iterations: FastIterations)
+            .RecoveryProtector;
+
         Assert.Multiple(() =>
         {
             Assert.That(ConnectionFileKeyProtection.Read(null, null), Is.Null);
@@ -266,7 +275,7 @@ public class ConnectionFileKeyProtectionTests
             // nothing is no longer read as "no machine protector": nothing this application writes
             // produces it, so accepting it would take a file something else has damaged and prompt
             // for the recovery password as though that were normal. Absence still means absence.
-            Assert.Throws<KeyProtectionException>(() => ConnectionFileKeyProtection.Read("", "   "));
+            Assert.Throws<KeyProtectionException>(() => ConnectionFileKeyProtection.Read("", recovery));
         });
     }
 
