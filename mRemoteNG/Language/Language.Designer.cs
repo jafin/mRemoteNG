@@ -8996,6 +8996,15 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        /// <summary>
+        ///   Looks up a localized string explaining that connections came from a local copy and will not be saved.
+        /// </summary>
+        internal static string WarningLoadedFromConnectionsCache {
+            get {
+                return ResourceManager.GetString("WarningLoadedFromConnectionsCache", resourceCulture);
+            }
+        }
+
         ///   Looks up a localized string similar to Export Uses the Classic Format.
         /// </summary>
         internal static string ExportClassicFormatTitle {

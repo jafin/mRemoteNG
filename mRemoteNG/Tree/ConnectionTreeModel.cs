@@ -37,6 +37,29 @@ public sealed class ConnectionTreeModel : INotifyCollectionChanged, INotifyPrope
     public IReadOnlyCollection<string> LoadedConnectionIds => _loadedConnectionIds;
 
     /// <summary>
+    /// Whether this model came from a local copy standing in for a source that could not be read,
+    /// and therefore must never be written back to that source.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A cached copy records what one client saw at one moment. The source has since been changed by
+    /// people whose edits this client never saw, so writing the copy back does not restore a state
+    /// that ever existed — connections deleted elsewhere return, connections added elsewhere vanish,
+    /// and every edit since the copy was taken is undone. It lands at the moment least likely to be
+    /// suspected, because the database was unreachable and nobody is watching for their colleagues'
+    /// work to be reverted.
+    /// </para>
+    /// <para>
+    /// <b>A property of the model rather than a setting.</b> Borrowing the user's own SQL read-only
+    /// preference would mean writing to their settings to record a transient failure and restoring
+    /// it later, from code that runs when things are already going wrong — and a missed restore
+    /// leaves the database silently read-only for ever, against a checkbox they never ticked. Here
+    /// it disappears when the model does, which is the only thing that should clear it.
+    /// </para>
+    /// </remarks>
+    public bool IsFallbackCopy { get; set; }
+
+    /// <summary>
     /// Records a connection ID as having been loaded from the data source.
     /// </summary>
     public void TrackLoadedConnectionId(string constantId)

@@ -49,6 +49,9 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     private static readonly CompositeFormat ConnectionsNotSavedFormat = CompositeFormat.Parse("Your changes were not saved: {0}");
     private const string NothingLoadedReason = "no connection file is loaded.";
     private const string NoConnectionsReason = "there are no connections to save.";
+    private const string FallbackCopyReason =
+        "these connections are a local copy, loaded because the database could not be read. " +
+        "Reconnect and reload before making changes, or they will be lost.";
     private const string PendingSaveTimedOutMessage =
         "Your last change could not be written: a save that was already running did not finish in time.";
     private readonly PuttySessionsManager _puttySessionsManager = puttySessionsManager ?? throw new ArgumentNullException(nameof(puttySessionsManager));
@@ -390,18 +393,22 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
         }
         catch (Exception ex) when (useDatabase)
         {
-            string cachePath = Path.Combine(SettingsFileInfo.SettingsPath, SettingsFileInfo.SqlConnectionsCache);
-            if (File.Exists(cachePath))
-            {
-                Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg,
-                    $"Could not load connections from database ({ex.Message}). Loading from local cache in read-only mode.");
-                connectionLoader = new XmlConnectionsLoader(cachePath);
-                newConnectionTreeModel = connectionLoader.Load();
-            }
-            else
-            {
+            SqlConnectionsCache.DiscardIfUnprotected();
+
+            if (!SqlConnectionsCache.IsUsable)
                 throw;
-            }
+
+            // **Said accurately, because the previous wording was not.** This used to claim "read-only
+            // mode" while nothing made it read-only, so a user who was told the one thing that would
+            // have stopped them editing went on to overwrite the database with a stale copy. What it
+            // must carry is what they cannot find out for themselves: that this is a copy, how old it
+            // is, and that nothing they do will be saved.
+            newConnectionTreeModel = SqlConnectionsCache.Read();
+            newConnectionTreeModel.IsFallbackCopy = true;
+
+            Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, string.Format(
+                CultureInfo.CurrentCulture, Language.WarningLoadedFromConnectionsCache,
+                ex.Message, DescribeAge(SqlConnectionsCache.WrittenAtUtc)));
         }
 
         if (newConnectionTreeModel == null)
@@ -592,6 +599,14 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     {
         try
         {
+            if (connectionTreeModel.IsFallbackCopy)
+            {
+                // Every save path funnels through here — explicit, debounced and batched — so this is
+                // the one place the refusal cannot be gone around.
+                ReportSaveNotPerformed(FallbackCopyReason);
+                return;
+            }
+
             Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg, "Saving connections...");
             RemoteConnectionsSyncronizer?.Disable();
 
@@ -831,22 +846,34 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
         return Path.Combine(ConnectionsFileInfo.DefaultConnectionsPath, ConnectionsFileInfo.DefaultConnectionsFile);
     }
 
+    /// <summary>
+    /// Takes the local copy that <see cref="SqlConnectionsCache"/> reads back when the database
+    /// cannot be reached.
+    /// </summary>
+    /// <remarks>
+    /// Called before the loaded model is published, and it has to stay that way: the cache is keyed
+    /// by swapping a key onto the root node for the duration of the write, which is safe only while
+    /// nothing else can see the model.
+    /// </remarks>
     private static void TrySaveSqlConnectionsCache(ConnectionTreeModel connectionTreeModel)
     {
-        try
-        {
-            string cachePath = Path.Combine(SettingsFileInfo.SettingsPath, SettingsFileInfo.SqlConnectionsCache);
-            ConnectionTreeModel cacheModel = new();
-            foreach (RootNodeInfo root in connectionTreeModel.RootNodes.OfType<RootNodeInfo>())
-                cacheModel.AddRootNode(root);
-            XmlConnectionsSaver cacheSaver = new(cachePath, new SaveFilter());
-            cacheSaver.Save(cacheModel);
-            Runtime.MessageCollector.AddMessage(MessageClass.DebugMsg, $"SQL connections cache saved to '{cachePath}'");
-        }
-        catch (Exception ex)
-        {
-            Runtime.MessageCollector.AddExceptionStackTrace("Failed to save SQL connections cache", ex);
-        }
+        SqlConnectionsCache.DiscardIfUnprotected();
+        SqlConnectionsCache.Write(connectionTreeModel, new SaveFilter());
+    }
+
+    /// <summary>How stale the copy is, in the terms somebody decides with.</summary>
+    private static string DescribeAge(DateTime writtenAtUtc)
+    {
+        TimeSpan age = DateTime.UtcNow - writtenAtUtc;
+
+        if (age < TimeSpan.FromMinutes(2))
+            return "less than a minute old";
+        if (age < TimeSpan.FromHours(1))
+            return $"{(int)age.TotalMinutes} minutes old";
+        if (age < TimeSpan.FromDays(1))
+            return $"{(int)age.TotalHours} hours old";
+
+        return $"{(int)age.TotalDays} days old";
     }
 
     #region Events
