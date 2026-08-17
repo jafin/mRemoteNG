@@ -9140,6 +9140,15 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string reporting that the database's encryption state could not be read.
+        /// </summary>
+        internal static string SqlUpgradeStatusUnknown {
+            get {
+                return ResourceManager.GetString("SqlUpgradeStatusUnknown", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string describing a database that holds no connections yet.
         /// </summary>
         internal static string SqlUpgradeStatusNoDatabase {

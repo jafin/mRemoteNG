@@ -188,10 +188,13 @@ public static class SqlDatabaseEncryptionUpgradePrompt
         }
         catch (Exception ex)
         {
-            // A status line is not worth a dialog. The message channel keeps the reason findable.
+            // A status line is not worth a dialog, but it must not go blank either. An empty line is
+            // indistinguishable from "not looked yet", so a failure here used to present as the
+            // feature simply not working, with the reason available only to somebody who thought to
+            // open the notifications panel. Say that the read failed, and point at the panel for why.
             Runtime.MessageCollector.AddExceptionMessage(
                 "Reading the SQL database's encryption state failed", ex, MessageClass.WarningMsg);
-            return (false, string.Empty);
+            return (false, Language.SqlUpgradeStatusUnknown);
         }
     }
 

@@ -224,6 +224,18 @@ public sealed partial class SqlServerPage
         {
             _loadingSettings = false;
         }
+
+        // **Opening the page has to be enough.** Refreshing only after Apply — which is all this did
+        // at first — means somebody who comes here to look at their database is told nothing, and
+        // there is no reason for them to press Apply on a page they have not changed. The status
+        // line is the only thing that carries the weak-encryption question to the person who can
+        // answer it, so it must be there when they arrive.
+        //
+        // Safe to read here, unlike from the test-connection button: these values come from saved
+        // settings rather than from a half-typed database name, and this is the same database the
+        // application is already loading connections from.
+        if (Properties.OptionsDBsPage.Default.UseSQLServer)
+            _ = RefreshEncryptionStatusAsync();
     }
 
     public override void SaveSettings()

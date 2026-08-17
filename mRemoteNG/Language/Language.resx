@@ -3259,6 +3259,9 @@ You are deciding this for everybody who connects to this database, including col
   <data name="SqlUpgradeStatusCurrent" xml:space="preserve">
     <value>Passwords in this database use authenticated encryption.</value>
   </data>
+  <data name="SqlUpgradeStatusUnknown" xml:space="preserve">
+    <value>Could not read how this database stores its passwords. The reason is in the notifications panel.</value>
+  </data>
   <data name="SqlUpgradeStatusNoDatabase" xml:space="preserve">
     <value>This database holds no mRemoteNG connections yet.</value>
   </data>

@@ -214,10 +214,13 @@ public class SqlDatabaseEncryptionUpgradePromptTests
     }
 
     [Test]
-    public void AnUnreachableDatabaseIsNotReportedAsUpgradable()
+    public void AnUnreachableDatabaseSaysSoRatherThanGoingBlank()
     {
         // A status line is not worth a dialog, and a server that is merely down must not read as
-        // "already fine" or offer a button that cannot work.
+        // "already fine" or offer a button that cannot work. It must not go **blank** either: an
+        // empty line is indistinguishable from "not looked yet", so a failure here presented as the
+        // feature simply not working, with the reason visible only to somebody who thought to open
+        // the notifications panel.
         _retriever.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>())
             .Returns(_ => throw new InvalidOperationException("the server is not there"));
 
@@ -225,8 +228,9 @@ public class SqlDatabaseEncryptionUpgradePromptTests
 
         Assert.Multiple(() =>
         {
-            Assert.That(offered, Is.False);
-            Assert.That(status, Is.Empty);
+            Assert.That(offered, Is.False, "no button for a database that cannot be reached");
+            Assert.That(status, Is.EqualTo(Language.SqlUpgradeStatusUnknown));
+            Assert.That(status, Is.Not.Empty, "and the user is not left looking at nothing");
         });
     }
 
