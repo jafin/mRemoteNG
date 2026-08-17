@@ -132,9 +132,10 @@ public sealed partial class SqlServerPage
     /// Reads what state the database is in and says so, off the UI thread.
     /// </summary>
     /// <remarks>
-    /// Called only after a connection has succeeded. Reading the metadata of an empty database
-    /// creates the schema in it, which is a reasonable thing for a load to do and a rude one to do to
-    /// a database name somebody is still halfway through typing.
+    /// Called when the page is opened and after Apply — never from the test-connection button, which
+    /// works on whatever is currently typed into the page. Reading the metadata of an empty database
+    /// creates the schema in it: reasonable against the configured database, rude against a name
+    /// somebody is still halfway through typing.
     /// </remarks>
     private async Task RefreshEncryptionStatusAsync()
     {
