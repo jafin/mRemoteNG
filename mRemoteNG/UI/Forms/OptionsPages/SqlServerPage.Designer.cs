@@ -110,7 +110,6 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             mrngLabel6 = new MrngLabel();
             mrngTextBox4 = new MrngTextBox();
             label1 = new MrngLabel();
-            picboxLogo = new System.Windows.Forms.PictureBox();
             chkUseSQLServer = new MrngCheckBox();
             frmtoolTip = new System.Windows.Forms.ToolTip(components);
             pnlServerBlock.SuspendLayout();
@@ -128,7 +127,6 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             tableLayoutPanel4.SuspendLayout();
             ((System.ComponentModel.ISupportInitialize)imgConnectionStatus).BeginInit();
             tableLayoutPanel1.SuspendLayout();
-            ((System.ComponentModel.ISupportInitialize)picboxLogo).BeginInit();
             SuspendLayout();
             // 
             // lblRegistrySettingsUsedInfo
@@ -169,10 +167,9 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             pnlServerBlock.Controls.Add(btnExpandOptions);
             pnlServerBlock.Controls.Add(tableLayoutPanel1);
             pnlServerBlock.Controls.Add(label1);
-            pnlServerBlock.Controls.Add(picboxLogo);
             pnlServerBlock.Location = new System.Drawing.Point(15, 120);
             pnlServerBlock.Name = "pnlServerBlock";
-            pnlServerBlock.Size = new System.Drawing.Size(600, 550);
+            pnlServerBlock.Size = new System.Drawing.Size(600, 390);
             pnlServerBlock.TabIndex = 27;
             pnlServerBlock.Visible = false;
             // 
@@ -186,7 +183,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             tabCtrlSQL.Location = new System.Drawing.Point(8, 3);
             tabCtrlSQL.Name = "tabCtrlSQL";
             tabCtrlSQL.SelectedIndex = 0;
-            tabCtrlSQL.Size = new System.Drawing.Size(585, 480);
+            tabCtrlSQL.Size = new System.Drawing.Size(585, 310);
             tabCtrlSQL.TabIndex = 33;
             tabCtrlSQL.Visible = false;
             // 
@@ -1093,7 +1090,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             // imgConnectionStatus
             // 
             imgConnectionStatus.Image = Properties.Resources.F1Help_16x;
-            imgConnectionStatus.Location = new System.Drawing.Point(243, 495);
+            imgConnectionStatus.Location = new System.Drawing.Point(243, 325);
             imgConnectionStatus.Name = "imgConnectionStatus";
             imgConnectionStatus.Size = new System.Drawing.Size(16, 16);
             imgConnectionStatus.SizeMode = System.Windows.Forms.PictureBoxSizeMode.AutoSize;
@@ -1103,7 +1100,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             // lblTestConnectionResults
             // 
             lblTestConnectionResults.AutoSize = true;
-            lblTestConnectionResults.Location = new System.Drawing.Point(17, 498);
+            lblTestConnectionResults.Location = new System.Drawing.Point(17, 328);
             lblTestConnectionResults.Name = "lblTestConnectionResults";
             lblTestConnectionResults.Size = new System.Drawing.Size(124, 13);
             lblTestConnectionResults.TabIndex = 31;
@@ -1112,7 +1109,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             // btnTestConnection
             // 
             btnTestConnection._mice = MrngButton.MouseState.OUT;
-            btnTestConnection.Location = new System.Drawing.Point(265, 495);
+            btnTestConnection.Location = new System.Drawing.Point(265, 325);
             btnTestConnection.Name = "btnTestConnection";
             btnTestConnection.Size = new System.Drawing.Size(109, 25);
             btnTestConnection.TabIndex = 30;
@@ -1122,7 +1119,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             // btnExpandOptions
             // 
             btnExpandOptions._mice = MrngButton.MouseState.OUT;
-            btnExpandOptions.Location = new System.Drawing.Point(380, 495);
+            btnExpandOptions.Location = new System.Drawing.Point(380, 325);
             btnExpandOptions.Name = "btnExpandOptions";
             btnExpandOptions.Size = new System.Drawing.Size(109, 25);
             btnExpandOptions.TabIndex = 29;
@@ -1143,7 +1140,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             tableLayoutPanel1.Controls.Add(mrngLabel6, 0, 2);
             tableLayoutPanel1.Controls.Add(mrngTextBox4, 1, 2);
             tableLayoutPanel1.Enabled = false;
-            tableLayoutPanel1.Location = new System.Drawing.Point(17, 148);
+            tableLayoutPanel1.Location = new System.Drawing.Point(17, 20);
             tableLayoutPanel1.Name = "tableLayoutPanel1";
             tableLayoutPanel1.RowCount = 4;
             tableLayoutPanel1.RowStyles.Add(new System.Windows.Forms.RowStyle(System.Windows.Forms.SizeType.Absolute, 26F));
@@ -1227,19 +1224,6 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             label1.Text = "Our Prod DB";
             label1.Visible = false;
             // 
-            // picboxLogo
-            // 
-            // BackColor follows theme
-            picboxLogo.Image = (System.Drawing.Image)resources.GetObject("picboxLogo.Image");
-            picboxLogo.Location = new System.Drawing.Point(47, 39);
-            picboxLogo.Margin = new System.Windows.Forms.Padding(10);
-            picboxLogo.Name = "picboxLogo";
-            picboxLogo.Padding = new System.Windows.Forms.Padding(5);
-            picboxLogo.Size = new System.Drawing.Size(94, 76);
-            picboxLogo.SizeMode = System.Windows.Forms.PictureBoxSizeMode.StretchImage;
-            picboxLogo.TabIndex = 0;
-            picboxLogo.TabStop = false;
-            // 
             // chkUseSQLServer
             // 
             chkUseSQLServer.AutoSize = true;
@@ -1285,14 +1269,12 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             ((System.ComponentModel.ISupportInitialize)imgConnectionStatus).EndInit();
             tableLayoutPanel1.ResumeLayout(false);
             tableLayoutPanel1.PerformLayout();
-            ((System.ComponentModel.ISupportInitialize)picboxLogo).EndInit();
             ResumeLayout(false);
             PerformLayout();
         }
         internal MrngLabel lblRegistrySettingsUsedInfo;
         internal MrngLabel lblSectionName;
         private System.Windows.Forms.Panel pnlServerBlock;
-        private System.Windows.Forms.PictureBox picboxLogo;
         internal MrngLabel label1;
         private System.Windows.Forms.TableLayoutPanel tableLayoutPanel1;
         internal MrngLabel mrngLabel5;
