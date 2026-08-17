@@ -3225,7 +3225,7 @@ Passwords stored in this file should be treated as known to them and changed on 
 Upgrading re-encrypts every password, gateway password and VNC proxy password with AES-256-GCM. No connection needs editing and nothing else about the database changes.</value>
   </data>
   <data name="SqlUpgradeClients" xml:space="preserve">
-    <value>Everyone who uses this database must be running a build that has this change. Upstream mRemoteNG and every earlier build will no longer open it, and will say so rather than showing empty passwords.
+    <value>Everyone who uses this database must be running a build that has this change. Upstream mRemoteNG and every earlier build will no longer open it. Builds that have this change explain why; older ones only report that connections could not be loaded.
 
 You are deciding this for everybody who connects to this database, including colleagues who have never installed this version. Tell them before you continue.</value>
   </data>
