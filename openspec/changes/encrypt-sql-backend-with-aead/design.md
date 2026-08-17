@@ -76,8 +76,13 @@ database under the legacy provider.
 
 So for exactly the population this protects — people who have loaded from SQL before, and therefore
 have a cache — §1's refusal turns into "silently work from a stale copy, then overwrite the upgraded
-database with it". The refusal is correct and lands in the wrong place. Fixing it is not part of this
-change; it is recorded here because the sequencing argument above depends on it.
+database with it". The refusal is correct and lands in the wrong place.
+
+Fixing it is not part of this change. It is now `refuse-writes-from-a-cached-fallback`, which should
+land soon after §1: until it does, §1's refusal does not reach a user who has a cache. That proposal
+also carries a second finding from the same code — the cache is a full copy of every password in the
+store, and for a database with no master password it is written under the published legacy key, so
+upgrading the database does nothing for the copy in `%APPDATA%`.
 
 ### A legacy database stays writable
 
