@@ -83,7 +83,7 @@ This issue is often caused by trying to retrieve session information.
 
 Try doing the following:
 
-- Disable "Automatically get session information" (Tools -\> Options -\> Advanced)
+- Disable "Automatically get session information" (File -\> Options -\> Advanced)
 
 ## ATI Tray Tools
 

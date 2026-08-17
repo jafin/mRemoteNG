@@ -89,7 +89,7 @@ public static class Shutdown
         int frequency = Properties.OptionsBackupPage.Default.SaveConnectionsFrequency;
 
         // Unassigned is the shipped default, and the migration off it runs only in
-        // Tools > Options > Connections. A profile that never opened that page would
+        // File > Options > Connections. A profile that never opened that page would
         // otherwise fall through to "no save on exit" — so consult the legacy setting the
         // migration reads instead of treating a fresh install as "never".
         if (frequency == (int)ConnectionsBackupFrequencyEnum.Unassigned)

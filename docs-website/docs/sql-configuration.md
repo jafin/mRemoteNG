@@ -23,7 +23,7 @@ The list below includes databases that are officially supported. Others may alre
 ## Steps to configure mRemoteNG for SQL
 
 - Start mRemoteNG if it's not already running.
-- Go to Tools - Options - SQL Server
+- Go to File - Options - SQL Server
 - Check the box that says "Use SQL Server to load & save connections".
 - Fill in your SQL Server hostname or ip address.
 - If you do not use your Windows logon info to authenticate against the SQL Server fill in the correct Username and Password.
@@ -63,7 +63,7 @@ stores its passwords.
 
 :::
 
-Go to **Tools → Options → SQL Server** and click **Apply**. Once mRemoteNG has connected, a line
+Go to **File → Options → SQL Server** and click **Apply**. Once mRemoteNG has connected, a line
 appears under the connection status saying which format the database uses. If it is still on the old
 one, an **Upgrade Encryption...** button appears beside it.
 

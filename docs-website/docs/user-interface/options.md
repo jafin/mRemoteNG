@@ -4,6 +4,8 @@ title: Options
 
 Options window which can also be named settings is the window where you can personalize your options for all of mRemoteNG. This includes how to set logging, credentials and so on. Continue reading for the details of the different options here.
 
+Open it with **File → Options...**.
+
 ## Startup/Exit
 
 Options below are for the various settings for Startup/Exit of mRemoteNG.

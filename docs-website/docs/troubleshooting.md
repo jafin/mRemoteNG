@@ -29,7 +29,7 @@ The exact file path is logged during startup in `mRemoteNG.log` as:
 
     %APPDATA%\mRemoteNG\mRemoteNG.settings
 
-If you set a configuration directory in **Tools → Options → Configuration**, the file is there
+If you set a configuration directory in **File → Options → Configuration**, the file is there
 instead. Rely on the startup log entry above for the exact location.
 
 ### Portable Version {#portable-version-1}

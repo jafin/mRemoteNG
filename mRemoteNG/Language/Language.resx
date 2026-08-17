@@ -596,7 +596,7 @@ Starting with new connections file.</value>
     <value>The connection list could not be saved.</value>
   </data>
   <data name="WarningDatabaseNotUpgradedForEncryption" xml:space="preserve">
-    <value>This database still stores its passwords with the old, weak encryption, which can be broken quickly by anyone who obtains a copy of it. Your changes were saved in that same format, and everything continues to work as before. To protect them, open Tools &gt; Options &gt; SQL Server and upgrade the database — but note that older versions of {0}, and other mRemoteNG builds, will no longer be able to open it afterwards.</value>
+    <value>This database still stores its passwords with the old, weak encryption, which can be broken quickly by anyone who obtains a copy of it. Your changes were saved in that same format, and everything continues to work as before. To protect them, open File &gt; Options &gt; SQL Server and upgrade the database — but note that older versions of {0}, and other mRemoteNG builds, will no longer be able to open it afterwards.</value>
   </data>
   <data name="ErrorDatabaseVersionNewerThanClient" xml:space="preserve">
     <value>The database is at version {0}, which is newer than this copy of {1} supports (up to version {2}). No connections were loaded. Upgrade {1} on this computer to open it.</value>

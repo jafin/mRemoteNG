@@ -45,7 +45,7 @@ The mRemoteNG shortcuts will work when the interface is in focus but not so ofte
 
 ### Themes
 
-These can be chosen from the **Tools → Options**. There are also possibilities to create your own themes inside the settings for themes. By default mRemoteNG has turned off the themes but they are easily enabled by choosing another theme rather then the default (vs2015light) one.
+These can be chosen from the **File → Options**. There are also possibilities to create your own themes inside the settings for themes. By default mRemoteNG has turned off the themes but they are easily enabled by choosing another theme rather then the default (vs2015light) one.
 
 :::warning
 
