@@ -42,7 +42,7 @@ public sealed partial class SqlServerPage
         InitializeComponent();
         InitializeSqlTypeSelector();
         InitializeReloadIntervalControl();
-        InitializeEncryptionUpgradeControls();
+        InitializeBottomStatusArea();
         ApplyTheme();
         PageIcon = Resources.ImageConverter.GetImageAsIcon(Properties.Resources.SQLDatabase_16x);
         pageRegSettingsInstance = new OptRegistrySqlServerPage(); // Initialize the field to avoid nullability issues
@@ -93,17 +93,23 @@ public sealed partial class SqlServerPage
     /// lines of code than as a designer diff.
     /// </para>
     /// <para>
-    /// <b>Laid out by a docked table rather than at coordinates, and that is the whole point.</b>
-    /// The first version placed both at absolute points below the test-connection row, which is
-    /// correct at 100% scaling and wrong at any other: the designer's controls are scaled for the
-    /// display, hand-placed ones added after <c>InitializeComponent</c> keep their raw coordinates,
-    /// and the two drift apart. They landed inside the scaled tab control's area and behind it in
-    /// z-order — so the upgrade appeared in Simple view, where the tab is hidden, and vanished in
-    /// Advanced view. A layout panel has no coordinates to get wrong, and <c>BringToFront</c> keeps
-    /// it clear of the one sibling that is still absolutely positioned.
+    /// <b>Laid out by docked tables rather than at coordinates, and that is the whole point.</b>
+    /// The first version placed the two encryption controls at absolute points below the
+    /// test-connection row, which is correct at 100% scaling and wrong at any other: the designer's
+    /// controls are scaled for the display, hand-placed ones added after <c>InitializeComponent</c>
+    /// keep their raw coordinates, and the two drift apart. They landed inside the scaled tab
+    /// control's area and behind it in z-order — so the upgrade appeared in Simple view, where the
+    /// tab is hidden, and vanished in Advanced view. A layout panel has no coordinates to get wrong,
+    /// and <c>BringToFront</c> keeps it clear of the one sibling that is still absolutely positioned.
+    /// </para>
+    /// <para>
+    /// The test-connection controls are adopted into the same strip. They were laid out with the
+    /// message on the left and the buttons on the right, which reads backwards — and their fixed
+    /// positions could not accommodate a failure message, which is two lines. In a table the row
+    /// grows to fit instead of the text running under its neighbours.
     /// </para>
     /// </remarks>
-    private void InitializeEncryptionUpgradeControls()
+    private void InitializeBottomStatusArea()
     {
         lblEncryptionStatus = new MrngLabel
         {
@@ -127,22 +133,64 @@ public sealed partial class SqlServerPage
         };
         btnUpgradeEncryption.Click += btnUpgradeEncryption_Click;
 
-        TableLayoutPanel encryptionRow = new()
-        {
-            Name = "pnlEncryptionStatus",
-            Dock = DockStyle.Bottom,
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            ColumnCount = 2,
-            RowCount = 1
-        };
-        encryptionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        encryptionRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        // Actions on the left, the result of those actions on the right. Adding these here reparents
+        // them out of the panel they were positioned in, so their designer coordinates stop applying.
+        btnTestConnection.Anchor = AnchorStyles.Left;
+        btnExpandOptions.Anchor = AnchorStyles.Left;
+        imgConnectionStatus.Anchor = AnchorStyles.None;
+        lblTestConnectionResults.Anchor = AnchorStyles.Right;
+        lblTestConnectionResults.TextAlign = ContentAlignment.MiddleRight;
+        lblTestConnectionResults.AutoSize = true;
+
+        TableLayoutPanel actionRow = Row("pnlConnectionActions",
+            SizeType.AutoSize, SizeType.AutoSize, SizeType.Percent, SizeType.AutoSize, SizeType.AutoSize);
+        actionRow.Controls.Add(btnTestConnection, 0, 0);
+        actionRow.Controls.Add(btnExpandOptions, 1, 0);
+        actionRow.Controls.Add(imgConnectionStatus, 3, 0);
+        actionRow.Controls.Add(lblTestConnectionResults, 4, 0);
+
+        TableLayoutPanel encryptionRow = Row("pnlEncryptionStatus", SizeType.Percent, SizeType.AutoSize);
         encryptionRow.Controls.Add(lblEncryptionStatus, 0, 0);
         encryptionRow.Controls.Add(btnUpgradeEncryption, 1, 0);
 
-        pnlServerBlock.Controls.Add(encryptionRow);
-        encryptionRow.BringToFront();
+        TableLayoutPanel bottom = new()
+        {
+            Name = "pnlBottomStatus",
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(5, 8, 5, 0)
+        };
+        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        bottom.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        bottom.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        bottom.Controls.Add(actionRow, 0, 0);
+        bottom.Controls.Add(encryptionRow, 0, 1);
+
+        pnlServerBlock.Controls.Add(bottom);
+        bottom.BringToFront();
+    }
+
+    /// <summary>One auto-height row. A <see cref="SizeType.Percent"/> column takes up the slack.</summary>
+    private static TableLayoutPanel Row(string name, params SizeType[] columns)
+    {
+        TableLayoutPanel row = new()
+        {
+            Name = name,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = columns.Length,
+            RowCount = 1
+        };
+
+        foreach (SizeType column in columns)
+            row.ColumnStyles.Add(new ColumnStyle(column, column == SizeType.Percent ? 100F : 0F));
+
+        row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        return row;
     }
 
     private void btnUpgradeEncryption_Click(object? sender, EventArgs e)
@@ -190,8 +238,6 @@ public sealed partial class SqlServerPage
             tp.BackColor = bg.Value;
             tp.ForeColor = fg.Value;
         }
-        lblSectionName.BackColor = bg.Value;
-        lblSectionName.ForeColor = fg.Value;
         lblRegistrySettingsUsedInfo.BackColor = bg.Value;
     }
 

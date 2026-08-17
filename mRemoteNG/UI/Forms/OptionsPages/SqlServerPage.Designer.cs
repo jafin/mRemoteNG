@@ -20,7 +20,6 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             components = new System.ComponentModel.Container();
             System.ComponentModel.ComponentResourceManager resources = new System.ComponentModel.ComponentResourceManager(typeof(SqlServerPage));
             lblRegistrySettingsUsedInfo = new MrngLabel();
-            lblSectionName = new MrngLabel();
             pnlServerBlock = new System.Windows.Forms.Panel();
             tabCtrlSQL = new System.Windows.Forms.TabControl();
             tabPageProfiles = new System.Windows.Forms.TabPage();
@@ -134,7 +133,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             // BackColor follows theme (no hardcoded color)
             lblRegistrySettingsUsedInfo.Font = new System.Drawing.Font("Segoe UI", 9.75F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, 204);
             lblRegistrySettingsUsedInfo.ForeColor = System.Drawing.Color.IndianRed;
-            lblRegistrySettingsUsedInfo.Location = new System.Drawing.Point(3, 46);
+            lblRegistrySettingsUsedInfo.Location = new System.Drawing.Point(3, 3);
             lblRegistrySettingsUsedInfo.Name = "lblRegistrySettingsUsedInfo";
             lblRegistrySettingsUsedInfo.Padding = new System.Windows.Forms.Padding(0, 2, 0, 0);
             lblRegistrySettingsUsedInfo.Size = new System.Drawing.Size(1128, 30);
@@ -142,20 +141,6 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             lblRegistrySettingsUsedInfo.Text = "Some settings are configured by your Administrator. Please contact your administrator for more information.";
             lblRegistrySettingsUsedInfo.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
             lblRegistrySettingsUsedInfo.Visible = false;
-            // 
-            // lblSectionName
-            // 
-            // BackColor follows theme
-            lblSectionName.Dock = System.Windows.Forms.DockStyle.Top;
-            lblSectionName.Font = new System.Drawing.Font("Segoe UI", 15.75F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, 204);
-            // ForeColor follows theme
-            lblSectionName.Location = new System.Drawing.Point(0, 0);
-            lblSectionName.Margin = new System.Windows.Forms.Padding(10, 10, 3, 0);
-            lblSectionName.Name = "lblSectionName";
-            lblSectionName.Padding = new System.Windows.Forms.Padding(0, 2, 0, 0);
-            lblSectionName.Size = new System.Drawing.Size(656, 46);
-            lblSectionName.TabIndex = 26;
-            lblSectionName.Text = "Database Connection Manager";
             // 
             // pnlServerBlock
             // 
@@ -167,7 +152,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             pnlServerBlock.Controls.Add(btnExpandOptions);
             pnlServerBlock.Controls.Add(tableLayoutPanel1);
             pnlServerBlock.Controls.Add(label1);
-            pnlServerBlock.Location = new System.Drawing.Point(15, 120);
+            pnlServerBlock.Location = new System.Drawing.Point(15, 77);
             pnlServerBlock.Name = "pnlServerBlock";
             pnlServerBlock.Size = new System.Drawing.Size(600, 390);
             pnlServerBlock.TabIndex = 27;
@@ -1228,7 +1213,7 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             // 
             chkUseSQLServer.AutoSize = true;
             chkUseSQLServer.Font = new System.Drawing.Font("Segoe UI", 9F, System.Drawing.FontStyle.Regular, System.Drawing.GraphicsUnit.Point, 204);
-            chkUseSQLServer.Location = new System.Drawing.Point(15, 89);
+            chkUseSQLServer.Location = new System.Drawing.Point(15, 46);
             chkUseSQLServer.Name = "chkUseSQLServer";
             chkUseSQLServer.Size = new System.Drawing.Size(240, 25);
             chkUseSQLServer.TabIndex = 34;
@@ -1242,7 +1227,6 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             AutoScaleMode = System.Windows.Forms.AutoScaleMode.Dpi;
             Controls.Add(chkUseSQLServer);
             Controls.Add(pnlServerBlock);
-            Controls.Add(lblSectionName);
             Controls.Add(lblRegistrySettingsUsedInfo);
             Margin = new System.Windows.Forms.Padding(4);
             Name = "SqlServerPage";
@@ -1273,7 +1257,6 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             PerformLayout();
         }
         internal MrngLabel lblRegistrySettingsUsedInfo;
-        internal MrngLabel lblSectionName;
         private System.Windows.Forms.Panel pnlServerBlock;
         internal MrngLabel label1;
         private System.Windows.Forms.TableLayoutPanel tableLayoutPanel1;

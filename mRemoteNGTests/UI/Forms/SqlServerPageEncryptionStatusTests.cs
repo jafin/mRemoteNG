@@ -159,7 +159,11 @@ public class SqlServerPageEncryptionStatusTests
                 // The geometric invariant, asserted rather than assumed. Absolute coordinates made
                 // this true at one scaling factor and false at others; a docked row cannot overlap
                 // the tab control at any of them.
-                Assert.That(tabs.Bounds.IntersectsWith(row.Bounds), Is.False,
+                //
+                // Compared on screen, not as Bounds. The two live at different depths, so their
+                // Bounds are relative to different parents — comparing those directly would be
+                // comparing coordinate spaces, and would keep passing however the page was nested.
+                Assert.That(OnScreen(tabs).IntersectsWith(OnScreen(row)), Is.False,
                     "the status row must not sit under the tab control");
             });
         });
@@ -174,6 +178,10 @@ public class SqlServerPageEncryptionStatusTests
                 new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString()),
             ConfVersion = version
         };
+
+    /// <summary>A control's rectangle in screen coordinates, so controls at different depths compare.</summary>
+    private static System.Drawing.Rectangle OnScreen(Control control) =>
+        control.RectangleToScreen(control.ClientRectangle);
 
     private static T Find<T>(Control parent, string name) where T : Control
     {
