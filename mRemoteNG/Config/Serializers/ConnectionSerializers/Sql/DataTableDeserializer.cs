@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Runtime.Versioning;
 using System.Security;
 using mRemoteNG.App;
@@ -11,6 +12,7 @@ using mRemoteNG.Connection.Protocol.RDP;
 using mRemoteNG.Connection.Protocol.VNC;
 using mRemoteNG.Container;
 using mRemoteNG.Messages;
+using mRemoteNG.Resources.Language;
 using mRemoteNG.Security;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree;
@@ -118,8 +120,7 @@ public class DataTableDeserializer(ICryptographyProvider cryptographyProvider, S
         connectionInfo.OpeningCommand = dataRow["OpeningCommand"] as string ?? "";
         connectionInfo.Panel = dataRow["Panel"] as string ?? "";
         var pw = dataRow["Password"] as string;
-        //connectionInfo.Password = DecryptValue(pw ?? "").ConvertToSecureString();
-        connectionInfo.Password = DecryptValue(pw ?? "");
+        connectionInfo.Password = DecryptValue(pw ?? "", dataRow, "Password");
         if (!dataRow.IsNull("Port"))
             connectionInfo.Port = (int)dataRow["Port"];
         connectionInfo.PostExtApp = dataRow["PostExtApp"] as string ?? "";
@@ -130,7 +131,7 @@ public class DataTableDeserializer(ICryptographyProvider cryptographyProvider, S
         connectionInfo.PuttySession = dataRow["PuttySession"] as string ?? "";
         connectionInfo.RDGatewayDomain = dataRow["RDGatewayDomain"] as string ?? "";
         connectionInfo.RDGatewayHostname = dataRow["RDGatewayHostname"] as string ?? "";
-        connectionInfo.RDGatewayPassword = DecryptValue(dataRow["RDGatewayPassword"] as string ?? "");
+        connectionInfo.RDGatewayPassword = DecryptValue(dataRow["RDGatewayPassword"] as string ?? "", dataRow, "RDGatewayPassword");
         if (!dataRow.IsNull("RDGatewayUsageMethod"))
             if (Enum.TryParse((string)dataRow["RDGatewayUsageMethod"], true, out RDGatewayUsageMethod rdGatewayUsageMethod))
                 connectionInfo.RDGatewayUsageMethod = rdGatewayUsageMethod;
@@ -210,7 +211,7 @@ public class DataTableDeserializer(ICryptographyProvider cryptographyProvider, S
             if (Enum.TryParse((string)dataRow["VNCEncoding"], true, out ProtocolVNC.Encoding vncEncoding))
                 connectionInfo.VNCEncoding = vncEncoding;
         connectionInfo.VNCProxyIP = dataRow["VNCProxyIP"] as string ?? "";
-        connectionInfo.VNCProxyPassword = DecryptValue(dataRow["VNCProxyPassword"] as string ?? "");
+        connectionInfo.VNCProxyPassword = DecryptValue(dataRow["VNCProxyPassword"] as string ?? "", dataRow, "VNCProxyPassword");
         if (!dataRow.IsNull("VNCProxyPort"))
             connectionInfo.VNCProxyPort = (int)dataRow["VNCProxyPort"];
         if (!dataRow.IsNull("VNCProxyType"))
@@ -348,7 +349,7 @@ public class DataTableDeserializer(ICryptographyProvider cryptographyProvider, S
     /// missing on one connection, with a message naming it, is something a person can act on.
     /// </para>
     /// </remarks>
-    private string DecryptValue(string cipherText)
+    private string DecryptValue(string cipherText, DataRow dataRow, string column)
     {
         try
         {
@@ -362,10 +363,14 @@ public class DataTableDeserializer(ICryptographyProvider cryptographyProvider, S
             if (!_cryptographyProvider.DetectsTampering)
                 return cipherText;
 
-            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg,
-                "A stored password in the SQL database could not be decrypted. It has been altered " +
-                "since it was written, or was written under a different master password. The " +
-                "connection is loaded without it rather than with a wrong value.");
+            // **Named, because a database holds hundreds of these.** "A stored password could not
+            // be decrypted" tells somebody with two hundred connections that one of them is wrong
+            // and nothing about which, and there is no second place to go and find out. The row is
+            // right here, so the message can say which connection and which field.
+            string name = dataRow["Name"] as string ?? "(unnamed)";
+
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, string.Format(
+                CultureInfo.CurrentCulture, Language.ErrorSqlSecretNotDecryptable, column, name));
 
             return string.Empty;
         }

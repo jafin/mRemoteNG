@@ -121,6 +121,12 @@ public class SqlSecretColumnRoundTripTests
             Assert.That(restored.Password, Is.Not.EqualTo(original), "and certainly not the ciphertext");
             Assert.That(ErrorsReported(), Is.GreaterThan(0), "and the user is told");
 
+            // **Named.** A database holds hundreds of connections, and "a stored password could not
+            // be decrypted" tells somebody with two hundred of them that one is wrong and nothing
+            // about which — with no second place to go and find out. Task 6.7 found exactly that.
+            Assert.That(LastError(), Does.Contain("server"), "the connection is named");
+            Assert.That(LastError(), Does.Contain("Password"), "and so is the field");
+
             // The rest of the connection still loads. One altered row must not deny access to every
             // other connection in the database.
             Assert.That(restored.RDGatewayPassword, Is.EqualTo(GatewayPassword));
@@ -210,6 +216,9 @@ public class SqlSecretColumnRoundTripTests
         bytes[^1] ^= 0xFF;
         return Convert.ToBase64String(bytes);
     }
+
+    private static string LastError() =>
+        Runtime.MessageCollector.Messages.Last(message => message.Class == MessageClass.ErrorMsg).Text;
 
     private static int ErrorsReported() =>
         Runtime.MessageCollector.Messages.Count(message => message.Class == MessageClass.ErrorMsg);

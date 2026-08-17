@@ -9005,6 +9005,15 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string naming a connection whose stored secret could not be decrypted.
+        /// </summary>
+        internal static string ErrorSqlSecretNotDecryptable {
+            get {
+                return ResourceManager.GetString("ErrorSqlSecretNotDecryptable", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Upgrade Encryption....
         /// </summary>
         internal static string SqlUpgradeButton {
