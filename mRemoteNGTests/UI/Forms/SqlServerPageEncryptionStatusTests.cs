@@ -125,6 +125,46 @@ public class SqlServerPageEncryptionStatusTests
         });
     }
 
+    [Test]
+    public void TheUpgradeSurvivesSwitchingToAdvancedView()
+    {
+        // **The bug this replaces.** Both controls were placed at absolute coordinates below the
+        // test-connection row — correct at 100% scaling and wrong at any other, because the
+        // designer's controls are scaled for the display while controls added after
+        // InitializeComponent keep their raw coordinates. They drifted into the scaled tab control's
+        // area and behind it in z-order, so the upgrade showed in Simple view, where the tab is
+        // hidden, and disappeared in Advanced view.
+        _retriever.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>())
+            .Returns(MetaDataAt(SqlDatabaseVersionVerifier.SchemaVersion));
+
+        RunWithMessagePump(page =>
+        {
+            page.LoadSettings();
+
+            Label status = Find<Label>(page, "lblEncryptionStatus");
+            Control upgrade = Find<Control>(page, "btnUpgradeEncryption");
+            Control row = Find<Control>(page, "pnlEncryptionStatus");
+            Control tabs = Find<Control>(page, "tabCtrlSQL");
+
+            PumpUntil(() => !string.IsNullOrEmpty(status.Text), "the status line should populate");
+
+            Find<Button>(page, "btnExpandOptions").PerformClick();
+            Application.DoEvents();
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(tabs.Visible, "precondition: the click switched to Advanced view");
+                Assert.That(upgrade.Visible, "the upgrade must not vanish when the tabs appear");
+
+                // The geometric invariant, asserted rather than assumed. Absolute coordinates made
+                // this true at one scaling factor and false at others; a docked row cannot overlap
+                // the tab control at any of them.
+                Assert.That(tabs.Bounds.IntersectsWith(row.Bounds), Is.False,
+                    "the status row must not sit under the tab control");
+            });
+        });
+    }
+
     private static SqlConnectionListMetaData MetaDataAt(Version version) =>
         new()
         {

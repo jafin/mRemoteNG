@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "total_expected": 4314,
+    "total_expected": 4315,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-15",
     "stats": {
@@ -32,7 +32,7 @@
       {
         "name": "UI",
         "filter": "FullyQualifiedName~mRemoteNGTests.UI&Name!=FormBehavior&Name!=AllPagesExistWithIconsAndLoadCorrectSettings",
-        "expected": 430
+        "expected": 431
       },
       {
         "name": "Config.Other",

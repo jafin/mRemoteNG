@@ -89,37 +89,60 @@ public sealed partial class SqlServerPage
     /// </para>
     /// <para>
     /// Built here rather than in the designer, following the reload-interval control above: the
-    /// generated file is a single 1,300-line block and two hand-placed controls are easier to review
-    /// as five lines of code than as a designer diff.
+    /// generated file is a single 1,300-line block and two controls are easier to review as a dozen
+    /// lines of code than as a designer diff.
+    /// </para>
+    /// <para>
+    /// <b>Laid out by a docked table rather than at coordinates, and that is the whole point.</b>
+    /// The first version placed both at absolute points below the test-connection row, which is
+    /// correct at 100% scaling and wrong at any other: the designer's controls are scaled for the
+    /// display, hand-placed ones added after <c>InitializeComponent</c> keep their raw coordinates,
+    /// and the two drift apart. They landed inside the scaled tab control's area and behind it in
+    /// z-order — so the upgrade appeared in Simple view, where the tab is hidden, and vanished in
+    /// Advanced view. A layout panel has no coordinates to get wrong, and <c>BringToFront</c> keeps
+    /// it clear of the one sibling that is still absolutely positioned.
     /// </para>
     /// </remarks>
     private void InitializeEncryptionUpgradeControls()
     {
         lblEncryptionStatus = new MrngLabel
         {
-            AutoSize = true,
-            Location = new Point(17, 528),
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
             Name = "lblEncryptionStatus",
             Text = ""
         };
 
         btnUpgradeEncryption = new MrngButton
         {
-            Location = new Point(400, 522),
-            Size = new Size(183, 25),
+            AutoSize = true,
+            Anchor = AnchorStyles.Right,
             Name = "btnUpgradeEncryption",
             Text = Language.SqlUpgradeButton,
             UseVisualStyleBackColor = true,
 
-            // Hidden until a connection has actually been made and the database has said it needs
-            // this. An always-visible button offering an irreversible, team-wide change is an
-            // invitation to press it and find out what it does.
+            // Hidden until the database has said it needs this. An always-visible button offering an
+            // irreversible, team-wide change is an invitation to press it and find out what it does.
             Visible = false
         };
         btnUpgradeEncryption.Click += btnUpgradeEncryption_Click;
 
-        pnlServerBlock.Controls.Add(lblEncryptionStatus);
-        pnlServerBlock.Controls.Add(btnUpgradeEncryption);
+        TableLayoutPanel encryptionRow = new()
+        {
+            Name = "pnlEncryptionStatus",
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            RowCount = 1
+        };
+        encryptionRow.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        encryptionRow.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        encryptionRow.Controls.Add(lblEncryptionStatus, 0, 0);
+        encryptionRow.Controls.Add(btnUpgradeEncryption, 1, 0);
+
+        pnlServerBlock.Controls.Add(encryptionRow);
+        encryptionRow.BringToFront();
     }
 
     private void btnUpgradeEncryption_Click(object? sender, EventArgs e)
