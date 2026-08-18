@@ -91,12 +91,18 @@ public class SqlConnectionsLoader : IConnectionsLoader
 
         Optional<SecureString> decryptionKey = GetDecryptionKey(metaData, cryptographyProvider);
 
+        // Its own type, because this is the one load failure that must not fall back to the local
+        // copy. Everything else here means the database could not be read; this means the person at
+        // the keyboard could not prove they are allowed to read it, and the cached tree carries
+        // every name, hostname, username and port the master password exists to withhold.
         if (!decryptionKey.Any())
-            throw new InvalidOperationException("Could not load SQL connections");
+            throw new SqlAuthenticationRefusedException();
 
         System.Data.DataTable dataTable = _sqlDataProvider.Load();
         DataTableDeserializer deserializer = new(cryptographyProvider, decryptionKey.First());
         ConnectionTreeModel connectionTree = deserializer.Deserialize(dataTable);
+        connectionTree.RequiresMasterPassword =
+            CryptoProviderFactoryFromSqlVersion.UsesAuthenticatedEncryption(metaData.ConfVersion);
         ContainerInfo? rootNode = connectionTree.RootNodes.FirstOrDefault(i => i is RootNodeInfo);
         if (rootNode != null)
             ApplyLocalConnectionProperties(rootNode);

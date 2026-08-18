@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.ComponentModel;
 using System.IO;
@@ -441,8 +441,9 @@ public partial class ConnectionInfoPropertyGrid : FilteredPropertyGrid.FilteredP
         if (changedProperty != nameof(RootNodeInfo.Password))
             return;
 
+        string passwordName = Properties.OptionsDBsPage.Default.UseSQLServer ? Language.SQLServer.TrimEnd(':') : Path.GetFileName(ConnectionsService.GetStartupConnectionFileName());
+
         if (rootInfo.Password) {
-            string passwordName = Properties.OptionsDBsPage.Default.UseSQLServer ? Language.SQLServer.TrimEnd(':') : Path.GetFileName(ConnectionsService.GetStartupConnectionFileName());
             Optional<System.Security.SecureString> password = MiscTools.PasswordDialog(passwordName);
 
             // operation cancelled, dont set a password
@@ -452,6 +453,8 @@ public partial class ConnectionInfoPropertyGrid : FilteredPropertyGrid.FilteredP
             }
 
             rootInfo.PasswordString = password.First().ConvertToUnsecureString();
+        } else if (Runtime.ConnectionsService.ConnectionTreeModel?.RequiresMasterPassword == true) {
+            ReplaceMasterPassword(rootInfo, passwordName);
         } else {
             if (!CurrentPasswordVerified(rootInfo))
             {
@@ -462,6 +465,56 @@ public partial class ConnectionInfoPropertyGrid : FilteredPropertyGrid.FilteredP
             rootInfo.AutoLockOnMinimize = false;
             rootInfo.PasswordString = "";
         }
+    }
+
+    /// <summary>
+    /// Replaces the master password of a store that is not allowed to be without one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// A database using authenticated encryption is keyed on this password, so "no password" is not
+    /// a state it has. Turning the property off is therefore taken as replacing it rather than
+    /// removing it — the current password is verified first, exactly as removing it would, and a new
+    /// one is collected in its place.
+    /// </para>
+    /// <para>
+    /// <b>Replacing rather than refusing outright, because refusing would leave no way to change
+    /// it.</b> Off-then-on is how the password is changed here and always has been; a flat refusal
+    /// on the "off" half would have made a mandatory password a permanent one.
+    /// </para>
+    /// <para>
+    /// The save is immediate and not left to the next edit. The key lives on the root node, so until
+    /// something is written the database is still encrypted with the old password while the
+    /// application believes in the new one — a difference nobody sees until the next time it is
+    /// opened, and one that reads as a rejected password.
+    /// </para>
+    /// </remarks>
+    private static void ReplaceMasterPassword(RootNodeInfo rootInfo, string passwordName)
+    {
+        rootInfo.Password = true;
+
+        if (!CurrentPasswordVerified(rootInfo))
+            return;
+
+        Optional<System.Security.SecureString> replacement = MiscTools.PasswordDialog(passwordName);
+
+        // Cancelled, or the built-in key typed in by hand — which the root node reads as no password
+        // at all, so it would arrive at the state this exists to prevent by another road.
+        if (!replacement.Any() || replacement.First().Length == 0 ||
+            string.Equals(replacement.First().ConvertToUnsecureString(),
+                          Security.ConnectionFileDefaults.LegacyEncryptionKey, StringComparison.Ordinal))
+        {
+            Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg,
+                Language.ErrorSqlMasterPasswordCannotBeRemoved, true);
+            return;
+        }
+
+        rootInfo.PasswordString = replacement.First().ConvertToUnsecureString();
+
+        Runtime.ConnectionsService.SaveConnections();
+
+        Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
+            Language.SqlMasterPasswordChanged, true);
     }
 
     private static bool CurrentPasswordVerified(RootNodeInfo rootInfo)

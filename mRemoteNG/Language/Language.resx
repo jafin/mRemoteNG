@@ -3288,6 +3288,12 @@ There is no way back in. If the master password is lost, nobody can decrypt the 
   <data name="ErrorSqlDatabaseNotInitialized" xml:space="preserve">
     <value>This database records that it uses authenticated encryption, but holds nothing to check a master password against, so it cannot be opened. Its metadata row was lost or replaced. Restore the database from a backup.</value>
   </data>
+  <data name="ErrorSqlMasterPasswordCannotBeRemoved" xml:space="preserve">
+    <value>This database stores its passwords with authenticated encryption, which requires a master password, so the password can be replaced but not removed. Nothing was changed. Without one the only key available is the one built into mRemoteNG, which anyone can read.</value>
+  </data>
+  <data name="SqlMasterPasswordChanged" xml:space="preserve">
+    <value>The master password was changed and every password in the database was re-encrypted with it. Everyone who uses this database needs the new one from now on.</value>
+  </data>
   <data name="ErrorSqlMasterPasswordRequired" xml:space="preserve">
     <value>A SQL database that uses authenticated encryption must have a master password, and this connection tree has none - so nothing was saved. Select the topmost node of the connection tree, set Password to Yes in the properties panel and enter a password, then save again.</value>
   </data>

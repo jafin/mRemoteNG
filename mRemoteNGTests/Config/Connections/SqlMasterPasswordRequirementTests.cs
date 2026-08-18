@@ -5,6 +5,7 @@ using System.Linq;
 using System.Runtime.Versioning;
 using System.Security;
 using mRemoteNG.Config.Connections;
+using mRemoteNG.Connection;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Config.DataProviders;
 using mRemoteNG.Config.Serializers;
@@ -96,7 +97,7 @@ public class SqlMasterPasswordRequirementTests
         // the same defect reached by another route, and it would present as success.
         GivenDatabase(AuthenticatedVersion, Master);
 
-        Assert.Throws<InvalidOperationException>(() => Loader(Declining()).Load());
+        Assert.Throws<SqlAuthenticationRefusedException>(() => Loader(Declining()).Load());
     }
 
     [Test]
@@ -104,7 +105,7 @@ public class SqlMasterPasswordRequirementTests
     {
         GivenDatabase(AuthenticatedVersion, Master);
 
-        Assert.Throws<InvalidOperationException>(() => Loader(Answering("not the master password")).Load());
+        Assert.Throws<SqlAuthenticationRefusedException>(() => Loader(Answering("not the master password")).Load());
     }
 
     [Test]
@@ -116,7 +117,7 @@ public class SqlMasterPasswordRequirementTests
         // source: the version decides, not what happens to decrypt.
         GivenDatabase(AuthenticatedVersion, ConnectionFileDefaults.LegacyEncryptionKey);
 
-        Assert.Throws<InvalidOperationException>(() => Loader(Declining()).Load());
+        Assert.Throws<SqlAuthenticationRefusedException>(() => Loader(Declining()).Load());
         Assert.That(_prompts, Is.EqualTo(1), "the user was asked rather than the default key tried");
     }
 
@@ -129,7 +130,7 @@ public class SqlMasterPasswordRequirementTests
         // that is meant to require one.
         GivenDatabase(AuthenticatedVersion, masterPassword: null);
 
-        Assert.Throws<InvalidOperationException>(() => Loader(Answering(Master)).Load());
+        Assert.Throws<SqlAuthenticationRefusedException>(() => Loader(Answering(Master)).Load());
         Assert.That(_prompts, Is.Zero,
             "and nothing is asked for, because there is nothing left to check an answer against");
     }
@@ -176,6 +177,51 @@ public class SqlMasterPasswordRequirementTests
         Assert.Throws<InvalidOperationException>(() => new SqlDatabaseMetaDataRetriever()
             .WriteDatabaseMetaData(new RootNodeInfo(RootNodeType.Connection), _connector, null,
                                    AuthenticatedVersion));
+    }
+
+    [Test]
+    public void ARefusedPasswordIsNotAnUnreachableDatabase()
+    {
+        // **The distinction the local copy turns on.** ConnectionsService answers a failed database
+        // load with the cached tree, which is right for a server that is off and wrong here: the
+        // database answered, and the person at the keyboard could not prove they may read it.
+        // Falling back would hand them every name, hostname, username and port in the store — most
+        // of what the master password exists to withhold.
+        //
+        // Unreachable before this change, because the built-in key always worked and a SQL load
+        // never failed on authentication.
+        GivenDatabase(AuthenticatedVersion, Master);
+
+        Exception refusal = Assert.Throws<SqlAuthenticationRefusedException>(() => Loader(Declining()).Load())!;
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(ConnectionsService.IsFallbackEligible(refusal), Is.False,
+                "a refused password must not be answered with the local copy");
+            Assert.That(ConnectionsService.IsFallbackEligible(new InvalidOperationException("the server is off")),
+                "while everything that means the database could not be read still may be");
+        });
+    }
+
+    [Test]
+    public void AnUpgradedDatabaseSaysItsPasswordCannotBeRemoved()
+    {
+        // Carried on the model so the properties panel can refuse the change when it is made,
+        // instead of the save refusing it minutes later from somewhere else in the application.
+        GivenDatabase(AuthenticatedVersion, Master);
+
+        ConnectionTreeModel upgraded = Loader(Answering(Master)).Load();
+
+        GivenDatabase(LegacyVersion, masterPassword: null);
+
+        ConnectionTreeModel legacy = Loader(Declining()).Load();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(upgraded.RequiresMasterPassword);
+            Assert.That(legacy.RequiresMasterPassword, Is.False,
+                "a legacy database is under no such obligation, and never was");
+        });
     }
 
     /// <summary>

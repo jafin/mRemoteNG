@@ -9223,6 +9223,24 @@ namespace mRemoteNG.Resources.Language {
         /// <summary>
         ///   Looks up a localized string describing a save refused because the connection tree has no master password.
         /// </summary>
+        internal static string ErrorSqlMasterPasswordCannotBeRemoved {
+            get {
+                return ResourceManager.GetString("ErrorSqlMasterPasswordCannotBeRemoved", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a save refused because the connection tree has no master password.
+        /// </summary>
+        internal static string SqlMasterPasswordChanged {
+            get {
+                return ResourceManager.GetString("SqlMasterPasswordChanged", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a save refused because the connection tree has no master password.
+        /// </summary>
         internal static string ErrorSqlMasterPasswordRequired {
             get {
                 return ResourceManager.GetString("ErrorSqlMasterPasswordRequired", resourceCulture);

@@ -121,6 +121,40 @@ database — including you. Keep it where you keep your other irreplaceable cred
 
 :::
 
+### Changing it
+
+Same place, and you cannot remove it — only replace it:
+
+1. Select the **topmost node** of the connection tree.
+2. Set **Password** to **No**.
+3. Confirm the password the database uses now.
+4. Type the replacement twice.
+
+Every password in the database is re-encrypted with the new one straight away. Everyone who uses the
+database needs it from the next time they open mRemoteNG, so tell them before you change it.
+
+If you cancel at either prompt, nothing changes and the old password stays in force.
+
+:::note
+
+Setting **Password** to **No** does not unprotect the database, because a database using
+authenticated encryption has no unprotected state. It asks for a replacement instead. To stop using
+a master password at all you would have to move the connections to a new database.
+
+:::
+
+### If the password is refused
+
+Three wrong attempts and mRemoteNG stops, offering to try again, open a connection file instead,
+start with no connections, or exit. **No connections are shown** — not from the database and not
+from the local copy, which stays sealed until someone proves they hold the password.
+
+Once you are in, revealing or copying a stored password asks for the master password again. That is
+deliberate: opening the connection list and reading a specific credential out of it are different
+acts, and the second is the one worth confirming.
+
+### Saving to a new database
+
 If you save to a new SQL database without one, nothing is written and mRemoteNG tells you to set it.
 That is deliberate: the only key it could otherwise use is the built-in one, which would leave every
 stored password readable by anyone with access to the database.

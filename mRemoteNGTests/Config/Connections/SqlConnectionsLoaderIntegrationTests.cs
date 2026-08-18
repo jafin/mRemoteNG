@@ -252,8 +252,10 @@ public class SqlConnectionsLoaderIntegrationTests
         var loader = CreateLoader(authRequestor: mockPasswordRequestor);
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => loader.Load());
-        Assert.That(ex.Message, Is.EqualTo("Could not load SQL connections"));
+        // Its own type, and that matters beyond tidiness: ConnectionsService answers a failed
+        // database load with the local copy, and must not do so when the failure was a refused
+        // password. See ARefusedPasswordIsNotAnUnreachableDatabase.
+        Assert.Throws<SqlAuthenticationRefusedException>(() => loader.Load());
         mockPasswordRequestor.Received(3).Invoke("");
     }
 
@@ -277,8 +279,7 @@ public class SqlConnectionsLoaderIntegrationTests
         var loader = CreateLoader(authRequestor: mockPasswordRequestor);
 
         // Act & Assert
-        var ex = Assert.Throws<InvalidOperationException>(() => loader.Load());
-        Assert.That(ex.Message, Is.EqualTo("Could not load SQL connections"));
+        Assert.Throws<SqlAuthenticationRefusedException>(() => loader.Load());
         mockPasswordRequestor.Received(1).Invoke("");
     }
 
