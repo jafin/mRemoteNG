@@ -1,4 +1,4 @@
-﻿## Why
+## Why
 
 The SQL backend encrypts connection passwords with a key that is an unsalted MD5 of the master
 password, under AES-CBC with no authentication tag:
