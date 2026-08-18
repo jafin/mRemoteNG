@@ -28,12 +28,14 @@ change if it slows section 1 down — section 1 is the one holding back
 
 ## 4. Verification
 
-Note on 4.4 and 4.5: both are manual and **not done**. Every automated test here drives a substitute
-for the thing that goes wrong — a model with a flag set, rather than a database that actually went
-away — so the end-to-end path is unproven.
+Note on 4.4 and 4.5: both are manual, and both are **now done**. Every automated test here drives a
+substitute for the thing that goes wrong — a model with a flag set, rather than a database that
+actually went away — so until these two ran, the end-to-end path was unproven. They are the only
+evidence that the flag is set on the real fallback path and not merely honoured once something sets
+it.
 
 - [x] 4.1 Full build; zero new analyzer warnings.
 - [x] 4.2 Full test suite; zero failures.
 - [x] 4.3 `openspec validate refuse-writes-from-a-cached-fallback --strict`.
-- [ ] 4.4 Manual, against the container: load a database, stop the container, restart mRemoteNG so the fallback fires, edit a connection, and confirm nothing reaches the database when it comes back. **This is the whole defect** — do it by hand once, because it is the case where the automated tests are testing a substitute for the thing that goes wrong.
-- [ ] 4.5 Manual: confirm the same for a database refused by version, which is the path `encrypt-sql-backend-with-aead` §1 depends on and the reason this change exists.
+- [x] 4.4 Manual, against the container: load a database, stop the container, restart mRemoteNG so the fallback fires, edit a connection, and confirm nothing reaches the database when it comes back. **This is the whole defect** — do it by hand once, because it is the case where the automated tests are testing a substitute for the thing that goes wrong. **Passed by hand:** the fallback loaded with its age reported, the edit was refused rather than queued, and the database was unchanged when it came back.
+- [x] 4.5 Manual: confirm the same for a database refused by version, which is the path `encrypt-sql-backend-with-aead` §1 depends on and the reason this change exists. **Passed by hand**, same outcome.
