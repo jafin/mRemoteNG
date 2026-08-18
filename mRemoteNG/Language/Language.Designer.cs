@@ -9005,6 +9005,15 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        /// <summary>
+        ///   Looks up a localized string explaining that connections came from a local copy and will not be saved.
+        /// </summary>
+        internal static string WarningLoadedFromConnectionsCache {
+            get {
+                return ResourceManager.GetString("WarningLoadedFromConnectionsCache", resourceCulture);
+            }
+        }
+
         ///   Looks up a localized string naming a connection whose stored secret could not be decrypted.
         /// </summary>
         internal static string ErrorSqlSecretNotDecryptable {

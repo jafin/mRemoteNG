@@ -3210,6 +3210,9 @@ Passwords stored in this file should be treated as known to them and changed on 
   <data name="RekeyDone" xml:space="preserve">
     <value>The connection file has been rekeyed. Everyone who uses it needs the new recovery password the first time they open it.</value>
   </data>
+  <data name="WarningLoadedFromConnectionsCache" xml:space="preserve">
+    <value>The database could not be read ({0}), so these connections are a local copy taken when it was last reachable - {1}. Nothing you change here will be saved. Reconnect and reload the database before making changes.</value>
+  </data>
   <data name="ErrorSqlSecretNotDecryptable" xml:space="preserve">
     <value>The {0} stored for connection '{1}' could not be decrypted. It has been altered since it was written, or was written under a different master password. The connection has been loaded without it rather than with a wrong value.</value>
   </data>
