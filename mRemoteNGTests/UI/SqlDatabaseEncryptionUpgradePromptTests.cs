@@ -311,6 +311,62 @@ public class SqlDatabaseEncryptionUpgradePromptTests
     }
 
     [Test]
+    public void ChoosingTheBuiltInKeyAsTheMasterPasswordSaysWhyItCannotBe()
+    {
+        // `Apply` refuses this, and refusing it is not the point — being told why is. Its guard
+        // throws an ArgumentException, which `Ask` catches with everything else and reports as "the
+        // upgrade failed", so somebody who deliberately typed the one string that defeats the whole
+        // change would read a program fault and try again unchanged.
+        _retriever.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>())
+            .Returns(MetaDataAt(SqlDatabaseVersionVerifier.SchemaVersion));
+        SqlDatabaseEncryptionUpgradePrompt.NewPasswordPrompt = _ =>
+        {
+            _newPasswordsAsked++;
+            return new Optional<SecureString>(
+                ConnectionFileDefaults.LegacyEncryptionKey.ConvertToSecureString());
+        };
+
+        SqlDatabaseEncryptionUpgradePrompt.Ask(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_messagesShown, Is.EqualTo(new[] { Language.SqlUpgradePasswordIsDefaultKey }),
+                "the reason, not the generic failure");
+            Assert.That(Language.SqlUpgradePasswordIsDefaultKey, Does.Contain("Nothing was changed"),
+                "and that the database is where they left it");
+            _retriever.DidNotReceive().WriteDatabaseMetaData(Arg.Any<RootNodeInfo>(),
+                Arg.Any<IDatabaseConnector>(), Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<Version?>());
+        });
+    }
+
+    [Test]
+    public void TypingTheBuiltInKeyAsAnExistingMasterPasswordIsSaidToBeWrong()
+    {
+        // The other end of the same guard. This database has a master password — that is what having
+        // a sentinel the default key cannot open means — so the built-in key is simply not it, and
+        // "wrong password" is the answer. Left to `Apply`, the refusal would arrive as a complaint
+        // about the *new* password and reach the user as an unexplained failure.
+        _retriever.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>()).Returns(ProtectedMetaData());
+        SqlDatabaseEncryptionUpgradePrompt.PasswordPrompt = _ =>
+        {
+            _passwordsAsked++;
+            return new Optional<SecureString>(
+                ConnectionFileDefaults.LegacyEncryptionKey.ConvertToSecureString());
+        };
+
+        SqlDatabaseEncryptionUpgradePrompt.Ask(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_messagesShown, Is.EqualTo(new[] { Language.SqlUpgradeWrongPassword }));
+            _retriever.DidNotReceive().WriteDatabaseMetaData(Arg.Any<RootNodeInfo>(),
+                Arg.Any<IDatabaseConnector>(), Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<Version?>());
+        });
+    }
+
+    [Test]
     public void AnUnreachableDatabaseSaysSoRatherThanGoingBlank()
     {
         // A status line is not worth a dialog, and a server that is merely down must not read as

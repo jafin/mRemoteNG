@@ -130,6 +130,10 @@ Same place, and you cannot remove it — only replace it:
 3. Confirm the password the database uses now.
 4. Type the replacement twice.
 
+One password is not allowed: `mR3m`. That is the key mRemoteNG uses when no master password is set,
+and it is printed in the program's own source code, so a database protected with it is readable by
+anyone who can read the table. mRemoteNG says so and changes nothing.
+
 Every password in the database is re-encrypted with the new one straight away. Everyone who uses the
 database needs it from the next time they open mRemoteNG, so tell them before you change it.
 
@@ -152,6 +156,17 @@ from the local copy, which stays sealed until someone proves they hold the passw
 Once you are in, revealing or copying a stored password asks for the master password again. That is
 deliberate: opening the connection list and reading a specific credential out of it are different
 acts, and the second is the one worth confirming.
+
+### If someone changes the password while you are working
+
+mRemoteNG reloads the connections in the background when the database changes, and that reload asks
+for the new master password. If you dismiss the box, or get it wrong, the connections already on
+screen stay exactly as they are — nothing is reloaded and nothing is lost — and a warning appears in
+**View → Notifications** saying so.
+
+Automatic reloading then stops, so you are not asked again every few seconds. To start it again once
+you have the new password, reopen **Tools → Options → SQL Server** and select **OK**, or restart
+mRemoteNG.
 
 ### Saving to a new database
 

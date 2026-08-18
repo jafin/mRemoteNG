@@ -146,6 +146,16 @@ public static class SqlDatabaseEncryptionUpgradePrompt
                     return;
                 }
 
+                // The database is not keyed on the built-in default key — that is precisely what
+                // said it has a master password — so this one is simply wrong, and saying so is
+                // better than letting Apply's own guard on the *new* password turn a mistyped
+                // existing one into "the upgrade failed".
+                if (IsTheBuiltInKey(typed))
+                {
+                    ShowMessage(owner, Language.SqlUpgradeWrongPassword, Language.SqlUpgradeTitle);
+                    return;
+                }
+
                 existingPassword.Dispose();
                 existingPassword = typed;
                 newMasterPassword = typed;
@@ -160,6 +170,16 @@ public static class SqlDatabaseEncryptionUpgradePrompt
                     // password, and somebody who expected the upgrade to proceed without one needs
                     // to know that it cannot.
                     ShowMessage(owner, Language.SqlUpgradePasswordNotSet, Language.SqlUpgradeTitle);
+                    return;
+                }
+
+                // Refused here rather than by Apply, whose guard is the last line of defence and
+                // reports through the generic failure message. Somebody who types this has chosen a
+                // password and needs the reason it cannot be that one — "the upgrade failed" reads
+                // as a fault in the program and invites them to try it again unchanged.
+                if (IsTheBuiltInKey(picked))
+                {
+                    ShowMessage(owner, Language.SqlUpgradePasswordIsDefaultKey, Language.SqlUpgradeTitle);
                     return;
                 }
 
@@ -195,6 +215,13 @@ public static class SqlDatabaseEncryptionUpgradePrompt
                 newMasterPassword?.Dispose();
         }
     }
+
+    /// <summary>
+    /// Whether this is the key mRemoteNG falls back to when no master password is set.
+    /// </summary>
+    private static bool IsTheBuiltInKey(SecureString password) =>
+        string.Equals(password.ConvertToUnsecureString(), ConnectionFileDefaults.LegacyEncryptionKey,
+                      StringComparison.Ordinal);
 
     /// <summary>
     /// What state the configured database is in, for the options page's status line.

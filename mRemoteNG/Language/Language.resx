@@ -3285,6 +3285,12 @@ There is no way back in. If the master password is lost, nobody can decrypt the 
   <data name="SqlUpgradePasswordNotSet" xml:space="preserve">
     <value>No master password was set, so nothing was changed. Upgrading cannot protect this database without one - it would re-encrypt every password under the same built-in key it uses today.</value>
   </data>
+  <data name="SqlUpgradePasswordIsDefaultKey" xml:space="preserve">
+    <value>That is the key mRemoteNG uses when no master password is set, and it is published in the program's own source code, so a database protected with it can be read by anyone who can read the table. Nothing was changed. Choose a different password.</value>
+  </data>
+  <data name="WarningSqlSyncAuthenticationRefused" xml:space="preserve">
+    <value>The connections in the database have changed, but the master password was not accepted, so they were not reloaded and the connections shown here are the ones loaded earlier. Automatic reloading has been turned off to avoid asking again every few seconds. Reload the connections when you have the current master password. ({0})</value>
+  </data>
   <data name="ErrorSqlDatabaseNotInitialized" xml:space="preserve">
     <value>This database records that it uses authenticated encryption, but holds nothing to check a master password against, so it cannot be opened. Its metadata row was lost or replaced. Restore the database from a backup.</value>
   </data>

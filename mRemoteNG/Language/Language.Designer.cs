@@ -9212,6 +9212,24 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string refusing the built-in default key as a master password.
+        /// </summary>
+        internal static string SqlUpgradePasswordIsDefaultKey {
+            get {
+                return ResourceManager.GetString("SqlUpgradePasswordIsDefaultKey", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a background reload refused for want of the master password.
+        /// </summary>
+        internal static string WarningSqlSyncAuthenticationRefused {
+            get {
+                return ResourceManager.GetString("WarningSqlSyncAuthenticationRefused", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string describing a database that claims authenticated encryption but stores no sentinel.
         /// </summary>
         internal static string ErrorSqlDatabaseNotInitialized {
