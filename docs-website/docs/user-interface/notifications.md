@@ -2,7 +2,7 @@
 title: Notifications
 ---
 
-The notifications panel contains any errors or informational messages that mRemoteNG triggers. Some example errors can be if there is a problem to connect, information on lost connection and so much more. Notification settings can be found in (Tools \> Options \> Notifications) below we will explain what can be set and how they do affect for various troubleshooting.
+The notifications panel contains any errors or informational messages that mRemoteNG triggers. Some example errors can be if there is a problem to connect, information on lost connection and so much more. Notification settings can be found in (File \> Options \> Notifications) below we will explain what can be set and how they do affect for various troubleshooting.
 
 ## Notifications general settings
 

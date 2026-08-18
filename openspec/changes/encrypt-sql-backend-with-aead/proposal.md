@@ -1,4 +1,4 @@
-## Why
+﻿## Why
 
 The SQL backend encrypts connection passwords with a key that is an unsalted MD5 of the master
 password, under AES-CBC with no authentication tag:
@@ -34,8 +34,18 @@ Applies to our fork exactly as written.
 - Which provider is used follows the database's `ConfVersion`, the version marker the schema already
   carries and `SqlDatabaseVersionVerifier` already enforces. Below the new version, legacy; at or
   above it, AEAD.
-- A database at the old version is **read** with the legacy provider and is not written. The upgrade
-  is deliberate and explicit, not a side effect of the first save.
+- A database at the old version stays **fully readable and writable** with the legacy provider, and
+  says so once per session. The upgrade is deliberate and explicit, never a side effect of a save.
+  **This reverses the original wording, "is read and is not written", after implementing it.** That
+  refusal was a bigger hammer than this proposal's own reasoning called for: what design.md
+  establishes is that the *upgrade* must not be prompted, because it decides for a whole team and
+  cannot be undone — which says nothing about whether a legacy database should keep accepting
+  writes. Refusing would not improve the weak encryption these databases are already in; it would
+  only stop people working until an administrator acted, and because saves here are automatic and
+  debounced it would surface as an error on every rename. It would also contradict this fork's own
+  precedent, where a classic connection file stays fully writable and hardening is offered rather
+  than imposed. The cost of the softer rule is stated plainly: a team that never opens the SQL
+  options page keeps the weak format indefinitely.
 - Upgrading re-encrypts every stored secret in one transaction and raises `ConfVersion`.
 - `LegacyRijndaelCryptographyProvider` keeps its decrypt path for the SQL backend and loses its
   encrypt callers there.

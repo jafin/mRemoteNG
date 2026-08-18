@@ -35,9 +35,14 @@ public class SettingsSecretCallSiteTests
         ["Security/Factories/CryptoProviderFactoryFromXml.cs"] = "connection file, chosen by what the file records",
         ["Security/Factories/LegacyInsecureCryptoProviderFactory.cs"] = "connection file factory",
         ["Config/Serializers/XmlConnectionsDecryptor.cs"] = "connection file; replace-default-connection-file-key owns it",
-        ["Config/Connections/SqlConnectionsSaver.cs"] = "SQL backend; encrypt-sql-backend-with-aead owns it",
-        ["Config/Serializers/ConnectionSerializers/Sql/SqlDatabaseMetaDataRetriever.cs"] = "SQL backend",
-        ["Connection/ConnectionsService.cs"] = "SQL backend loader",
+
+        // The SQL backend now has one place that chooses its provider, as the connection file does.
+        // The three entries that used to sit here — the saver, the metadata retriever and the
+        // loader's construction in ConnectionsService — are gone rather than kept as harmless
+        // leftovers: each of them hardcoded the legacy provider, which is how the two ends of the
+        // SQL backend came to decide the format independently. With them removed from this list,
+        // putting one back fails here.
+        ["Security/Factories/CryptoProviderFactoryFromSqlVersion.cs"] = "SQL backend, chosen by the version the database records",
         ["Config/Settings/Registry/OptRegistryCredentialsPage.cs"] = "registry provisioning, a documented external format",
         ["Config/Settings/Registry/OptRegistrySqlServerPage.cs"] = "registry provisioning",
         ["Config/Settings/Registry/OptRegistryUpdatesPage.cs"] = "registry provisioning",

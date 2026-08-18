@@ -101,7 +101,7 @@ does not follow one is ignored.
 
 :::tip Already running?
 
-With **Tools → Options → Startup/Exit → Allow only a single instance of the application** enabled, starting mRemoteNG
+With **File → Options → Startup/Exit → Allow only a single instance of the application** enabled, starting mRemoteNG
 again passes the switches to the copy that is already open, so `--connect` and `--quickconnect`
 open there rather than in a second window.
 

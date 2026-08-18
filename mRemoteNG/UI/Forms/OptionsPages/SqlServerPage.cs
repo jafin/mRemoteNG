@@ -25,6 +25,8 @@ public sealed partial class SqlServerPage
     private OptRegistrySqlServerPage pageRegSettingsInstance;
     private NumericUpDown numSQLReloadInterval;
     private MrngLabel lblSQLReloadInterval;
+    private MrngButton btnUpgradeEncryption;
+    private MrngLabel lblEncryptionStatus;
     private bool _loadingSettings;
 
     private static readonly (string TypeKey, string DisplayName)[] SqlTypeOptions =
@@ -40,6 +42,7 @@ public sealed partial class SqlServerPage
         InitializeComponent();
         InitializeSqlTypeSelector();
         InitializeReloadIntervalControl();
+        InitializeBottomStatusArea();
         ApplyTheme();
         PageIcon = Resources.ImageConverter.GetImageAsIcon(Properties.Resources.SQLDatabase_16x);
         pageRegSettingsInstance = new OptRegistrySqlServerPage(); // Initialize the field to avoid nullability issues
@@ -69,6 +72,153 @@ public sealed partial class SqlServerPage
         pnlSQLCon.Controls.Add(numSQLReloadInterval, 1, 6);
     }
 
+    /// <summary>
+    /// The database's encryption state, and the only way to change it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This is the whole user-facing half of the upgrade, and it lives here on purpose.</b>
+    /// Nothing offers it when a database is opened: the decision locks out every other client of a
+    /// shared database, so it belongs to whoever administers it rather than to whoever happened to
+    /// start mRemoteNG first. Somebody in this page is a far better guess at that person.
+    /// </para>
+    /// <para>
+    /// The status line matters as much as the button. A database that still stores its passwords
+    /// weakly is saved anyway, with one warning per session, so this line is what keeps the question
+    /// in front of the one person who can answer it.
+    /// </para>
+    /// <para>
+    /// Built here rather than in the designer, following the reload-interval control above: the
+    /// generated file is a single 1,300-line block and two controls are easier to review as a dozen
+    /// lines of code than as a designer diff.
+    /// </para>
+    /// <para>
+    /// <b>Laid out by docked tables rather than at coordinates, and that is the whole point.</b>
+    /// The first version placed the two encryption controls at absolute points below the
+    /// test-connection row, which is correct at 100% scaling and wrong at any other: the designer's
+    /// controls are scaled for the display, hand-placed ones added after <c>InitializeComponent</c>
+    /// keep their raw coordinates, and the two drift apart. They landed inside the scaled tab
+    /// control's area and behind it in z-order — so the upgrade appeared in Simple view, where the
+    /// tab is hidden, and vanished in Advanced view. A layout panel has no coordinates to get wrong,
+    /// and <c>BringToFront</c> keeps it clear of the one sibling that is still absolutely positioned.
+    /// </para>
+    /// <para>
+    /// The test-connection controls are adopted into the same strip. They were laid out with the
+    /// message on the left and the buttons on the right, which reads backwards — and their fixed
+    /// positions could not accommodate a failure message, which is two lines. In a table the row
+    /// grows to fit instead of the text running under its neighbours.
+    /// </para>
+    /// </remarks>
+    private void InitializeBottomStatusArea()
+    {
+        lblEncryptionStatus = new MrngLabel
+        {
+            Dock = DockStyle.Fill,
+            TextAlign = ContentAlignment.MiddleLeft,
+            Name = "lblEncryptionStatus",
+            Text = ""
+        };
+
+        btnUpgradeEncryption = new MrngButton
+        {
+            AutoSize = true,
+            Anchor = AnchorStyles.Right,
+            Name = "btnUpgradeEncryption",
+            Text = Language.SqlUpgradeButton,
+            UseVisualStyleBackColor = true,
+
+            // Hidden until the database has said it needs this. An always-visible button offering an
+            // irreversible, team-wide change is an invitation to press it and find out what it does.
+            Visible = false
+        };
+        btnUpgradeEncryption.Click += btnUpgradeEncryption_Click;
+
+        // Actions on the left, the result of those actions on the right. Adding these here reparents
+        // them out of the panel they were positioned in, so their designer coordinates stop applying.
+        btnTestConnection.Anchor = AnchorStyles.Left;
+        btnExpandOptions.Anchor = AnchorStyles.Left;
+        imgConnectionStatus.Anchor = AnchorStyles.None;
+        lblTestConnectionResults.Anchor = AnchorStyles.Right;
+        lblTestConnectionResults.TextAlign = ContentAlignment.MiddleRight;
+        lblTestConnectionResults.AutoSize = true;
+
+        TableLayoutPanel actionRow = Row("pnlConnectionActions",
+            SizeType.AutoSize, SizeType.AutoSize, SizeType.Percent, SizeType.AutoSize, SizeType.AutoSize);
+        actionRow.Controls.Add(btnTestConnection, 0, 0);
+        actionRow.Controls.Add(btnExpandOptions, 1, 0);
+        actionRow.Controls.Add(imgConnectionStatus, 3, 0);
+        actionRow.Controls.Add(lblTestConnectionResults, 4, 0);
+
+        TableLayoutPanel encryptionRow = Row("pnlEncryptionStatus", SizeType.Percent, SizeType.AutoSize);
+        encryptionRow.Controls.Add(lblEncryptionStatus, 0, 0);
+        encryptionRow.Controls.Add(btnUpgradeEncryption, 1, 0);
+
+        TableLayoutPanel bottom = new()
+        {
+            Name = "pnlBottomStatus",
+            Dock = DockStyle.Bottom,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(5, 8, 5, 0)
+        };
+        bottom.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        bottom.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        bottom.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        bottom.Controls.Add(actionRow, 0, 0);
+        bottom.Controls.Add(encryptionRow, 0, 1);
+
+        pnlServerBlock.Controls.Add(bottom);
+        bottom.BringToFront();
+    }
+
+    /// <summary>One auto-height row. A <see cref="SizeType.Percent"/> column takes up the slack.</summary>
+    private static TableLayoutPanel Row(string name, params SizeType[] columns)
+    {
+        TableLayoutPanel row = new()
+        {
+            Name = name,
+            Dock = DockStyle.Fill,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = columns.Length,
+            RowCount = 1
+        };
+
+        foreach (SizeType column in columns)
+            row.ColumnStyles.Add(new ColumnStyle(column, column == SizeType.Percent ? 100F : 0F));
+
+        row.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        return row;
+    }
+
+    private void btnUpgradeEncryption_Click(object? sender, EventArgs e)
+    {
+        SqlDatabaseEncryptionUpgradePrompt.Ask(this);
+        _ = RefreshEncryptionStatusAsync();
+    }
+
+    /// <summary>
+    /// Reads what state the database is in and says so, off the UI thread.
+    /// </summary>
+    /// <remarks>
+    /// Called when the page is opened and after Apply — never from the test-connection button, which
+    /// works on whatever is currently typed into the page. Reading the metadata of an empty database
+    /// creates the schema in it: reasonable against the configured database, rude against a name
+    /// somebody is still halfway through typing.
+    /// </remarks>
+    private async Task RefreshEncryptionStatusAsync()
+    {
+        (bool upgradeAvailable, string status) = await Task.Run(() => SqlDatabaseEncryptionUpgradePrompt.ReadStatus());
+
+        if (IsDisposed)
+            return;
+
+        lblEncryptionStatus.Text = status;
+        btnUpgradeEncryption.Visible = upgradeAvailable;
+    }
+
     protected override void ApplyTheme()
     {
         base.ApplyTheme();
@@ -88,8 +238,6 @@ public sealed partial class SqlServerPage
             tp.BackColor = bg.Value;
             tp.ForeColor = fg.Value;
         }
-        lblSectionName.BackColor = bg.Value;
-        lblSectionName.ForeColor = fg.Value;
         lblRegistrySettingsUsedInfo.BackColor = bg.Value;
     }
 
@@ -146,6 +294,18 @@ public sealed partial class SqlServerPage
         {
             _loadingSettings = false;
         }
+
+        // **Opening the page has to be enough.** Refreshing only after Apply — which is all this did
+        // at first — means somebody who comes here to look at their database is told nothing, and
+        // there is no reason for them to press Apply on a page they have not changed. The status
+        // line is the only thing that carries the weak-encryption question to the person who can
+        // answer it, so it must be there when they arrive.
+        //
+        // Safe to read here, unlike from the test-connection button: these values come from saved
+        // settings rather than from a half-typed database name, and this is the same database the
+        // application is already loading connections from.
+        if (Properties.OptionsDBsPage.Default.UseSQLServer)
+            _ = RefreshEncryptionStatusAsync();
     }
 
     public override void SaveSettings()
@@ -306,6 +466,7 @@ public sealed partial class SqlServerPage
             if (IsDisposed) return;
             UpdateConnectionImage(true);
             lblTestConnectionResults.Text = Language.ConnectionSuccessful;
+            await RefreshEncryptionStatusAsync();
         }
         catch (OperationCanceledException)
         {
@@ -336,6 +497,7 @@ public sealed partial class SqlServerPage
         txtSQLType.Enabled = enabled;
         txtSQLAuthType.Enabled = enabled;
         btnTestConnection.Enabled = enabled;
+        btnUpgradeEncryption.Enabled = enabled;
     }
 
     private static void DisableSql()
@@ -417,6 +579,12 @@ public sealed partial class SqlServerPage
             case ConnectionTestResult.ConnectionSucceded:
                 UpdateConnectionImage(true);
                 lblTestConnectionResults.Text = Language.ConnectionSuccessful;
+
+                // Deliberately no encryption-status refresh here. This button tests whatever is
+                // currently typed into the page, which may be a different server from the saved one
+                // — and the status line would then be describing a database the Upgrade button does
+                // not act on. Offering an irreversible, team-wide change against the wrong database
+                // is not a risk worth taking for an earlier status line; it appears after Apply.
                 break;
             case ConnectionTestResult.ServerNotAccessible:
                 UpdateConnectionImage(false);

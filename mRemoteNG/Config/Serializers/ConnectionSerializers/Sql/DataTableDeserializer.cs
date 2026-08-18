@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Data;
+using System.Globalization;
 using System.Runtime.Versioning;
 using System.Security;
 using mRemoteNG.App;
@@ -10,6 +11,8 @@ using mRemoteNG.Connection.Protocol.Http;
 using mRemoteNG.Connection.Protocol.RDP;
 using mRemoteNG.Connection.Protocol.VNC;
 using mRemoteNG.Container;
+using mRemoteNG.Messages;
+using mRemoteNG.Resources.Language;
 using mRemoteNG.Security;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree;
@@ -117,8 +120,7 @@ public class DataTableDeserializer(ICryptographyProvider cryptographyProvider, S
         connectionInfo.OpeningCommand = dataRow["OpeningCommand"] as string ?? "";
         connectionInfo.Panel = dataRow["Panel"] as string ?? "";
         var pw = dataRow["Password"] as string;
-        //connectionInfo.Password = DecryptValue(pw ?? "").ConvertToSecureString();
-        connectionInfo.Password = DecryptValue(pw ?? "");
+        connectionInfo.Password = DecryptValue(pw ?? "", dataRow, "Password");
         if (!dataRow.IsNull("Port"))
             connectionInfo.Port = (int)dataRow["Port"];
         connectionInfo.PostExtApp = dataRow["PostExtApp"] as string ?? "";
@@ -129,7 +131,7 @@ public class DataTableDeserializer(ICryptographyProvider cryptographyProvider, S
         connectionInfo.PuttySession = dataRow["PuttySession"] as string ?? "";
         connectionInfo.RDGatewayDomain = dataRow["RDGatewayDomain"] as string ?? "";
         connectionInfo.RDGatewayHostname = dataRow["RDGatewayHostname"] as string ?? "";
-        connectionInfo.RDGatewayPassword = DecryptValue(dataRow["RDGatewayPassword"] as string ?? "");
+        connectionInfo.RDGatewayPassword = DecryptValue(dataRow["RDGatewayPassword"] as string ?? "", dataRow, "RDGatewayPassword");
         if (!dataRow.IsNull("RDGatewayUsageMethod"))
             if (Enum.TryParse((string)dataRow["RDGatewayUsageMethod"], true, out RDGatewayUsageMethod rdGatewayUsageMethod))
                 connectionInfo.RDGatewayUsageMethod = rdGatewayUsageMethod;
@@ -209,7 +211,7 @@ public class DataTableDeserializer(ICryptographyProvider cryptographyProvider, S
             if (Enum.TryParse((string)dataRow["VNCEncoding"], true, out ProtocolVNC.Encoding vncEncoding))
                 connectionInfo.VNCEncoding = vncEncoding;
         connectionInfo.VNCProxyIP = dataRow["VNCProxyIP"] as string ?? "";
-        connectionInfo.VNCProxyPassword = DecryptValue(dataRow["VNCProxyPassword"] as string ?? "");
+        connectionInfo.VNCProxyPassword = DecryptValue(dataRow["VNCProxyPassword"] as string ?? "", dataRow, "VNCProxyPassword");
         if (!dataRow.IsNull("VNCProxyPort"))
             connectionInfo.VNCProxyPort = (int)dataRow["VNCProxyPort"];
         if (!dataRow.IsNull("VNCProxyType"))
@@ -325,16 +327,52 @@ public class DataTableDeserializer(ICryptographyProvider cryptographyProvider, S
             connectionInfo.Inheritance.VNCClipboardRedirect = MiscTools.GetBooleanValue(dataRow["InheritVNCClipboardRedirect"]);
     }
 
-    private string DecryptValue(string cipherText)
+    /// <summary>
+    /// Decrypts one secret column, and decides what a failure means.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The fallback is not universal, and treating it as if it were would throw away the reason
+    /// for authenticating the ciphertext at all.</b> Returning the value unchanged is right for a
+    /// provider that cannot tell "somebody altered this" from "this was never encrypted": databases
+    /// old enough to hold plain values exist, and refusing to load them would help nobody.
+    /// </para>
+    /// <para>
+    /// It is wrong for a provider that <i>can</i> tell. Under authenticated encryption a failure
+    /// means the stored text was altered, or was written under a different key — and passing it
+    /// through would hand a connection its own base64 ciphertext as a password. The tamper detection
+    /// would be doing its work and reporting nothing, which is the worst of both.
+    /// </para>
+    /// <para>
+    /// So the value becomes empty and the user is told. Not an aborted load: one altered row must
+    /// not deny access to every other connection in the database, and a password that is visibly
+    /// missing on one connection, with a message naming it, is something a person can act on.
+    /// </para>
+    /// </remarks>
+    private string DecryptValue(string cipherText, DataRow dataRow, string column)
     {
         try
         {
             return _cryptographyProvider.Decrypt(cipherText, _decryptionKey);
         }
-        catch (EncryptionException)
+        catch (Exception ex) when (ex is EncryptionException or FormatException)
         {
-            // value may not be encrypted
-            return cipherText;
+            // FormatException as well as EncryptionException: the authenticated provider reads the
+            // base64 before it reaches the cipher, so text mangled badly enough fails there instead
+            // — the same event, and it would otherwise escape and fail the whole load.
+            if (!_cryptographyProvider.DetectsTampering)
+                return cipherText;
+
+            // **Named, because a database holds hundreds of these.** "A stored password could not
+            // be decrypted" tells somebody with two hundred connections that one of them is wrong
+            // and nothing about which, and there is no second place to go and find out. The row is
+            // right here, so the message can say which connection and which field.
+            string name = dataRow["Name"] as string ?? "(unnamed)";
+
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, string.Format(
+                CultureInfo.CurrentCulture, Language.ErrorSqlSecretNotDecryptable, column, name));
+
+            return string.Empty;
         }
     }
 

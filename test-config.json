@@ -1,6 +1,6 @@
 {
   "metadata": {
-    "total_expected": 4272,
+    "total_expected": 4327,
     "min_total_threshold": 3800,
     "last_updated": "2026-08-15",
     "stats": {
@@ -32,12 +32,12 @@
       {
         "name": "UI",
         "filter": "FullyQualifiedName~mRemoteNGTests.UI&Name!=FormBehavior&Name!=AllPagesExistWithIconsAndLoadCorrectSettings",
-        "expected": 421
+        "expected": 431
       },
       {
         "name": "Config.Other",
         "filter": "FullyQualifiedName~mRemoteNGTests.Config&FullyQualifiedName!~Serializers.ConnectionSerializers.Xml",
-        "expected": 733
+        "expected": 748
       },
       {
         "name": "Config.Xml",
@@ -47,12 +47,12 @@
       {
         "name": "Int.Other",
         "filter": "FullyQualifiedName~mRemoteNGTests.IntegrationTests&FullyQualifiedName!~mRemoteNGTests.IntegrationTests.Sftp",
-        "expected": 30
+        "expected": 48
       },
       {
         "name": "Security",
         "filter": "FullyQualifiedName~mRemoteNGTests.Security",
-        "expected": 489
+        "expected": 501
       },
       {
         "name": "Remaining",

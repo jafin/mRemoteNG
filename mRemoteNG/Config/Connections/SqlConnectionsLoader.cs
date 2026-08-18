@@ -27,7 +27,7 @@ public class SqlConnectionsLoader : IConnectionsLoader
     private readonly IDataProvider<DataTable> _sqlDataProvider;
     private readonly ISqlDatabaseMetaDataRetriever _sqlMetaDataRetriever;
     private readonly ISqlDatabaseVersionVerifier _sqlDatabaseVersionVerifier;
-    private readonly ICryptographyProvider _cryptographyProvider;
+    private readonly Func<Version?, ICryptographyProvider> _cryptographyProviderForVersion;
 
     private Func<string, Optional<SecureString>> AuthenticationRequestor { get; }
 
@@ -38,7 +38,7 @@ public class SqlConnectionsLoader : IConnectionsLoader
         IDataProvider<DataTable> sqlDataProvider,
         ISqlDatabaseMetaDataRetriever sqlMetaDataRetriever,
         ISqlDatabaseVersionVerifier sqlDatabaseVersionVerifier,
-        ICryptographyProvider cryptographyProvider,
+        Func<Version?, ICryptographyProvider> cryptographyProviderForVersion,
         Func<string, Optional<SecureString>>? authenticationRequestor = null)
     {
         ArgumentNullException.ThrowIfNull(localConnectionPropertiesDeserializer);
@@ -47,14 +47,14 @@ public class SqlConnectionsLoader : IConnectionsLoader
         ArgumentNullException.ThrowIfNull(sqlDataProvider);
         ArgumentNullException.ThrowIfNull(sqlMetaDataRetriever);
         ArgumentNullException.ThrowIfNull(sqlDatabaseVersionVerifier);
-        ArgumentNullException.ThrowIfNull(cryptographyProvider);
+        ArgumentNullException.ThrowIfNull(cryptographyProviderForVersion);
         _localConnectionPropertiesDeserializer = localConnectionPropertiesDeserializer;
         _localPropertiesDataProvider = localPropertiesDataProvider;
         _databaseConnector = databaseConnector;
         _sqlDataProvider = sqlDataProvider;
         _sqlMetaDataRetriever = sqlMetaDataRetriever;
         _sqlDatabaseVersionVerifier = sqlDatabaseVersionVerifier;
-        _cryptographyProvider = cryptographyProvider;
+        _cryptographyProviderForVersion = cryptographyProviderForVersion;
         AuthenticationRequestor = authenticationRequestor ?? ((filename) => MiscTools.PasswordDialog(filename, false));
     }
 
@@ -79,13 +79,18 @@ public class SqlConnectionsLoader : IConnectionsLoader
         if (!versionSupported && _sqlDatabaseVersionVerifier.IsNewerThanSupported(metaData.ConfVersion))
             throw new InvalidOperationException("Could not load SQL connections");
 
-        Optional<SecureString> decryptionKey = GetDecryptionKey(metaData);
+        // Chosen from what the database records, not from what this build prefers, and chosen once
+        // for both the sentinel and the rows — they are encrypted together and a mismatch between
+        // them would authenticate a password that then decrypts nothing.
+        ICryptographyProvider cryptographyProvider = _cryptographyProviderForVersion(metaData.ConfVersion);
+
+        Optional<SecureString> decryptionKey = GetDecryptionKey(metaData, cryptographyProvider);
 
         if (!decryptionKey.Any())
             throw new InvalidOperationException("Could not load SQL connections");
 
         System.Data.DataTable dataTable = _sqlDataProvider.Load();
-        DataTableDeserializer deserializer = new(_cryptographyProvider, decryptionKey.First());
+        DataTableDeserializer deserializer = new(cryptographyProvider, decryptionKey.First());
         ConnectionTreeModel connectionTree = deserializer.Deserialize(dataTable);
         ContainerInfo? rootNode = connectionTree.RootNodes.FirstOrDefault(i => i is RootNodeInfo);
         if (rootNode != null)
@@ -93,7 +98,8 @@ public class SqlConnectionsLoader : IConnectionsLoader
         return connectionTree;
     }
 
-    private Optional<SecureString> GetDecryptionKey(SqlConnectionListMetaData metaData)
+    private Optional<SecureString> GetDecryptionKey(SqlConnectionListMetaData metaData,
+                                                    ICryptographyProvider cryptographyProvider)
     {
         string cipherText = metaData.Protected;
 
@@ -112,7 +118,7 @@ public class SqlConnectionsLoader : IConnectionsLoader
         // legacy provider is AES-CBC with no authentication tag, so a wrong password yields valid
         // padding often enough to matter and would otherwise be accepted — granting access to the
         // hostnames, usernames and ports, which are not encrypted at all.
-        PasswordAuthenticator authenticator = new(_cryptographyProvider, cipherText, () => AuthenticationRequestor(""))
+        PasswordAuthenticator authenticator = new(cryptographyProvider, cipherText, () => AuthenticationRequestor(""))
         {
             PlaintextValidator = ConnectionFileDefaults.IsKnownSentinel
         };

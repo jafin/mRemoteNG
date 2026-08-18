@@ -18,7 +18,7 @@ live**:
 |---|---|---|
 | Settings, connections, layouts, themes | `Settings` folder next to `mRemoteNG.exe` | `%APPDATA%\mRemoteNG` |
 | Log file | `mRemoteNG.log` next to `mRemoteNG.exe` | `%LOCALAPPDATA%\mRemoteNG\mRemoteNG.log` |
-| Custom configuration directory (**Tools → Options → Configuration**) | Not available | Available |
+| Custom configuration directory (**File → Options → Configuration**) | Not available | Available |
 | A [hardened connection file](./connection-file-protection.md) | Recovery password only, so it opens anywhere | Unlocks automatically on this Windows account |
 
 The program files are identical. One copy of mRemoteNG can be either edition.

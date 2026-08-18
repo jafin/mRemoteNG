@@ -595,6 +595,9 @@ Starting with new connections file.</value>
   <data name="ErrorConnectionListSaveFailed" xml:space="preserve">
     <value>The connection list could not be saved.</value>
   </data>
+  <data name="WarningDatabaseNotUpgradedForEncryption" xml:space="preserve">
+    <value>This database still stores its passwords with the old, weak encryption, which can be broken quickly by anyone who obtains a copy of it. Your changes were saved in that same format, and everything continues to work as before. To protect them, open File &gt; Options &gt; SQL Server and upgrade the database — but note that older versions of {0}, and other mRemoteNG builds, will no longer be able to open it afterwards.</value>
+  </data>
   <data name="ErrorDatabaseVersionNewerThanClient" xml:space="preserve">
     <value>The database is at version {0}, which is newer than this copy of {1} supports (up to version {2}). No connections were loaded. Upgrade {1} on this computer to open it.</value>
   </data>
@@ -3209,6 +3212,64 @@ Passwords stored in this file should be treated as known to them and changed on 
   </data>
   <data name="WarningLoadedFromConnectionsCache" xml:space="preserve">
     <value>The database could not be read ({0}), so these connections are a local copy taken when it was last reachable - {1}. Nothing you change here will be saved. Reconnect and reload the database before making changes.</value>
+  </data>
+  <data name="ErrorSqlSecretNotDecryptable" xml:space="preserve">
+    <value>The {0} stored for connection '{1}' could not be decrypted. It has been altered since it was written, or was written under a different master password. The connection has been loaded without it rather than with a wrong value.</value>
+  </data>
+  <data name="SqlUpgradeButton" xml:space="preserve">
+    <value>Upgrade Encryption...</value>
+  </data>
+  <data name="SqlUpgradeTitle" xml:space="preserve">
+    <value>Upgrade Database Encryption</value>
+  </data>
+  <data name="SqlUpgradeInstruction" xml:space="preserve">
+    <value>Re-encrypt every password in this database?</value>
+  </data>
+  <data name="SqlUpgradeWhat" xml:space="preserve">
+    <value>Passwords in this database are encrypted in a way that no longer protects them. The key is derived from the master password in a single step that modern hardware guesses through very quickly, and nothing detects whether the stored text has been altered by someone with write access to the database.
+
+Upgrading re-encrypts every password, gateway password and VNC proxy password with AES-256-GCM. No connection needs editing and nothing else about the database changes.</value>
+  </data>
+  <data name="SqlUpgradeClients" xml:space="preserve">
+    <value>Everyone who uses this database must be running a build that has this change. Upstream mRemoteNG and every earlier build will no longer open it. Builds that have this change explain why; older ones only report that connections could not be loaded.
+
+You are deciding this for everybody who connects to this database, including colleagues who have never installed this version. Tell them before you continue.</value>
+  </data>
+  <data name="SqlUpgradeIrreversible" xml:space="preserve">
+    <value>This cannot be undone from inside mRemoteNG. Back the database up first - restoring that backup is the only way back.</value>
+  </data>
+  <data name="SqlUpgradeMasterPasswordName" xml:space="preserve">
+    <value>Database master password</value>
+  </data>
+  <data name="SqlUpgradeDeclined" xml:space="preserve">
+    <value>Nothing was changed. The database still stores its passwords in the old format.</value>
+  </data>
+  <data name="SqlUpgradeWrongPassword" xml:space="preserve">
+    <value>That is not the master password for this database, so the upgrade did not start. Nothing was changed.</value>
+  </data>
+  <data name="SqlUpgradeNotNeeded" xml:space="preserve">
+    <value>This database already stores its passwords with authenticated encryption. There is nothing to upgrade.</value>
+  </data>
+  <data name="SqlUpgradeNoDatabase" xml:space="preserve">
+    <value>There are no mRemoteNG connections in this database yet, so there is nothing to upgrade. A database created from now on already uses authenticated encryption.</value>
+  </data>
+  <data name="SqlUpgradeDone" xml:space="preserve">
+    <value>The database has been upgraded and {0} connections were re-encrypted. From now on it can only be opened by builds that have this change.</value>
+  </data>
+  <data name="SqlUpgradeFailed" xml:space="preserve">
+    <value>The upgrade did not finish, and nothing in the database was changed. The reason is in the notifications panel.</value>
+  </data>
+  <data name="SqlUpgradeStatusLegacy" xml:space="preserve">
+    <value>Passwords in this database use the old, weak encryption.</value>
+  </data>
+  <data name="SqlUpgradeStatusCurrent" xml:space="preserve">
+    <value>Passwords in this database use authenticated encryption.</value>
+  </data>
+  <data name="SqlUpgradeStatusUnknown" xml:space="preserve">
+    <value>Could not read how this database stores its passwords. The reason is in the notifications panel.</value>
+  </data>
+  <data name="SqlUpgradeStatusNoDatabase" xml:space="preserve">
+    <value>This database holds no mRemoteNG connections yet.</value>
   </data>
   <data name="ExportClassicFormatTitle" xml:space="preserve">
     <value>Export Uses the Classic Format</value>

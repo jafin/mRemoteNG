@@ -1,4 +1,4 @@
-# Design
+﻿# Design
 
 ## Context
 
@@ -46,14 +46,65 @@ and the re-encryption runs in the transaction that raises the version.
 ### Refuse a database newer than the build
 
 `SqlDatabaseVersionVerifier` already compares versions. It must treat "newer than I understand" as a
-refusal with a message naming the version, not as something to attempt. Without this, an un-upgraded
-client reads AEAD ciphertext with the legacy provider, gets plausible-looking garbage out of
-AES-CBC's unauthenticated decrypt, and shows a user empty passwords for connections that used to
-work — the worst available outcome, because it looks like data loss rather than a version mismatch.
+refusal with a message naming the version, not as something to attempt.
+
+**What an un-upgraded client does instead was assumed here and has since been measured** — task 6.6,
+a pre-§1 build against a database upgraded by this one. The prediction in this paragraph was that it
+would read AEAD ciphertext with the legacy provider and show empty passwords for connections that
+used to work. It does not get that far. The `Protected` sentinel is AEAD ciphertext as well, and it
+is read first, so the legacy provider fails on the sentinel before a single row is touched. The
+client then asks for a master password — for a database that has none, and which the user has
+therefore never set — and on being refused one reports `Could not load SQL connections`, with
+**nothing at all in the notification panel**. No version is named anywhere.
+
+That is a better outcome than the one feared, and still a bad one: an error naming nothing, after a
+password prompt that cannot be satisfied. Refusing by version is what turns it into a sentence
+somebody can act on, which is the whole point of shipping §1 first.
 
 This is the one part of the change that has to ship **before** anyone upgrades a database. It belongs
 in a release that precedes the one offering the upgrade, or the protection is not there when it is
 first needed.
+
+### The refusal is undone one level up
+
+6.6 also found that refusing is currently not enough, and this is a defect rather than a design note.
+`ConnectionsService.LoadConnections` catches any exception from a database load and, if a local SQL
+connections cache exists, loads **that** instead — warning "Loading from local cache in read-only
+mode". Nothing sets read-only. `UsingDatabase` stays true, the only read-only gate in the saver is
+the user's own `SQLReadOnly` setting, and the next save writes the stale cached tree back over the
+database under the legacy provider.
+
+So for exactly the population this protects — people who have loaded from SQL before, and therefore
+have a cache — §1's refusal turns into "silently work from a stale copy, then overwrite the upgraded
+database with it". The refusal is correct and lands in the wrong place.
+
+Fixing it is not part of this change. It is now `refuse-writes-from-a-cached-fallback`, which should
+land soon after §1: until it does, §1's refusal does not reach a user who has a cache. That proposal
+also carries a second finding from the same code — the cache is a full copy of every password in the
+store, and for a database with no master password it is written under the published legacy key, so
+upgrading the database does nothing for the copy in `%APPDATA%`.
+
+### A legacy database stays writable
+
+Decided while implementing, against this proposal's original wording. The reasoning above is about
+the *upgrade* — that it decides for a whole team, is irreversible without a backup, and locks out
+un-upgraded clients, so it must not be put in front of whoever opens the application first. That
+argument does not extend to refusing writes.
+
+Refusing makes nobody safer today. The weak encryption is the state these databases are already in;
+declining to write does not improve it, it stops work until an administrator acts. Saves here run on
+a debounce timer, so the refusal lands on an ordinary rename and reads as a broken release. And a
+classic connection file — the same problem, one user instead of a team — stays fully writable in this
+fork, with hardening offered rather than imposed.
+
+So a legacy database is read and written as before, and the client says once per session that it is
+storing passwords weakly, names the options page, and says what upgrading costs. The message goes to
+the message channel and never to a modal: an automatic save must not raise a dialog over unrelated
+work.
+
+The cost, stated rather than hidden: a team that never opens the SQL options page keeps the legacy
+format for ever. The options page's own status line is what addresses that, and it reaches the person
+who can actually decide.
 
 ### Upgrade lives in the SQL options page, and is never prompted
 

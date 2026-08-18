@@ -4,6 +4,8 @@ title: Options
 
 Options window which can also be named settings is the window where you can personalize your options for all of mRemoteNG. This includes how to set logging, credentials and so on. Continue reading for the details of the different options here.
 
+Open it with **File → Options...**.
+
 ## Startup/Exit
 
 Options below are for the various settings for Startup/Exit of mRemoteNG.
@@ -86,6 +88,7 @@ To understand more about SQL Server connection please see here: [SQL Configurati
 | Option | Default | Description |
 |----|----|----|
 | Use SQL Server to load & save connections | Off | Enable to fetch connections from a database. |
+| Upgrade Encryption... | — | Appears only when the connected database still stores its passwords with the old encryption. Re-encrypts them all with AES-256-GCM. See [Upgrading an existing database](../sql-configuration.md#upgrading-an-existing-database) before using it — the database can then only be opened by installations that have this feature. |
 
 ## Updates
 

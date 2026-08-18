@@ -2186,6 +2186,15 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string similar to This database still stores its passwords with the old, weak encryption... Your changes were saved in that same format, and everything continues to work as before..
+        /// </summary>
+        internal static string WarningDatabaseNotUpgradedForEncryption {
+            get {
+                return ResourceManager.GetString("WarningDatabaseNotUpgradedForEncryption", resourceCulture);
+            }
+        }
+        
+        /// <summary>
         ///   Looks up a localized string similar to The database is at version {0}, which is newer than this copy of {1} supports (up to version {2}). No connections were loaded. Upgrade {1} on this computer to open it..
         /// </summary>
         internal static string ErrorDatabaseVersionNewerThanClient {
@@ -9005,6 +9014,168 @@ namespace mRemoteNG.Resources.Language {
             }
         }
 
+        ///   Looks up a localized string naming a connection whose stored secret could not be decrypted.
+        /// </summary>
+        internal static string ErrorSqlSecretNotDecryptable {
+            get {
+                return ResourceManager.GetString("ErrorSqlSecretNotDecryptable", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Upgrade Encryption....
+        /// </summary>
+        internal static string SqlUpgradeButton {
+            get {
+                return ResourceManager.GetString("SqlUpgradeButton", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string similar to Upgrade Database Encryption.
+        /// </summary>
+        internal static string SqlUpgradeTitle {
+            get {
+                return ResourceManager.GetString("SqlUpgradeTitle", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string asking whether to re-encrypt every password in the database.
+        /// </summary>
+        internal static string SqlUpgradeInstruction {
+            get {
+                return ResourceManager.GetString("SqlUpgradeInstruction", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string explaining what the upgrade fixes.
+        /// </summary>
+        internal static string SqlUpgradeWhat {
+            get {
+                return ResourceManager.GetString("SqlUpgradeWhat", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string naming the clients that will stop being able to open the database.
+        /// </summary>
+        internal static string SqlUpgradeClients {
+            get {
+                return ResourceManager.GetString("SqlUpgradeClients", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string warning that the upgrade cannot be undone without a backup.
+        /// </summary>
+        internal static string SqlUpgradeIrreversible {
+            get {
+                return ResourceManager.GetString("SqlUpgradeIrreversible", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string naming the database master password field.
+        /// </summary>
+        internal static string SqlUpgradeMasterPasswordName {
+            get {
+                return ResourceManager.GetString("SqlUpgradeMasterPasswordName", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string confirming that nothing in the database was changed.
+        /// </summary>
+        internal static string SqlUpgradeDeclined {
+            get {
+                return ResourceManager.GetString("SqlUpgradeDeclined", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string reporting that the master password was not accepted.
+        /// </summary>
+        internal static string SqlUpgradeWrongPassword {
+            get {
+                return ResourceManager.GetString("SqlUpgradeWrongPassword", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string explaining that the database is already upgraded.
+        /// </summary>
+        internal static string SqlUpgradeNotNeeded {
+            get {
+                return ResourceManager.GetString("SqlUpgradeNotNeeded", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string explaining that the database holds no connections to upgrade.
+        /// </summary>
+        internal static string SqlUpgradeNoDatabase {
+            get {
+                return ResourceManager.GetString("SqlUpgradeNoDatabase", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string confirming the upgrade and how many connections were re-encrypted.
+        /// </summary>
+        internal static string SqlUpgradeDone {
+            get {
+                return ResourceManager.GetString("SqlUpgradeDone", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string reporting that the upgrade did not finish and changed nothing.
+        /// </summary>
+        internal static string SqlUpgradeFailed {
+            get {
+                return ResourceManager.GetString("SqlUpgradeFailed", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a database that still uses the weak encryption.
+        /// </summary>
+        internal static string SqlUpgradeStatusLegacy {
+            get {
+                return ResourceManager.GetString("SqlUpgradeStatusLegacy", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a database that uses authenticated encryption.
+        /// </summary>
+        internal static string SqlUpgradeStatusCurrent {
+            get {
+                return ResourceManager.GetString("SqlUpgradeStatusCurrent", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string reporting that the database's encryption state could not be read.
+        /// </summary>
+        internal static string SqlUpgradeStatusUnknown {
+            get {
+                return ResourceManager.GetString("SqlUpgradeStatusUnknown", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a database that holds no connections yet.
+        /// </summary>
+        internal static string SqlUpgradeStatusNoDatabase {
+            get {
+                return ResourceManager.GetString("SqlUpgradeStatusNoDatabase", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Export Uses the Classic Format.
         /// </summary>
         internal static string ExportClassicFormatTitle {
