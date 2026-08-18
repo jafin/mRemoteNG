@@ -186,15 +186,18 @@ public class SqlServerPageEncryptionStatusTests
         control.RectangleToScreen(control.ClientRectangle);
 
     [Test]
-    public void TheStatusLineWrapsRatherThanLosingItsEnd()
+    public void TheStatusLineIsTallEnoughForItsOwnWrappedText()
     {
-        // **Found by hand, at 150% scaling: the sentence was cut off mid-word.** The label was
-        // docked and a fixed height, so a status too long for the width simply lost its tail — and
-        // the tail is where the consequence is. What was on screen read "...so they are", which is
-        // worse than saying nothing, because it looks like a complete thought.
+        // **Found by hand, twice, at 150% scaling.** The status ended "…so they are", which reads
+        // like a finished sentence and is not one. The label wrapped; the row was one line tall, so
+        // the rest was painted outside it.
         //
-        // Asserted as "the whole text is present and inside its row" rather than on a line count,
-        // which would depend on the width this harness happens to give the page.
+        // The first attempt at this test asserted the wrong thing and passed against the broken
+        // page. It set AutoSize on the label — which in the application *removes* wrapping, because
+        // MrngLabel paints its own text under an extended theme and only asks for WordBreak when
+        // AutoSize is false. No extended theme is loaded here, so the base Label paint ran and the
+        // test saw a wrap the user never got. Hence the first assertion below: it pins the property
+        // the themed painter reads, which is the thing no geometry check in this harness can see.
         _retriever.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>())
             .Returns(MetaDataAt(SqlDatabaseVersionVerifier.SchemaVersion));
 
@@ -207,25 +210,28 @@ public class SqlServerPageEncryptionStatusTests
 
             PumpUntil(() => !string.IsNullOrEmpty(status.Text), "the status line should populate");
 
+            int wrapped = TextRenderer.MeasureText(status.Text, status.Font,
+                new System.Drawing.Size(status.Width, int.MaxValue),
+                TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
+
             Assert.Multiple(() =>
             {
+                Assert.That(status.AutoSize, Is.False,
+                    "MrngLabel word-wraps its themed paint only while this is false");
                 Assert.That(status.Text, Is.EqualTo(Language.SqlUpgradeStatusDefaultKey),
                     "the whole sentence, not as much of it as fits");
-                Assert.That(status.MaximumSize.Width, Is.GreaterThan(0),
-                    "the label was told what width to wrap at");
-                Assert.That(status.Right, Is.LessThanOrEqualTo(row.ClientSize.Width),
-                    "and it does not run off the end of its row");
 
-                // The precondition, asserted rather than assumed: on one line this sentence is
-                // wider than the space it has, so if the label is still a single line the end of it
-                // is not on screen. The harness fixes the form at 900px, which is what makes that
-                // deterministic — if that ever changes, this fails here rather than passing
-                // vacuously below.
-                Assert.That(TextRenderer.MeasureText(status.Text, status.Font).Width,
-                    Is.GreaterThan(status.MaximumSize.Width),
-                    "this asserts nothing unless the text is too long for the row");
-                Assert.That(status.Height, Is.GreaterThan(status.Font.Height * 3 / 2),
-                    "so it took a second line instead of losing its end");
+                // The precondition, asserted rather than assumed: this sentence does not fit on one
+                // line at the width it is given, so a one-line-tall label would be hiding the end of
+                // it. If a change to the harness or the wording ever makes it fit, this fails here
+                // rather than passing vacuously.
+                Assert.That(wrapped, Is.GreaterThan(status.Font.Height * 3 / 2),
+                    "this asserts nothing unless the text takes more than one line");
+
+                Assert.That(status.Height, Is.GreaterThanOrEqualTo(wrapped),
+                    "the label is as tall as its wrapped text");
+                Assert.That(status.Bottom, Is.LessThanOrEqualTo(row.ClientSize.Height),
+                    "and the row grew to hold it rather than clipping it");
             });
         });
     }
