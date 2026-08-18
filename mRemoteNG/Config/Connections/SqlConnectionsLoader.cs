@@ -4,14 +4,18 @@ using System.Data;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Security;
+using mRemoteNG.App;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Config.DataProviders;
 using mRemoteNG.Config.Serializers;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Sql;
 using mRemoteNG.Config.Serializers.Versioning;
 using mRemoteNG.Container;
+using mRemoteNG.Messages;
+using mRemoteNG.Resources.Language;
 using mRemoteNG.Security;
 using mRemoteNG.Security.Authentication;
+using mRemoteNG.Security.Factories;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
@@ -60,7 +64,8 @@ public class SqlConnectionsLoader : IConnectionsLoader
 
     public ConnectionTreeModel Load()
     {
-        SqlConnectionListMetaData metaData = _sqlMetaDataRetriever.GetDatabaseMetaData(_databaseConnector) ?? HandleFirstRun(_sqlMetaDataRetriever, _databaseConnector);
+        SqlConnectionListMetaData metaData = _sqlMetaDataRetriever.GetDatabaseMetaData(_databaseConnector)
+                                            ?? EmptyDatabase();
 
         bool versionSupported = _sqlDatabaseVersionVerifier.VerifyDatabaseVersion(metaData.ConfVersion);
 
@@ -98,21 +103,52 @@ public class SqlConnectionsLoader : IConnectionsLoader
         return connectionTree;
     }
 
+    /// <summary>
+    /// The key this database is read with, prompting for a master password when it needs one.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The built-in default key is a candidate only below the authenticated-encryption version.</b>
+    /// It is four characters published in mRemoteNG's own source, so a database keyed with it is
+    /// readable by anyone holding SELECT on the connections table — which on a team database is
+    /// routinely more people than are trusted with the credentials it stores. Databases already in
+    /// that state keep opening, because refusing them would destroy a team's access to their
+    /// connections in order to change how those connections are stored; the pressure to upgrade
+    /// belongs on the write path, which already refuses.
+    /// </para>
+    /// <para>
+    /// At the new version the password is asked for before anything is tried, rather than by letting
+    /// the default key fail first. Attempting it would spend one of the three attempts on a key this
+    /// database is guaranteed not to use, and would leave the code able to succeed with it if the
+    /// version gate above were ever weakened.
+    /// </para>
+    /// </remarks>
     private Optional<SecureString> GetDecryptionKey(SqlConnectionListMetaData metaData,
                                                     ICryptographyProvider cryptographyProvider)
     {
         string cipherText = metaData.Protected;
+        bool requiresMasterPassword =
+            CryptoProviderFactoryFromSqlVersion.UsesAuthenticatedEncryption(metaData.ConfVersion);
+        SecureString defaultKey = new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString();
 
-        // If Protected is empty, the database has no master password set.
-        // Return the default password directly without authentication.
-        //
-        // This stays on the legacy default key deliberately, and is the one place that still does.
-        // The connection file replaced it with a random per-file key wrapped for the Windows account
-        // that wrote it; a database is read by several people from several machines, so a per-user
-        // wrapped key would lock out everyone but whoever migrated it. Fixing this needs a shared
-        // secret rather than a per-user one, which is `require-sql-master-password`, not here.
         if (string.IsNullOrEmpty(cipherText))
-            return new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString();
+        {
+            // An empty sentinel means two different things, and the version is what separates them.
+            //
+            // Below the new version it means this database has no master password: an unprotected
+            // legacy store is keyed on the default, and that is how it has always been read.
+            //
+            // At the new version it cannot mean that, because there is no unprotected state to
+            // record — every database at this version was written with a master password. It means
+            // the metadata row was lost or replaced, and there is nothing left to check a password
+            // against. Returning the default key here would open a database that is meant to require
+            // one, which is the whole defect this exists to close.
+            if (!requiresMasterPassword)
+                return defaultKey;
+
+            Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ErrorSqlDatabaseNotInitialized);
+            return Optional<SecureString>.Empty;
+        }
 
         // The sentinel is checked by its contents, not merely by decrypting without error. The
         // legacy provider is AES-CBC with no authentication tag, so a wrong password yields valid
@@ -123,7 +159,25 @@ public class SqlConnectionsLoader : IConnectionsLoader
             PlaintextValidator = ConnectionFileDefaults.IsKnownSentinel
         };
 
-        bool authenticated = authenticator.Authenticate(new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString());
+        SecureString firstCandidate;
+
+        if (requiresMasterPassword)
+        {
+            Optional<SecureString> supplied = AuthenticationRequestor("");
+
+            // Declining the prompt is declining to open the database. Falling through to the default
+            // key would be the fallback this change removes, arrived at by a different route.
+            if (!supplied.Any() || supplied.First() is not { Length: > 0 } typed)
+                return Optional<SecureString>.Empty;
+
+            firstCandidate = typed;
+        }
+        else
+        {
+            firstCandidate = defaultKey;
+        }
+
+        bool authenticated = authenticator.Authenticate(firstCandidate);
 
         return authenticated && authenticator.LastAuthenticatedPassword is { } password
             ? password
@@ -151,9 +205,30 @@ public class SqlConnectionsLoader : IConnectionsLoader
             });
     }
 
-    private static SqlConnectionListMetaData HandleFirstRun(ISqlDatabaseMetaDataRetriever metaDataRetriever, IDatabaseConnector connector)
-    {
-        metaDataRetriever.WriteDatabaseMetaData(new RootNodeInfo(RootNodeType.Connection), connector);
-        return metaDataRetriever.GetDatabaseMetaData(connector)!;
-    }
+    /// <summary>
+    /// What to read when the database holds no metadata row: nothing, from an empty table.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>This used to write the row, and could not write a usable one.</b> It created a metadata
+    /// row from a root node with no master password — which at the authenticated version is the one
+    /// state that cannot be recorded, because the only key available is the constant published in
+    /// this application's source. The database was left claiming a format nothing held the key to.
+    /// </para>
+    /// <para>
+    /// Nothing is lost by not writing it. The schema is created by the metadata read itself; the row
+    /// is written by the first save, which has the user's own tree and therefore its master
+    /// password. Until then there is nothing in the database to load, and this describes exactly
+    /// that: the schema version this build writes, so the legacy provider, and no sentinel, so no
+    /// password is asked for on a database nothing has ever written to.
+    /// </para>
+    /// </remarks>
+    private static SqlConnectionListMetaData EmptyDatabase() =>
+        new()
+        {
+            Name = "Connections",
+            Protected = "",
+            Export = false,
+            ConfVersion = SqlDatabaseVersionVerifier.SchemaVersion
+        };
 }

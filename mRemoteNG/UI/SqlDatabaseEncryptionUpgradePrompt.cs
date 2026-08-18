@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Globalization;
 using System.Linq;
 using System.Runtime.Versioning;
@@ -54,6 +54,14 @@ public static class SqlDatabaseEncryptionUpgradePrompt
     internal static Func<string, Optional<SecureString>> PasswordPrompt { get; set; } =
         name => MiscTools.PasswordDialog(name, verify: false);
 
+    /// <summary>
+    /// Collects a master password for a database that has none. Verified by re-entry, because this
+    /// one is being chosen rather than recalled and there is nothing to check it against later — a
+    /// mistyped password here is a database nobody can open.
+    /// </summary>
+    internal static Func<string, Optional<SecureString>> NewPasswordPrompt { get; set; } =
+        name => MiscTools.PasswordDialog(name, verify: true);
+
     /// <summary>Shown so tests can assert what was said rather than only what was done.</summary>
     internal static Action<Control?, string, string> ShowMessage { get; set; } =
         (owner, text, title) => MessageBox.Show(owner, text, title, MessageBoxButtons.OK,
@@ -87,13 +95,17 @@ public static class SqlDatabaseEncryptionUpgradePrompt
                 return;
             }
 
-            if (!Confirm(owner, BuildExplanation()))
+            // Whether this database already has a master password decides both what the warning has
+            // to say and what has to be collected, so it is settled before anything is shown.
+            bool hasMasterPassword = SqlDatabaseEncryptionUpgrade.RequiresMasterPassword(metaData);
+
+            if (!Confirm(owner, BuildExplanation(settingMasterPassword: !hasMasterPassword)))
             {
                 ShowMessage(owner, Language.SqlUpgradeDeclined, Language.SqlUpgradeTitle);
                 return;
             }
 
-            Upgrade(owner, connector, metaData);
+            Upgrade(owner, connector, metaData, hasMasterPassword);
         }
         catch (Exception ex)
         {
@@ -103,17 +115,26 @@ public static class SqlDatabaseEncryptionUpgradePrompt
         }
     }
 
+    /// <summary>
+    /// Collects what is needed and performs the upgrade.
+    /// </summary>
+    /// <param name="hasMasterPassword">
+    /// Whether the database already has one. When it does, that password is recalled and kept; when
+    /// it does not, one is chosen now — the upgrade sets a master password rather than carrying the
+    /// built-in default key forward under a stronger cipher.
+    /// </param>
     private static void Upgrade(Control? owner, IDatabaseConnector connector,
-                                SqlConnectionListMetaData metaData)
+                                SqlConnectionListMetaData metaData, bool hasMasterPassword)
     {
-        // Empty rather than null when the database has no master password: Apply authenticates
-        // whatever it is given against the sentinel, and for an unprotected store that check passes
-        // on the built-in default key and ignores this entirely.
-        SecureString masterPassword = new();
+        // Empty for a database with no master password: Apply authenticates whatever it is given
+        // against the sentinel, and for an unprotected store that check passes on the built-in
+        // default key and ignores this entirely.
+        SecureString existingPassword = new();
+        SecureString? newMasterPassword = null;
 
         try
         {
-            if (SqlDatabaseEncryptionUpgrade.RequiresMasterPassword(metaData))
+            if (hasMasterPassword)
             {
                 Optional<SecureString> supplied = PasswordPrompt(Language.SqlUpgradeMasterPasswordName);
 
@@ -125,15 +146,33 @@ public static class SqlDatabaseEncryptionUpgradePrompt
                     return;
                 }
 
-                masterPassword.Dispose();
-                masterPassword = typed;
+                existingPassword.Dispose();
+                existingPassword = typed;
+                newMasterPassword = typed;
+            }
+            else
+            {
+                Optional<SecureString> chosen = NewPasswordPrompt(Language.SqlUpgradeSetPasswordName);
+
+                if (!chosen.Any() || chosen.First() is not { Length: > 0 } picked)
+                {
+                    // Its own message rather than the generic decline: refusing here is refusing the
+                    // password, and somebody who expected the upgrade to proceed without one needs
+                    // to know that it cannot.
+                    ShowMessage(owner, Language.SqlUpgradePasswordNotSet, Language.SqlUpgradeTitle);
+                    return;
+                }
+
+                newMasterPassword = picked;
             }
 
-            int rewritten = SqlDatabaseEncryptionUpgrade.Apply(connector, masterPassword, MetaDataRetriever);
+            int rewritten = SqlDatabaseEncryptionUpgrade.Apply(connector, existingPassword,
+                                                               newMasterPassword, MetaDataRetriever);
 
             Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
                 $"The SQL database was upgraded to authenticated encryption. {rewritten} connections " +
-                "were re-encrypted. Clients that have not taken this change can no longer open it.",
+                "were re-encrypted. It now requires its master password, and clients that have not " +
+                "taken this change can no longer open it.",
                 true);
 
             ShowMessage(owner,
@@ -148,7 +187,12 @@ public static class SqlDatabaseEncryptionUpgradePrompt
         }
         finally
         {
-            masterPassword.Dispose();
+            existingPassword.Dispose();
+
+            // Only when it is a different object. For a database that already had one, both names
+            // refer to the password just disposed.
+            if (!ReferenceEquals(newMasterPassword, existingPassword))
+                newMasterPassword?.Dispose();
         }
     }
 
@@ -182,9 +226,18 @@ public static class SqlDatabaseEncryptionUpgradePrompt
             if (metaData is null)
                 return (false, Language.SqlUpgradeStatusNoDatabase);
 
-            return SqlDatabaseEncryptionUpgrade.IsAvailableFor(metaData)
-                ? (true, Language.SqlUpgradeStatusLegacy)
-                : (false, Language.SqlUpgradeStatusCurrent);
+            if (!SqlDatabaseEncryptionUpgrade.IsAvailableFor(metaData))
+                return (false, Language.SqlUpgradeStatusCurrent);
+
+            // Two different states, and the weaker one is the one that reads as fine. A database
+            // with no master password is encrypted under a constant published in this application's
+            // source, so "old, weak encryption" understates it to the point of being misleading:
+            // there is nothing to break. An administrator who does not already know what that key
+            // is will not act on a sentence about cipher strength, so this says what it means for
+            // the passwords instead.
+            return (true, SqlDatabaseEncryptionUpgrade.RequiresMasterPassword(metaData)
+                ? Language.SqlUpgradeStatusLegacy
+                : Language.SqlUpgradeStatusDefaultKey);
         }
         catch (Exception ex)
         {
@@ -202,8 +255,22 @@ public static class SqlDatabaseEncryptionUpgradePrompt
     /// The confirmation text. Assembled here rather than at the dialog so a test can assert what a
     /// security warning says without needing a window.
     /// </summary>
-    internal static string BuildExplanation() =>
+    /// <param name="settingMasterPassword">
+    /// Adds what setting a master password costs: everyone who uses the database needs it, the
+    /// administrator has to hand it out, and losing it loses the connections. Said here rather than
+    /// at the password box, because by then the decision has been taken and the box is the wrong
+    /// place to discover that colleagues are about to be locked out.
+    /// </param>
+    internal static string BuildExplanation(bool settingMasterPassword) =>
         string.Join(Environment.NewLine + Environment.NewLine,
-            Language.SqlUpgradeInstruction, Language.SqlUpgradeWhat, Language.SqlUpgradeClients,
-            Language.SqlUpgradeIrreversible);
+            settingMasterPassword
+                ? new[]
+                {
+                    Language.SqlUpgradeInstruction, Language.SqlUpgradeWhat, Language.SqlUpgradeDistribute,
+                    Language.SqlUpgradeClients, Language.SqlUpgradeIrreversible
+                }
+                : [
+                    Language.SqlUpgradeInstruction, Language.SqlUpgradeWhat, Language.SqlUpgradeClients,
+                    Language.SqlUpgradeIrreversible
+                ]);
 }

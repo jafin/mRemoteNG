@@ -3271,6 +3271,26 @@ You are deciding this for everybody who connects to this database, including col
   <data name="SqlUpgradeStatusNoDatabase" xml:space="preserve">
     <value>This database holds no mRemoteNG connections yet.</value>
   </data>
+  <data name="SqlUpgradeStatusDefaultKey" xml:space="preserve">
+    <value>The passwords in this database are not protected. It has no master password, so they are encrypted with a key that is built into mRemoteNG and published in its source code - anyone who can read the database can read them.</value>
+  </data>
+  <data name="SqlUpgradeSetPasswordName" xml:space="preserve">
+    <value>New database master password</value>
+  </data>
+  <data name="SqlUpgradeDistribute" xml:space="preserve">
+    <value>This database has no master password, so you are about to set one. Everyone who uses it will be asked for that password the next time they open mRemoteNG, and you have to give it to them yourself - mRemoteNG cannot distribute it for you.
+
+There is no way back in. If the master password is lost, nobody can decrypt the connections in this database, including you. Today they are recoverable precisely because the key is public, and that stops being true here.</value>
+  </data>
+  <data name="SqlUpgradePasswordNotSet" xml:space="preserve">
+    <value>No master password was set, so nothing was changed. Upgrading cannot protect this database without one - it would re-encrypt every password under the same built-in key it uses today.</value>
+  </data>
+  <data name="ErrorSqlDatabaseNotInitialized" xml:space="preserve">
+    <value>This database records that it uses authenticated encryption, but holds nothing to check a master password against, so it cannot be opened. Its metadata row was lost or replaced. Restore the database from a backup.</value>
+  </data>
+  <data name="ErrorSqlMasterPasswordRequired" xml:space="preserve">
+    <value>A SQL database that uses authenticated encryption must have a master password, and this connection tree has none - so nothing was saved. Select the topmost node of the connection tree, set Password to Yes in the properties panel and enter a password, then save again.</value>
+  </data>
   <data name="ExportClassicFormatTitle" xml:space="preserve">
     <value>Export Uses the Classic Format</value>
   </data>

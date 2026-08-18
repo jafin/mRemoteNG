@@ -28,6 +28,7 @@ The list below includes databases that are officially supported. Others may alre
 - Fill in your SQL Server hostname or ip address.
 - If you do not use your Windows logon info to authenticate against the SQL Server fill in the correct Username and Password.
 - Click OK to apply the changes. The main window title should now change to "mRemoteNG \| SQL Server".
+- Set a master password for the database before saving — see [Setting the master password](#setting-the-master-password). A new database will not save without one.
 - Now click on File - Save to update the tables on your SQL Server with the data from the loaded connections xml file. (Do not click File - New, this doesn't work yet)
 - You should now be able to do everything you were able to do with the XML storage plus see the changes live on another mRemoteNG instance that is connected to the same Database.
 
@@ -76,6 +77,11 @@ Databases created from now on use **AES-256-GCM**. As well as being much harder 
 detects any change to the stored text, so a password altered directly in the database is reported as
 a failure instead of being handed to a connection.
 
+They are also protected by a **master password that you choose**. Everyone who opens the database is
+asked for it. This matters as much as the cipher does: a database without one is encrypted with a key
+that is built into mRemoteNG and published in its source code, so anyone who can read the database
+can read every password in it.
+
 Databases created by earlier versions use the older scheme, and keep working. You can still open
 them, edit them and save to them exactly as before. The first save in each session adds one warning
 to the notification panel telling you the database is still on the old format; nothing is refused,
@@ -89,6 +95,39 @@ database holds passwords that matter, upgrade it.
 
 :::
 
+### Setting the master password
+
+:::info Version
+
+**New.** Earlier versions had no master password on a SQL database unless you set one, and did not
+say what that meant.
+
+:::
+
+The master password belongs to the connection tree, not to the SQL login:
+
+1. Select the **topmost node** of the connection tree — the one named after your connection file or
+   database.
+2. In the properties panel, set **Password** to **Yes**.
+3. Type the password when prompted.
+
+:::warning
+
+**Give the password to everyone who uses the database before you save.** They are asked for it the
+next time they open mRemoteNG, and mRemoteNG has no way to distribute it for you.
+
+**There is no recovery.** If the master password is lost, nobody can decrypt the connections in that
+database — including you. Keep it where you keep your other irreplaceable credentials.
+
+:::
+
+If you save to a new SQL database without one, nothing is written and mRemoteNG tells you to set it.
+That is deliberate: the only key it could otherwise use is the built-in one, which would leave every
+stored password readable by anyone with access to the database.
+
+Databases created by earlier versions are unaffected. They keep opening exactly as they do now, with
+or without a master password, until you upgrade them.
+
 ### Upgrading an existing database
 
 :::info Version
@@ -99,8 +138,15 @@ stores its passwords.
 :::
 
 Go to **File → Options → SQL Server** and click **Apply**. Once mRemoteNG has connected, a line
-appears under the connection status saying which format the database uses. If it is still on the old
-one, an **Upgrade Encryption...** button appears beside it.
+appears under the connection status saying how the database stores its passwords:
+
+| The line says | What it means |
+|---|---|
+| Passwords in this database use authenticated encryption | Up to date. Nothing to do. |
+| Passwords in this database use the old, weak encryption | It has a master password, but the encryption is out of date. |
+| The passwords in this database are not protected | It has **no** master password, so they are encrypted with the key built into mRemoteNG. |
+
+For either of the last two an **Upgrade Encryption...** button appears beside the line.
 
 Before you click it:
 
@@ -112,10 +158,18 @@ Before you click it:
   backup is the only way back.
 - Have the **database master password** to hand if the database has one. You are asked for it, and it
   is checked before anything is rewritten.
+- If the database does **not** have one, you are asked to choose one now, and to type it twice. The
+  upgrade cannot protect the database without it — re-encrypting under the built-in key would leave
+  every password exactly as readable as it is today. Everything under
+  [Setting the master password](#setting-the-master-password) applies, including that it must reach
+  your colleagues and cannot be recovered if lost.
 
 The upgrade re-encrypts every password in one go. Either all of it succeeds or none of it does, so
 the database is never left half-converted. No connection needs editing afterwards and nothing else
 about the database changes.
+
+Afterwards, everyone who opens the database is asked for the master password. Opening it without one
+is no longer possible, and that is the point of the upgrade rather than a side effect of it.
 
 :::note
 

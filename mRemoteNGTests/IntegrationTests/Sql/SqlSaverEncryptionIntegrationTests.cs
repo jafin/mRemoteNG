@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
@@ -48,6 +48,17 @@ public class SqlSaverEncryptionIntegrationTests
 {
     private const string ConnectionPassword = "hunter2";
 
+    /// <summary>
+    /// What a database at the authenticated-encryption version is keyed on.
+    /// </summary>
+    /// <remarks>
+    /// There is no unprotected state at that version: a store keyed on the built-in default is
+    /// readable by anyone who can read the table, so both the seeding and the saving below carry a
+    /// master password once the database is at it. Below that version the default key is still what
+    /// a store with no master password uses, and these tests still exercise that.
+    /// </remarks>
+    private const string MasterPassword = "the database master password";
+
     private MSSqlDatabaseConnector _connector = null!;
     private readonly SqlDatabaseMetaDataRetriever _retriever = new();
 
@@ -59,6 +70,9 @@ public class SqlSaverEncryptionIntegrationTests
     private string _originalAuthType = "";
     private bool _originalReadOnly;
     private string _catalog = "";
+
+    /// <summary>The key the seeded database is on, which is what the save has to be given too.</summary>
+    private string _storeKey = "";
 
     [SetUp]
     public void Setup()
@@ -205,14 +219,18 @@ public class SqlSaverEncryptionIntegrationTests
     /// <summary>Puts the database at a version, through the same path the application uses.</summary>
     private void SeedDatabaseAt(Version version)
     {
+        _storeKey = CryptoProviderFactoryFromSqlVersion.UsesAuthenticatedEncryption(version)
+            ? MasterPassword
+            : new RootNodeInfo(RootNodeType.Connection).DefaultPassword;
+
         _retriever.GetDatabaseMetaData(_connector);
-        _retriever.WriteDatabaseMetaData(new RootNodeInfo(RootNodeType.Connection), _connector, null, version);
+        _retriever.WriteDatabaseMetaData(RootOnTheStoreKey(), _connector, null, version);
     }
 
-    private static void SaveOneConnection()
+    private void SaveOneConnection()
     {
         ConnectionTreeModel model = new();
-        RootNodeInfo root = new(RootNodeType.Connection);
+        RootNodeInfo root = RootOnTheStoreKey();
         root.AddChild(new ConnectionInfo { Name = "server", Password = ConnectionPassword });
         model.AddRootNode(root);
 
@@ -222,8 +240,15 @@ public class SqlSaverEncryptionIntegrationTests
             Substitute.For<IDataProvider<string>>()).Save(model);
     }
 
-    private static SecureString MasterKey() =>
-        new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString();
+    /// <summary>
+    /// A root node on the key the seeded database uses. Setting <c>PasswordString</c> to the default
+    /// leaves <c>Password</c> false, which is exactly the unprotected state a legacy store records —
+    /// so this expresses both cases without a branch.
+    /// </summary>
+    private RootNodeInfo RootOnTheStoreKey() =>
+        new(RootNodeType.Connection) { PasswordString = _storeKey };
+
+    private SecureString MasterKey() => _storeKey.ConvertToSecureString();
 
     private string DecryptStoredPasswordWith(ICryptographyProvider provider) =>
         provider.Decrypt(StoredPasswordCiphertext(), MasterKey());

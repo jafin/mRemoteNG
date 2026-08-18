@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Windows.Forms;
@@ -95,7 +95,9 @@ public class SqlServerPageEncryptionStatusTests
 
             Assert.Multiple(() =>
             {
-                Assert.That(status.Text, Is.EqualTo(Language.SqlUpgradeStatusLegacy));
+                // The fixture's database has no master password, so this is the stronger of the
+                // two sentences: not "old encryption" but "these passwords are not protected".
+                Assert.That(status.Text, Is.EqualTo(Language.SqlUpgradeStatusDefaultKey));
                 Assert.That(upgrade.Visible, "and the upgrade is offered");
             });
         });

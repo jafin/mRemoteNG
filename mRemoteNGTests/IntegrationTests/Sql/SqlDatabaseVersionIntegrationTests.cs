@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.Versioning;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Sql;
@@ -64,8 +64,13 @@ public class SqlDatabaseVersionIntegrationTests
         // build could read and — while the refusal stood — never write to again. The refusal is now
         // a warning, but the reasoning survives: nothing reads a database this build has only just
         // created, so there is nobody to stay compatible with and no reason to start it weak.
+        // With a master password, because that is what a database at this version is keyed on and
+        // what any real save carries. An unprotected root is refused here rather than recorded, and
+        // `SqlMasterPasswordRequirementTests` is where that refusal is asserted.
+        RootNodeInfo root = new(RootNodeType.Connection) { PasswordString = "the master password" };
+
         _retriever.GetDatabaseMetaData(_connector);
-        _retriever.WriteDatabaseMetaData(new RootNodeInfo(RootNodeType.Connection), _connector, null);
+        _retriever.WriteDatabaseMetaData(root, _connector, null);
 
         SqlConnectionListMetaData written = _retriever.GetDatabaseMetaData(_connector)!;
 

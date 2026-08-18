@@ -355,60 +355,48 @@ public class SqlConnectionsLoaderIntegrationTests
     }
 
     [Test]
-    public void Load_WhenMetaDataIsNull_CallsWriteDatabaseMetaData()
+    public void Load_WhenMetaDataIsNull_WritesNothingToTheDatabase()
     {
-        // Arrange
-        var masterPassword = new SecureString();
-        "sqlpass".ToCharArray().ToList().ForEach(masterPassword.AppendChar);
-        masterPassword.MakeReadOnly();
-
-        // First call returns null (first run), second returns valid metadata
+        // **Reversed deliberately.** This asserted that a first run wrote the metadata row, and that
+        // row could not be a usable one: it was built from a root node with no master password, so
+        // at the authenticated version — which is what it recorded — there was no key to write it
+        // under except the constant published in this application's source. The database was left
+        // claiming a format nothing held the key to, and the next load could not open it.
+        //
+        // Nothing is lost by not writing. The schema is created by the metadata read itself, and the
+        // row is written by the first save, which has the user's own tree and therefore its master
+        // password. Until then the database holds nothing to load.
         _metaDataRetrieverMock.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>())
-            .Returns(null, CreateMetaData(masterPassword));
+            .Returns((SqlConnectionListMetaData?)null);
+        _sqlDataProviderMock.Load().Returns(new DataTable());
 
-        var connectionInfo = new ConnectionInfoAlias { Name = "Test", Protocol = mRemoteNG.Connection.Protocol.ProtocolType.RDP };
-        _sqlDataProviderMock.Load()
-            .Returns(CreateEncryptedConnectionsDataTable(masterPassword, connectionInfo));
+        SqlConnectionsLoader loader = CreateLoader(authRequestor: _ =>
+            throw new InvalidOperationException("a database nothing has written to must not ask for a password"));
 
-        var loader = CreateLoader(authRequestor: (filename) => new Optional<SecureString>(masterPassword));
+        Assert.DoesNotThrow(() => loader.Load());
 
-        // Act
-        loader.Load();
-
-        // Assert
-        _metaDataRetrieverMock.Received(1).WriteDatabaseMetaData(Arg.Any<RootNodeInfo>(), Arg.Any<IDatabaseConnector>());
+        _metaDataRetrieverMock.DidNotReceive()
+            .WriteDatabaseMetaData(Arg.Any<RootNodeInfo>(), Arg.Any<IDatabaseConnector>());
     }
 
     [Test]
-    public void Load_WhenMetaDataIsNull_WithOdbcConnector_CallsWriteDatabaseMetaData()
+    public void Load_UsesTheConnectorItWasGiven()
     {
-        // Arrange
-        var masterPassword = new SecureString();
-        "sqlpass".ToCharArray().ToList().ForEach(masterPassword.AppendChar);
-        masterPassword.MakeReadOnly();
-
-        using var odbcConnector = new OdbcDatabaseConnector(
+        // What remained worth keeping from the ODBC half of the pair above: the loader reads through
+        // the connector it was constructed with rather than one of its own making.
+        using OdbcDatabaseConnector odbcConnector = new(
             "DSN=SqlConnectionsLoaderIntegrationTests",
             "mremoteng",
             "user",
             "password");
 
         _metaDataRetrieverMock.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>())
-            .Returns(null, CreateMetaData(masterPassword));
+            .Returns((SqlConnectionListMetaData?)null);
+        _sqlDataProviderMock.Load().Returns(new DataTable());
 
-        var connectionInfo = new ConnectionInfoAlias { Name = "Test", Protocol = mRemoteNG.Connection.Protocol.ProtocolType.RDP };
-        _sqlDataProviderMock.Load()
-            .Returns(CreateEncryptedConnectionsDataTable(masterPassword, connectionInfo));
+        CreateLoader(odbcConnector).Load();
 
-        var loader = CreateLoader(odbcConnector, (filename) => new Optional<SecureString>(masterPassword));
-
-        // Act
-        loader.Load();
-
-        // Assert
-        _metaDataRetrieverMock.Received(1)
-            .WriteDatabaseMetaData(
-                Arg.Any<RootNodeInfo>(),
-                Arg.Is<IDatabaseConnector>(connector => ReferenceEquals(connector, odbcConnector)));
+        _metaDataRetrieverMock.Received(1).GetDatabaseMetaData(
+            Arg.Is<IDatabaseConnector>(connector => ReferenceEquals(connector, odbcConnector)));
     }
 }

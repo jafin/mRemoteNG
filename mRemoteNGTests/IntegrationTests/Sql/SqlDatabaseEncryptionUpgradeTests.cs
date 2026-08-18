@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
@@ -41,6 +41,13 @@ public class SqlDatabaseEncryptionUpgradeTests
     private const string FirstPassword = "hunter2";
     private const string SecondPassword = "correct horse battery staple";
 
+    /// <summary>
+    /// What an unprotected database is keyed on afterwards. The upgrade sets a master password; it
+    /// does not carry the built-in default key forward under a stronger cipher, which would leave
+    /// every secret readable by anyone who can read the table.
+    /// </summary>
+    private const string ChosenMaster = "a master password the administrator picked";
+
     private MSSqlDatabaseConnector _connector = null!;
     private readonly SqlDatabaseMetaDataRetriever _retriever = new();
 
@@ -68,15 +75,18 @@ public class SqlDatabaseEncryptionUpgradeTests
         InsertLegacyConnection("one", FirstPassword);
         InsertLegacyConnection("two", SecondPassword);
 
-        int rewritten = SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), _retriever);
+        int rewritten = SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), Master(), _retriever);
 
         Assert.Multiple(() =>
         {
             Assert.That(rewritten, Is.EqualTo(2));
             Assert.That(Version(), Is.EqualTo(CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion));
-            Assert.That(Aead().Decrypt(StoredPassword("one"), DefaultKey()), Is.EqualTo(FirstPassword));
-            Assert.That(Aead().Decrypt(StoredPassword("two"), DefaultKey()), Is.EqualTo(SecondPassword));
+            Assert.That(Aead().Decrypt(StoredPassword("one"), Master()), Is.EqualTo(FirstPassword));
+            Assert.That(Aead().Decrypt(StoredPassword("two"), Master()), Is.EqualTo(SecondPassword));
         });
+
+        Assert.Throws<EncryptionException>(() => Aead().Decrypt(StoredPassword("one"), DefaultKey()),
+            "and the published default key no longer opens what it used to");
     }
 
     [Test]
@@ -88,12 +98,15 @@ public class SqlDatabaseEncryptionUpgradeTests
         // cracking oracle for whoever can read the table.
         InsertLegacyConnection("one", FirstPassword);
 
-        SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), _retriever);
+        SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), Master(), _retriever);
 
         SqlConnectionListMetaData metaData = _retriever.GetDatabaseMetaData(_connector)!;
 
-        Assert.That(Aead().Decrypt(metaData.Protected, DefaultKey()),
-            Is.EqualTo(ConnectionFileDefaults.NotProtectedSentinel));
+        // Protected, not unprotected: a database with no master password gets one here, so the
+        // sentinel that records the fact has to change with it. Left as "not protected", the next
+        // open would accept the built-in default key and the upgrade would have achieved nothing.
+        Assert.That(Aead().Decrypt(metaData.Protected, Master()),
+            Is.EqualTo(ConnectionFileDefaults.ProtectedSentinel));
     }
 
     [Test]
@@ -104,7 +117,7 @@ public class SqlDatabaseEncryptionUpgradeTests
         // comparing the columns — a diff, a backup, a report.
         InsertLegacyConnection("one", FirstPassword);
 
-        SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), _retriever);
+        SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), Master(), _retriever);
 
         Assert.That(StoredColumn("one", "RDGatewayPassword"), Is.Empty);
     }
@@ -122,7 +135,7 @@ public class SqlDatabaseEncryptionUpgradeTests
 
         Assert.Throws<EncryptionException>(() =>
             SqlDatabaseEncryptionUpgrade.Apply(_connector, "not the master password".ConvertToSecureString(),
-                                               _retriever));
+                                               Master(), _retriever));
 
         Assert.Multiple(() =>
         {
@@ -142,7 +155,8 @@ public class SqlDatabaseEncryptionUpgradeTests
         SeedMasterPassword(master);
         InsertLegacyConnection("one", FirstPassword, master);
 
-        SqlDatabaseEncryptionUpgrade.Apply(_connector, master.ConvertToSecureString(), _retriever);
+        SqlDatabaseEncryptionUpgrade.Apply(_connector, master.ConvertToSecureString(),
+                                           master.ConvertToSecureString(), _retriever);
 
         SqlConnectionListMetaData metaData = _retriever.GetDatabaseMetaData(_connector)!;
 
@@ -167,7 +181,7 @@ public class SqlDatabaseEncryptionUpgradeTests
         string firstBefore = StoredPassword("one");
 
         Assert.Throws<EncryptionException>(
-            () => SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), _retriever));
+            () => SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), Master(), _retriever));
 
         Assert.Multiple(() =>
         {
@@ -186,10 +200,10 @@ public class SqlDatabaseEncryptionUpgradeTests
         // Running it twice would decrypt AEAD ciphertext with the legacy provider. That does not
         // fail cleanly — AES-CBC has no tag — so it would write rubbish over every secret.
         InsertLegacyConnection("one", FirstPassword);
-        SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), _retriever);
+        SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), Master(), _retriever);
 
         Assert.Throws<ArgumentException>(
-            () => SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), _retriever));
+            () => SqlDatabaseEncryptionUpgrade.Apply(_connector, Master(), Master(), _retriever));
     }
 
     [Test]
@@ -197,7 +211,7 @@ public class SqlDatabaseEncryptionUpgradeTests
     {
         // Nothing to rewrite, but the marker still moves — otherwise the next save would write the
         // legacy format into a database somebody has just chosen to upgrade.
-        int rewritten = SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), _retriever);
+        int rewritten = SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), Master(), _retriever);
 
         Assert.Multiple(() =>
         {
@@ -206,6 +220,44 @@ public class SqlDatabaseEncryptionUpgradeTests
                 Is.EqualTo(CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion));
         });
     }
+
+    [Test]
+    public void TheUpgradeRefusesWithoutAMasterPassword()
+    {
+        // **What this whole change is for.** Re-encrypting every secret with AES-256-GCM under the
+        // key published in mRemoteNG's source would satisfy the letter of "upgraded" and leave every
+        // password in the database exactly as readable as it is today. The cipher was never the only
+        // weakness; the key was the larger one.
+        InsertLegacyConnection("one", FirstPassword);
+        string before = StoredPassword("one");
+
+        Assert.Throws<ArgumentException>(() =>
+            SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), new SecureString(), _retriever));
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(StoredPassword("one"), Is.EqualTo(before), "not one byte");
+            Assert.That(Version(), Is.EqualTo(SqlDatabaseVersionVerifier.SchemaVersion),
+                "and the marker did not move, so the database still opens");
+        });
+    }
+
+    [Test]
+    public void TheUpgradeRefusesTheBuiltInKeyAsAMasterPassword()
+    {
+        // The same destination reached by hand. Caught here rather than further down, where it stops
+        // looking like a password decision: the root node's own setter reads that value as "no
+        // password set", so the refusal would arrive as a complaint about a connection tree the
+        // administrator never touched.
+        InsertLegacyConnection("one", FirstPassword);
+
+        Assert.Throws<ArgumentException>(() =>
+            SqlDatabaseEncryptionUpgrade.Apply(_connector, DefaultKey(), DefaultKey(), _retriever));
+
+        Assert.That(Version(), Is.EqualTo(SqlDatabaseVersionVerifier.SchemaVersion));
+    }
+
+    private static SecureString Master() => ChosenMaster.ConvertToSecureString();
 
     private static SecureString DefaultKey() =>
         new RootNodeInfo(RootNodeType.Connection).DefaultPassword.ConvertToSecureString();

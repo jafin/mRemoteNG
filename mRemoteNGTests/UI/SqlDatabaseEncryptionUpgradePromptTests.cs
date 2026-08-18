@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Runtime.Versioning;
 using System.Security;
@@ -41,6 +41,7 @@ public class SqlDatabaseEncryptionUpgradePromptTests
     private Func<IDatabaseConnector> _originalConnector = null!;
     private ISqlDatabaseMetaDataRetriever _originalRetriever = null!;
     private Func<string, Optional<SecureString>> _originalPasswordPrompt = null!;
+    private Func<string, Optional<SecureString>> _originalNewPasswordPrompt = null!;
     private Action<Control?, string, string> _originalShowMessage = null!;
     private Func<Control?, string, bool> _originalConfirm = null!;
 
@@ -48,6 +49,7 @@ public class SqlDatabaseEncryptionUpgradePromptTests
     private readonly List<string> _messagesShown = [];
     private int _confirmationsAsked;
     private int _passwordsAsked;
+    private int _newPasswordsAsked;
 
     [SetUp]
     public void Setup()
@@ -55,12 +57,14 @@ public class SqlDatabaseEncryptionUpgradePromptTests
         _originalConnector = SqlDatabaseEncryptionUpgradePrompt.Connector;
         _originalRetriever = SqlDatabaseEncryptionUpgradePrompt.MetaDataRetriever;
         _originalPasswordPrompt = SqlDatabaseEncryptionUpgradePrompt.PasswordPrompt;
+        _originalNewPasswordPrompt = SqlDatabaseEncryptionUpgradePrompt.NewPasswordPrompt;
         _originalShowMessage = SqlDatabaseEncryptionUpgradePrompt.ShowMessage;
         _originalConfirm = SqlDatabaseEncryptionUpgradePrompt.Confirm;
 
         _messagesShown.Clear();
         _confirmationsAsked = 0;
         _passwordsAsked = 0;
+        _newPasswordsAsked = 0;
 
         _retriever = Substitute.For<ISqlDatabaseMetaDataRetriever>();
 
@@ -79,6 +83,12 @@ public class SqlDatabaseEncryptionUpgradePromptTests
             _passwordsAsked++;
             return Optional<SecureString>.Empty;
         };
+
+        SqlDatabaseEncryptionUpgradePrompt.NewPasswordPrompt = _ =>
+        {
+            _newPasswordsAsked++;
+            return Optional<SecureString>.Empty;
+        };
     }
 
     [TearDown]
@@ -87,6 +97,7 @@ public class SqlDatabaseEncryptionUpgradePromptTests
         SqlDatabaseEncryptionUpgradePrompt.Connector = _originalConnector;
         SqlDatabaseEncryptionUpgradePrompt.MetaDataRetriever = _originalRetriever;
         SqlDatabaseEncryptionUpgradePrompt.PasswordPrompt = _originalPasswordPrompt;
+        SqlDatabaseEncryptionUpgradePrompt.NewPasswordPrompt = _originalNewPasswordPrompt;
         SqlDatabaseEncryptionUpgradePrompt.ShowMessage = _originalShowMessage;
         SqlDatabaseEncryptionUpgradePrompt.Confirm = _originalConfirm;
     }
@@ -98,7 +109,7 @@ public class SqlDatabaseEncryptionUpgradePromptTests
         // any of these is exactly the change this test exists to stop: nobody can discover for
         // themselves, before acting, that an upgrade here reaches colleagues who never installed
         // this fork and cannot be walked back.
-        string explanation = SqlDatabaseEncryptionUpgradePrompt.BuildExplanation();
+        string explanation = SqlDatabaseEncryptionUpgradePrompt.BuildExplanation(settingMasterPassword: false);
 
         Assert.Multiple(() =>
         {
@@ -110,6 +121,65 @@ public class SqlDatabaseEncryptionUpgradePromptTests
                 "and that there is no way back from inside the application");
             Assert.That(explanation, Does.Contain("Back the database up"),
                 "and what to do about that before continuing");
+        });
+    }
+
+    [Test]
+    public void SettingAMasterPasswordSaysWhatThatCostsBeforeItIsSet()
+    {
+        // A database with no master password gets one here, and that lands on people who are not in
+        // the room: everyone who uses it needs the password, a human has to hand it out, and losing
+        // it loses the connections outright — where today they are recoverable precisely because the
+        // key is public. Said at the confirmation and not at the password box, because by the time a
+        // box is on screen the decision has already been taken.
+        string explanation = SqlDatabaseEncryptionUpgradePrompt.BuildExplanation(settingMasterPassword: true);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(explanation, Does.Contain("give it to them"),
+                "that distributing the password is the administrator's job");
+            Assert.That(explanation, Does.Contain("nobody can decrypt"),
+                "and that a lost master password is not recoverable");
+            Assert.That(explanation, Does.Contain("Back the database up"),
+                "without having lost anything the other warning said");
+        });
+    }
+
+    [Test]
+    public void ADatabaseWithNoMasterPasswordIsAskedToSetOne()
+    {
+        // The upgrade sets a master password rather than re-encrypting under the published default
+        // key. Which prompt appears is the whole difference: one recalls a password, the other
+        // chooses one and verifies it by re-entry.
+        _retriever.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>())
+            .Returns(MetaDataAt(SqlDatabaseVersionVerifier.SchemaVersion));
+
+        SqlDatabaseEncryptionUpgradePrompt.Ask(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_newPasswordsAsked, Is.EqualTo(1), "asked to choose one");
+            Assert.That(_passwordsAsked, Is.Zero, "and not asked to recall one it does not have");
+        });
+    }
+
+    [Test]
+    public void RefusingToSetAMasterPasswordAbandonsTheUpgrade()
+    {
+        // Not the generic decline message. Somebody who expected this to proceed without a password
+        // has to be told that it cannot: upgrading the cipher while keeping the published key would
+        // leave every secret exactly as readable as it is today.
+        _retriever.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>())
+            .Returns(MetaDataAt(SqlDatabaseVersionVerifier.SchemaVersion));
+
+        SqlDatabaseEncryptionUpgradePrompt.Ask(null);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(_messagesShown, Is.EqualTo(new[] { Language.SqlUpgradePasswordNotSet }));
+            _retriever.DidNotReceive().WriteDatabaseMetaData(Arg.Any<RootNodeInfo>(),
+                Arg.Any<IDatabaseConnector>(), Arg.Any<System.Data.Common.DbTransaction?>(),
+                Arg.Any<Version?>());
         });
     }
 
@@ -207,9 +277,36 @@ public class SqlDatabaseEncryptionUpgradePromptTests
         Assert.Multiple(() =>
         {
             Assert.That(legacyOffered, "the button appears only where there is something to upgrade");
-            Assert.That(legacyStatus, Is.EqualTo(Language.SqlUpgradeStatusLegacy));
+            Assert.That(legacyStatus, Is.EqualTo(Language.SqlUpgradeStatusDefaultKey),
+                "this one has no master password, which is the worse of the two legacy states");
             Assert.That(upgradedOffered, Is.False);
             Assert.That(upgradedStatus, Is.EqualTo(Language.SqlUpgradeStatusCurrent));
+        });
+    }
+
+    [Test]
+    public void ADatabaseOnTheBuiltInKeyIsDescribedAsUnprotectedRatherThanAsOld()
+    {
+        // Two states hide behind "legacy", and the weaker of them is the one that reads as fine. A
+        // database with no master password is encrypted under a constant published in this
+        // application's source, so there is nothing to break — and an administrator who does not
+        // already know what that key is will not act on a sentence about cipher strength.
+        _retriever.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>())
+            .Returns(MetaDataAt(SqlDatabaseVersionVerifier.SchemaVersion));
+
+        (_, string defaultKeyStatus) = SqlDatabaseEncryptionUpgradePrompt.ReadStatus();
+
+        _retriever.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>()).Returns(ProtectedMetaData());
+
+        (bool stillOffered, string protectedStatus) = SqlDatabaseEncryptionUpgradePrompt.ReadStatus();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(defaultKeyStatus, Does.Contain("not protected"),
+                "said as what it means for the passwords");
+            Assert.That(protectedStatus, Is.EqualTo(Language.SqlUpgradeStatusLegacy),
+                "while a database that does have a master password is merely out of date");
+            Assert.That(stillOffered, "and both are still offered the upgrade");
         });
     }
 
