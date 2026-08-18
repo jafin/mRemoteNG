@@ -46,13 +46,18 @@ The loader's first run no longer writes that row at all. It had no master passwo
 - [x] 5.1 Full build; zero new analyzer warnings.
 - [x] 5.2 Full test suite; zero failures, no `[Ignore]`. — 4341 passed, including the SQL integration group against a container. Six existing tests had to change: three transaction tests and three saver tests were seeding databases at the authenticated version with no master password, which is now the one state that cannot be recorded. One pair asserted the first-run write this change removes, and was reversed to assert that nothing is written; the ODBC half of that pair kept the only thing in it worth keeping — that the loader reads through the connector it was given.
 - [x] 5.3 `openspec validate require-sql-master-password --strict`.
-- [ ] 5.4 Manual against a real SQL Server: a legacy database with no password still opens; the warning appears. **Outstanding.**
-- [ ] 5.5 Manual: upgrade with a master password, confirm it opens with the password and refuses without it.
-- [ ] 5.6 Manual: attempt the upgrade without setting a password and confirm it is refused with an explanation.
+- [x] 5.4 Manual against a real SQL Server: a legacy database with no password still opens; the warning appears. — Passed against a restored copy of the §6.4 database: both connections loaded with no prompt and their passwords decrypted. **The status line was wrong, twice.** It was cut off mid-sentence at 150% scaling — first diagnosed as a width problem, which made it worse, because `MrngLabel` paints its own text under an extended theme and word-wraps only while `AutoSize` is false. The real fault was height: it wrapped, and the row was one line tall. The test written for the first attempt passed against the broken page, since no extended theme is loaded under test and the base paint runs instead. (The once-per-session save warning was not separately observed here; `ALegacyDatabaseIsWarnedAboutOnceAndNotOnEverySave` covers it against a real database.)
+- [x] 5.5 Manual: upgrade with a master password, confirm it opens with the password and refuses without it. — Passed. **Refusing turned out not to refuse.** Three wrong passwords still opened the application with the connection tree visible, because `ConnectionsService` answered every failed database load with the cached local copy — right for a database nobody can reach, wrong when the database answered and the person could not prove they may read it. The copy carries every name, hostname, username and port, which is most of what the master password withholds; the stored passwords stayed hidden only because the reveal gate compared the typed password against the cache's own random key. Unreachable before this change, since the built-in key always worked. A refused password now has its own exception type, excluded from the fallback.
+- [x] 5.6 Manual: attempt the upgrade without setting a password and confirm it is refused with an explanation. — Passed: cancelling the new-password box abandons the upgrade with its own message rather than the generic decline, and the database is left legacy.
 - [ ] 5.7 Manual: a second client opening the upgraded database is prompted, and succeeds with the password. **Outstanding.**
 
-Note on 5.4 to 5.7: all four are manual and none is done. The automated tests drive substitutes for
-the thing that matters — a metadata row with a version field, a prompt that returns a canned answer —
-so nothing here has yet shown a real password box in front of a real database. Section 6 of
-`encrypt-sql-backend-with-aead` is the precedent: every defect it found by hand was one no test
-reached.
+Note on 5.4 to 5.7: the automated tests drive substitutes for the thing that matters — a metadata row
+with a version field, a prompt that returns a canned answer — so until these ran, nothing had shown a
+real password box in front of a real database. They found three defects between them, none of which a
+test reached, and one of which was a test agreeing with a broken page. Section 6 of
+`encrypt-sql-backend-with-aead` set the same precedent.
+
+Two more came out of questions asked while running them, rather than from the steps themselves: that
+a master password could be cleared in the properties panel with the refusal arriving later from the
+save, and that Simple view's disabled text boxes read as broken input. Neither was on the list. The
+list is not what makes a manual pass worth doing.
