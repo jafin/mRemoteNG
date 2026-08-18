@@ -60,6 +60,18 @@ public sealed class ConnectionTreeModel : INotifyCollectionChanged, INotifyPrope
     public bool IsFallbackCopy { get; set; }
 
     /// <summary>
+    /// Whether the store this came from cannot be opened without a master password, so removing the
+    /// one it has is not a change it can accept.
+    /// </summary>
+    /// <remarks>
+    /// True for a SQL database at the authenticated-encryption version. Without this the master
+    /// password could be cleared in the properties panel and the refusal would arrive later, from
+    /// the save — leaving a tree whose every save fails for a reason given once, minutes earlier, in
+    /// a different part of the application.
+    /// </remarks>
+    public bool RequiresMasterPassword { get; set; }
+
+    /// <summary>
     /// Records a connection ID as having been loaded from the data source.
     /// </summary>
     public void TrackLoadedConnectionId(string constantId)

@@ -395,7 +395,7 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
                 TrySaveSqlConnectionsCache(newConnectionTreeModel);
             }
         }
-        catch (Exception ex) when (useDatabase)
+        catch (Exception ex) when (useDatabase && IsFallbackEligible(ex))
         {
             SqlConnectionsCache.DiscardIfUnprotected();
 
@@ -849,6 +849,25 @@ public class ConnectionsService(PuttySessionsManager puttySessionsManager)
     {
         return Path.Combine(ConnectionsFileInfo.DefaultConnectionsPath, ConnectionsFileInfo.DefaultConnectionsFile);
     }
+
+    /// <summary>
+    /// Whether a failed database load may be answered with the local copy.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Everything except a refused master password. The copy is for a database nobody can reach —
+    /// a VPN that is down, a server that is off, a version this build cannot read — where showing
+    /// what was last read costs nothing, because whoever opens the application already had it.
+    /// </para>
+    /// <para>
+    /// A refused password is not that. The database answered; the person could not prove they are
+    /// entitled to it. Falling back there hands them the whole tree — names, hostnames, usernames,
+    /// ports, structure — which is most of what the master password withholds. Before SQL databases
+    /// required one this was unreachable, because the built-in key always worked.
+    /// </para>
+    /// </remarks>
+    internal static bool IsFallbackEligible(Exception exception) =>
+        exception is not SqlAuthenticationRefusedException;
 
     /// <summary>
     /// Takes the local copy that <see cref="SqlConnectionsCache"/> reads back when the database

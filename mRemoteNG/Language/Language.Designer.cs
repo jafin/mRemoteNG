@@ -9176,6 +9176,96 @@ namespace mRemoteNG.Resources.Language {
         }
 
         /// <summary>
+        ///   Looks up a localized string describing a database whose passwords are encrypted with the built-in default key.
+        /// </summary>
+        internal static string SqlUpgradeStatusDefaultKey {
+            get {
+                return ResourceManager.GetString("SqlUpgradeStatusDefaultKey", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing the prompt that collects a master password for a database that has none.
+        /// </summary>
+        internal static string SqlUpgradeSetPasswordName {
+            get {
+                return ResourceManager.GetString("SqlUpgradeSetPasswordName", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing what setting a master password costs everyone who uses the database.
+        /// </summary>
+        internal static string SqlUpgradeDistribute {
+            get {
+                return ResourceManager.GetString("SqlUpgradeDistribute", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing an upgrade abandoned because no master password was set.
+        /// </summary>
+        internal static string SqlUpgradePasswordNotSet {
+            get {
+                return ResourceManager.GetString("SqlUpgradePasswordNotSet", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string refusing the built-in default key as a master password.
+        /// </summary>
+        internal static string SqlUpgradePasswordIsDefaultKey {
+            get {
+                return ResourceManager.GetString("SqlUpgradePasswordIsDefaultKey", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a background reload refused for want of the master password.
+        /// </summary>
+        internal static string WarningSqlSyncAuthenticationRefused {
+            get {
+                return ResourceManager.GetString("WarningSqlSyncAuthenticationRefused", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a database that claims authenticated encryption but stores no sentinel.
+        /// </summary>
+        internal static string ErrorSqlDatabaseNotInitialized {
+            get {
+                return ResourceManager.GetString("ErrorSqlDatabaseNotInitialized", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a save refused because the connection tree has no master password.
+        /// </summary>
+        internal static string ErrorSqlMasterPasswordCannotBeRemoved {
+            get {
+                return ResourceManager.GetString("ErrorSqlMasterPasswordCannotBeRemoved", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a save refused because the connection tree has no master password.
+        /// </summary>
+        internal static string SqlMasterPasswordChanged {
+            get {
+                return ResourceManager.GetString("SqlMasterPasswordChanged", resourceCulture);
+            }
+        }
+
+        /// <summary>
+        ///   Looks up a localized string describing a save refused because the connection tree has no master password.
+        /// </summary>
+        internal static string ErrorSqlMasterPasswordRequired {
+            get {
+                return ResourceManager.GetString("ErrorSqlMasterPasswordRequired", resourceCulture);
+            }
+        }
+
+        /// <summary>
         ///   Looks up a localized string similar to Export Uses the Classic Format.
         /// </summary>
         internal static string ExportClassicFormatTitle {

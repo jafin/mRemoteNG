@@ -26,6 +26,9 @@ public sealed partial class SqlServerPage
     private NumericUpDown numSQLReloadInterval;
     private MrngLabel lblSQLReloadInterval;
     private MrngButton btnUpgradeEncryption;
+
+    /// <summary>The row holding the status and its button; its width is what the text wraps at.</summary>
+    private TableLayoutPanel? _encryptionRow;
     private MrngLabel lblEncryptionStatus;
     private bool _loadingSettings;
 
@@ -113,7 +116,17 @@ public sealed partial class SqlServerPage
     {
         lblEncryptionStatus = new MrngLabel
         {
-            Dock = DockStyle.Fill,
+            // **AutoSize must stay false, and not for the usual reason.** MrngLabel paints its own
+            // text whenever an extended theme is active, and it decides once — from AutoSize —
+            // whether that paint word-wraps: `if (AutoSize == false) flags |= WordBreak`. Turning
+            // AutoSize on therefore switches wrapping *off* in the application while leaving it on
+            // in a test, where no extended theme is loaded and the base Label paint runs instead.
+            //
+            // So the width comes from the cell (anchored to both sides) and the height is set by
+            // SizeStatusToItsText, which measures the wrapped text. An auto-height row takes the
+            // height from the control, so measuring it here is what makes the row grow.
+            AutoSize = false,
+            Anchor = AnchorStyles.Left | AnchorStyles.Right,
             TextAlign = ContentAlignment.MiddleLeft,
             Name = "lblEncryptionStatus",
             Text = ""
@@ -152,6 +165,8 @@ public sealed partial class SqlServerPage
         TableLayoutPanel encryptionRow = Row("pnlEncryptionStatus", SizeType.Percent, SizeType.AutoSize);
         encryptionRow.Controls.Add(lblEncryptionStatus, 0, 0);
         encryptionRow.Controls.Add(btnUpgradeEncryption, 1, 0);
+        _encryptionRow = encryptionRow;
+        encryptionRow.Layout += (_, _) => SizeStatusToItsText();
 
         TableLayoutPanel bottom = new()
         {
@@ -171,6 +186,53 @@ public sealed partial class SqlServerPage
 
         pnlServerBlock.Controls.Add(bottom);
         bottom.BringToFront();
+    }
+
+    /// <summary>
+    /// Makes the status label as tall as its own wrapped text.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// The label wraps on its own; what it will not do is ask for the height that takes. A row set
+    /// to auto-height takes its height from the control, so a one-line-tall label produces a
+    /// one-line-tall row and the rest of the sentence is painted outside it — which is what a
+    /// 150%-scaled screen showed: a status line ending "…so they are", reading like a finished
+    /// thought.
+    /// </para>
+    /// <para>
+    /// The width is measured from the row rather than assumed, because the button beside it appears
+    /// and disappears and the whole strip is scaled by the display's DPI. Both change what fits, and
+    /// both are why the earlier fixed layout was wrong at 150%.
+    /// </para>
+    /// <para>
+    /// The equality check is not an optimisation. Setting the height raises another layout, so
+    /// without it this recurses until the stack runs out.
+    /// </para>
+    /// </remarks>
+    private void SizeStatusToItsText()
+    {
+        if (_encryptionRow is null)
+            return;
+
+        int available = _encryptionRow.ClientSize.Width
+                        - lblEncryptionStatus.Margin.Horizontal
+                        - (btnUpgradeEncryption.Visible
+                            ? btnUpgradeEncryption.Width + btnUpgradeEncryption.Margin.Horizontal
+                            : 0);
+
+        if (available <= 0)
+            return;
+
+        // WordBreak and TextBoxControl to match what MrngLabel paints with, so the measurement is of
+        // the same layout the user sees rather than of a similar one.
+        int needed = TextRenderer.MeasureText(lblEncryptionStatus.Text, lblEncryptionStatus.Font,
+            new Size(available, int.MaxValue),
+            TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
+
+        needed = Math.Max(needed, lblEncryptionStatus.Font.Height);
+
+        if (lblEncryptionStatus.Height != needed)
+            lblEncryptionStatus.Height = needed;
     }
 
     /// <summary>One auto-height row. A <see cref="SizeType.Percent"/> column takes up the slack.</summary>
@@ -217,6 +279,11 @@ public sealed partial class SqlServerPage
 
         lblEncryptionStatus.Text = status;
         btnUpgradeEncryption.Visible = upgradeAvailable;
+
+        // Directly, rather than trusting the text change to raise a layout on the row. It is the
+        // only moment the text is ever longer than one line, so it is the one that must not be
+        // missed.
+        SizeStatusToItsText();
     }
 
     protected override void ApplyTheme()
@@ -279,10 +346,12 @@ public sealed partial class SqlServerPage
             chkSQLReadOnly.Checked = Properties.OptionsDBsPage.Default.SQLReadOnly;
             chkShowDatabasePickerOnStartup.Checked = Properties.OptionsDBsPage.Default.ShowDatabasePickerOnStartup;
 
-            // Populate simple mode read-only fields
-            mrngTextBox2.Text = Properties.OptionsDBsPage.Default.SQLHost;
-            mrngTextBox1.Text = Properties.OptionsDBsPage.Default.SQLDatabaseName;
-            mrngTextBox4.Text = Properties.OptionsDBsPage.Default.SQLUser;
+            // What Simple view shows: where the connections are coming from, as text. Editing them
+            // is what Advanced is for, and these were text boxes with the panel disabled — which
+            // reads as input that is broken rather than as a summary that is deliberate.
+            lblSummaryServer.Text = Properties.OptionsDBsPage.Default.SQLHost;
+            lblSummaryDatabase.Text = Properties.OptionsDBsPage.Default.SQLDatabaseName;
+            lblSummaryUsername.Text = Properties.OptionsDBsPage.Default.SQLUser;
 
             string savedAuthType = Properties.OptionsDBsPage.Default.SQLAuthType;
             int authIndex = txtSQLAuthType.FindStringExact(savedAuthType);

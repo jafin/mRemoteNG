@@ -102,19 +102,34 @@ public class SqlConnectionsSaver : ISaver<ConnectionTreeModel>
                 }
             }
 
+            // Null for a brand-new database, whose metadata row this save is about to insert
+            // at the authenticated version — nothing reads a database this build just created,
+            // so there is nobody to stay compatible with and no reason to start it weak. An
+            // existing database keeps whatever version it has. The rows below are written with
+            // whatever provider that version selects, so the two always agree: a database
+            // marked legacy and written AEAD, or the reverse, is the state nothing recovers
+            // from.
+            Version databaseVersion = metaData?.ConfVersion
+                ?? CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion;
+
+            // A database at that version is keyed on a master password, and this tree has none —
+            // so there is no key to write it under except the built-in default, which is the thing
+            // being removed. Said here, before a transaction is opened, because the metadata writer
+            // refuses the same state as an exception and a save path is not where a user should
+            // meet one: this names the property to set and where to set it.
+            //
+            // In practice this is a database being created, not an existing one. A tree loaded from
+            // an upgraded database carries the master password it was opened with.
+            if (CryptoProviderFactoryFromSqlVersion.UsesAuthenticatedEncryption(databaseVersion) &&
+                !rootTreeNode.Password)
+            {
+                Runtime.MessageCollector.AddMessage(MessageClass.ErrorMsg, Language.ErrorSqlMasterPasswordRequired);
+                return;
+            }
+
             using DbTransaction transaction = dbConnector.DbConnection().BeginTransaction();
             try
             {
-                // Null for a brand-new database, whose metadata row this save is about to insert
-                // at the authenticated version — nothing reads a database this build just created,
-                // so there is nobody to stay compatible with and no reason to start it weak. An
-                // existing database keeps whatever version it has. The rows below are written with
-                // whatever provider that version selects, so the two always agree: a database
-                // marked legacy and written AEAD, or the reverse, is the state nothing recovers
-                // from.
-                Version databaseVersion = metaData?.ConfVersion
-                    ?? CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion;
-
                 metaDataRetriever.WriteDatabaseMetaData(rootTreeNode, dbConnector, transaction, databaseVersion);
                 UpdateConnectionsTable(rootTreeNode, dbConnector, databaseVersion, transaction);
                 UpdateUpdatesTable(dbConnector, transaction);

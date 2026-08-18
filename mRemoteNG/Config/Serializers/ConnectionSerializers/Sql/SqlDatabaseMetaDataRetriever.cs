@@ -10,6 +10,7 @@ using mRemoteNG.App;
 using mRemoteNG.App.Info;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Messages;
+using mRemoteNG.Resources.Language;
 using mRemoteNG.Security;
 using mRemoteNG.Security.Factories;
 using mRemoteNG.Security.SymmetricEncryption;
@@ -107,8 +108,33 @@ public class SqlDatabaseMetaDataRetriever : ISqlDatabaseMetaDataRetriever
     public void WriteDatabaseMetaData(RootNodeInfo rootTreeNode, IDatabaseConnector databaseConnector,
                                       DbTransaction? transaction, Version? databaseVersion = null)
     {
+        // **One version, used for both.** A null version was previously read as legacy when
+        // choosing the provider and as the authenticated version when stamping the row, so a
+        // database created through that path recorded 3.6 while its sentinel was encrypted with the
+        // legacy provider. Nothing could then open it: the loader picks its provider from the
+        // recorded version, and AES-256-GCM does not decrypt AES-CBC output — it fails the tag, as
+        // it should. Resolved once, here, so the two cannot drift apart again.
+        Version effectiveVersion =
+            databaseVersion ?? CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion;
+
         ICryptographyProvider cryptographyProvider =
-            CryptoProviderFactoryFromSqlVersion.ProviderFor(databaseVersion);
+            CryptoProviderFactoryFromSqlVersion.ProviderFor(effectiveVersion);
+
+        // At the authenticated-encryption version there is no unprotected state to record. The
+        // "unprotected" sentinel is written under Runtime.EncryptionKey, which is the root node's
+        // password and therefore the built-in default when no master password is set — so writing it
+        // here would produce a database that claims modern encryption while being keyed on a
+        // constant published in this application's source. Every secret in it would be readable by
+        // anyone with SELECT on the table, and the interface would report it as protected.
+        //
+        // Refused rather than quietly written at the older version: silently downgrading the format
+        // to accommodate a missing password is how a store ends up weaker than the version marker
+        // claims, which is precisely the state the version gate exists to make impossible.
+        if (CryptoProviderFactoryFromSqlVersion.UsesAuthenticatedEncryption(effectiveVersion) &&
+            rootTreeNode?.Password != true)
+        {
+            throw new InvalidOperationException(Language.ErrorSqlMasterPasswordRequired);
+        }
 
         string strProtected;
 
@@ -180,9 +206,7 @@ public class SqlDatabaseMetaDataRetriever : ISqlDatabaseMetaDataRetriever
                 // saver refusing to write a legacy database: creating one at the legacy version
                 // would produce a database this build could read and never write to again — broken
                 // on its second save, by its own creator.
-                confVersionParam.Value =
-                    (databaseVersion ?? Security.Factories.CryptoProviderFactoryFromSqlVersion
-                        .AuthenticatedEncryptionVersion).ToString();
+                confVersionParam.Value = effectiveVersion.ToString();
                 cmd.Parameters.Add(confVersionParam);
 
                 cmd.ExecuteNonQuery();

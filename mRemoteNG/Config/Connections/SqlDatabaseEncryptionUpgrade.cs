@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Data.Common;
 using System.Linq;
@@ -88,23 +88,58 @@ public static class SqlDatabaseEncryptionUpgrade
     /// <summary>
     /// Re-encrypts every secret column with authenticated encryption and raises the recorded version.
     /// </summary>
-    /// <param name="masterPassword">
-    /// Authenticated against the stored sentinel first. Not disposed here — the caller supplied it
-    /// and is the only thing that knows whether it is still needed.
+    /// <param name="existingPassword">
+    /// Opens the database as it stands. The built-in default key for a database that has no master
+    /// password. Authenticated against the stored sentinel before a row is touched. Not disposed
+    /// here — the caller supplied it and is the only thing that knows whether it is still needed.
+    /// </param>
+    /// <param name="newMasterPassword">
+    /// What the upgraded database is keyed on. The same password as <paramref name="existingPassword"/>
+    /// for a database that already has one; a newly chosen password for a database that does not.
     /// </param>
     /// <returns>
     /// The number of rows rewritten. Zero is a legitimate answer for an empty database, which is
     /// still upgraded: the version marker moves, so the next save writes the new format.
     /// </returns>
-    /// <exception cref="ArgumentException">The database is already upgraded, or has no metadata row.</exception>
-    /// <exception cref="EncryptionException">The master password does not open this database.</exception>
+    /// <exception cref="ArgumentException">
+    /// The database is already upgraded, has no metadata row, or no master password was supplied.
+    /// </exception>
+    /// <exception cref="EncryptionException">The existing password does not open this database.</exception>
+    /// <remarks>
+    /// <b>The upgrade sets a master password, it does not merely preserve one.</b> A database with
+    /// none is keyed on a constant published in this application's source, and re-encrypting every
+    /// secret under that same constant would satisfy the letter of "upgraded to AES-256-GCM" while
+    /// leaving every password in the database readable by anyone who can read the table. The cipher
+    /// was never the only weakness; the key was the larger one.
+    /// </remarks>
     public static int Apply(IDatabaseConnector databaseConnector,
-                            SecureString masterPassword,
+                            SecureString existingPassword,
+                            SecureString newMasterPassword,
                             ISqlDatabaseMetaDataRetriever metaDataRetriever)
     {
         ArgumentNullException.ThrowIfNull(databaseConnector);
-        ArgumentNullException.ThrowIfNull(masterPassword);
+        ArgumentNullException.ThrowIfNull(existingPassword);
+        ArgumentNullException.ThrowIfNull(newMasterPassword);
         ArgumentNullException.ThrowIfNull(metaDataRetriever);
+
+        if (newMasterPassword.Length == 0)
+            throw new ArgumentException(
+                "An upgraded database is keyed on a master password. Without one this would " +
+                "re-encrypt every secret under the built-in default key, which is published and " +
+                "therefore no protection at all.", nameof(newMasterPassword));
+
+        // Typing the default key as the master password reaches the same place by hand. Caught
+        // here, because further down it stops looking like a password decision: the root node's
+        // own setter reads that value as "no password set", and the refusal would arrive as a
+        // metadata writer complaining about a tree the user never touched.
+        if (string.Equals(newMasterPassword.ConvertToUnsecureString(),
+                          ConnectionFileDefaults.LegacyEncryptionKey, StringComparison.Ordinal))
+        {
+            throw new ArgumentException(
+                "That is the built-in default key, published in this application's source. A " +
+                "database keyed on it is readable by anyone who can read the table.",
+                nameof(newMasterPassword));
+        }
 
         SqlConnectionListMetaData? metaData = metaDataRetriever.GetDatabaseMetaData(databaseConnector);
 
@@ -117,18 +152,18 @@ public static class SqlDatabaseEncryptionUpgrade
         ICryptographyProvider authenticated = CryptoProviderFactoryFromSqlVersion.ProviderFor(
             CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion);
 
-        SecureString key = Authenticate(metaData, masterPassword, legacy);
-        bool hasMasterPassword = HasMasterPassword(metaData, legacy, key);
+        SecureString readKey = Authenticate(metaData, existingPassword, legacy);
 
         using DbTransaction transaction = databaseConnector.DbConnection().BeginTransaction();
         try
         {
-            int rewritten = RewriteSecrets(databaseConnector, transaction, legacy, authenticated, key);
+            int rewritten = RewriteSecrets(databaseConnector, transaction, legacy, authenticated,
+                                           readKey, newMasterPassword);
 
             // Last, and inside the same transaction. The version marker is what tells every future
             // reader which provider to use, so it must not be raised over contents that have not
             // been rewritten — nor left behind after contents that have.
-            metaDataRetriever.WriteDatabaseMetaData(RootFor(metaData, hasMasterPassword, key), databaseConnector, transaction,
+            metaDataRetriever.WriteDatabaseMetaData(RootFor(metaData, newMasterPassword), databaseConnector, transaction,
                 CryptoProviderFactoryFromSqlVersion.AuthenticatedEncryptionVersion);
 
             transaction.Commit();
@@ -177,7 +212,8 @@ public static class SqlDatabaseEncryptionUpgrade
                                       DbTransaction transaction,
                                       ICryptographyProvider legacy,
                                       ICryptographyProvider authenticated,
-                                      SecureString key)
+                                      SecureString readKey,
+                                      SecureString writeKey)
     {
         List<(string Id, Dictionary<string, string> Secrets)> rows = ReadSecrets(databaseConnector, transaction);
         int rewritten = 0;
@@ -194,7 +230,7 @@ public static class SqlDatabaseEncryptionUpgrade
                 if (string.IsNullOrEmpty(cipherText))
                     continue;
 
-                reencrypted[column] = authenticated.Encrypt(legacy.Decrypt(cipherText, key), key);
+                reencrypted[column] = authenticated.Encrypt(legacy.Decrypt(cipherText, readKey), writeKey);
             }
 
             if (reencrypted.Count == 0)
@@ -265,29 +301,8 @@ public static class SqlDatabaseEncryptionUpgrade
     }
 
     /// <summary>
-    /// Whether this database records a master password, read from the sentinel rather than guessed.
-    /// </summary>
-    /// <remarks>
-    /// The sentinel's *plaintext* is the answer — "ThisIsProtected" or "ThisIsNotProtected" — so it
-    /// has to be decrypted to be read, which is why this runs after authentication and not before.
-    /// Getting it wrong rewrites a protected database's sentinel as an unprotected one, and the next
-    /// open would then accept the built-in default key instead of asking for the master password.
-    /// </remarks>
-    private static bool HasMasterPassword(SqlConnectionListMetaData metaData,
-                                          ICryptographyProvider legacy,
-                                          SecureString key)
-    {
-        if (string.IsNullOrEmpty(metaData.Protected))
-            return false;
-
-        return string.Equals(legacy.Decrypt(metaData.Protected, key),
-                             ConnectionFileDefaults.ProtectedSentinel, StringComparison.Ordinal);
-    }
-
-    /// <summary>
-    /// A root node carrying the name and master-password state the database already records, so
-    /// rewriting the metadata row preserves them rather than resetting them to a new store's
-    /// defaults.
+    /// A root node carrying the name the database already records and the master password it is
+    /// being keyed on, so rewriting the metadata row preserves the one and establishes the other.
     /// </summary>
     /// <remarks>
     /// <b>The key has to come with it.</b> <c>WriteDatabaseMetaData</c> encrypts the sentinel with
@@ -296,19 +311,22 @@ public static class SqlDatabaseEncryptionUpgrade
     /// refuses the master password it was upgraded with. The test that caught this decrypts the
     /// rewritten sentinel; without it the failure would have arrived as a database nobody could open.
     /// <para>
+    /// The database's previous state is not consulted. Whether it had a master password decides what
+    /// the caller must collect, not what is written: at this version there is only one answer, and a
+    /// root that said otherwise would write the unprotected sentinel — which the metadata writer now
+    /// refuses outright.
+    /// </para>
+    /// <para>
     /// Materialising the key as a string is forced by that API taking a root node. It is the same
     /// key already held in memory for the whole re-encryption, so this widens nothing that was not
     /// already open, and narrowing it means changing what the metadata writer accepts.
     /// </para>
     /// </remarks>
-    private static RootNodeInfo RootFor(SqlConnectionListMetaData metaData, bool hasMasterPassword,
-                                        SecureString key)
-    {
-        RootNodeInfo root = new(RootNodeType.Connection) { Name = metaData.Name, Password = hasMasterPassword };
-
-        if (hasMasterPassword)
-            root.PasswordString = key.ConvertToUnsecureString();
-
-        return root;
-    }
+    private static RootNodeInfo RootFor(SqlConnectionListMetaData metaData, SecureString masterPassword) =>
+        new(RootNodeType.Connection)
+        {
+            Name = metaData.Name,
+            Password = true,
+            PasswordString = masterPassword.ConvertToUnsecureString()
+        };
 }

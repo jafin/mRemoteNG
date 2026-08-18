@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data.Common;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Sql;
@@ -41,7 +41,10 @@ public class SqlDatabaseMetaDataRetrieverTests
     public void WriteDatabaseMetaData_OnFailure_RollsBackCreatedTransaction()
     {
         // Arrange
-        var rootNode = new RootNodeInfo(RootNodeType.Connection);
+        // A master password, because writing with no explicit version writes at the
+        // authenticated one, where an unprotected store is refused rather than recorded.
+        // What is under test here is the transaction, not the key.
+        var rootNode = new RootNodeInfo(RootNodeType.Connection) { PasswordString = "the master password" };
 
         // Force an exception when ExecuteNonQuery is called
         _dbCommand.ExecuteNonQuery().Throws(new InvalidOperationException("Database error"));
@@ -58,7 +61,7 @@ public class SqlDatabaseMetaDataRetrieverTests
     public void WriteDatabaseMetaData_WithExplicitTransaction_UsesProvidedTransaction()
     {
         // Arrange
-        var rootNode = new RootNodeInfo(RootNodeType.Connection);
+        var rootNode = new RootNodeInfo(RootNodeType.Connection) { PasswordString = "the master password" };
         var externalTransaction = Substitute.For<DbTransaction>();
 
         // Act
@@ -75,7 +78,7 @@ public class SqlDatabaseMetaDataRetrieverTests
     public void WriteDatabaseMetaData_WithoutExplicitTransaction_CreatesAndCommitsTransaction()
     {
         // Arrange
-        var rootNode = new RootNodeInfo(RootNodeType.Connection);
+        var rootNode = new RootNodeInfo(RootNodeType.Connection) { PasswordString = "the master password" };
 
         // Act
         _retriever.WriteDatabaseMetaData(rootNode, _dbConnector);

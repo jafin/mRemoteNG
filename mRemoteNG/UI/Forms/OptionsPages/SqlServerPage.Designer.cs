@@ -102,13 +102,12 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             btnTestConnection = new MrngButton();
             btnExpandOptions = new MrngButton();
             tableLayoutPanel1 = new System.Windows.Forms.TableLayoutPanel();
-            mrngTextBox2 = new MrngTextBox();
+            lblSummaryServer = new MrngLabel();
             mrngLabel4 = new MrngLabel();
             mrngLabel5 = new MrngLabel();
-            mrngTextBox1 = new MrngTextBox();
+            lblSummaryDatabase = new MrngLabel();
             mrngLabel6 = new MrngLabel();
-            mrngTextBox4 = new MrngTextBox();
-            label1 = new MrngLabel();
+            lblSummaryUsername = new MrngLabel();
             chkUseSQLServer = new MrngCheckBox();
             frmtoolTip = new System.Windows.Forms.ToolTip(components);
             pnlServerBlock.SuspendLayout();
@@ -151,7 +150,6 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             pnlServerBlock.Controls.Add(btnTestConnection);
             pnlServerBlock.Controls.Add(btnExpandOptions);
             pnlServerBlock.Controls.Add(tableLayoutPanel1);
-            pnlServerBlock.Controls.Add(label1);
             pnlServerBlock.Location = new System.Drawing.Point(15, 77);
             pnlServerBlock.Name = "pnlServerBlock";
             pnlServerBlock.Size = new System.Drawing.Size(600, 390);
@@ -1118,13 +1116,12 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             tableLayoutPanel1.ColumnCount = 2;
             tableLayoutPanel1.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Absolute, 160F));
             tableLayoutPanel1.ColumnStyles.Add(new System.Windows.Forms.ColumnStyle(System.Windows.Forms.SizeType.Percent, 100F));
-            tableLayoutPanel1.Controls.Add(mrngTextBox2, 1, 0);
+            tableLayoutPanel1.Controls.Add(lblSummaryServer, 1, 0);
             tableLayoutPanel1.Controls.Add(mrngLabel4, 0, 0);
             tableLayoutPanel1.Controls.Add(mrngLabel5, 0, 1);
-            tableLayoutPanel1.Controls.Add(mrngTextBox1, 1, 1);
+            tableLayoutPanel1.Controls.Add(lblSummaryDatabase, 1, 1);
             tableLayoutPanel1.Controls.Add(mrngLabel6, 0, 2);
-            tableLayoutPanel1.Controls.Add(mrngTextBox4, 1, 2);
-            tableLayoutPanel1.Enabled = false;
+            tableLayoutPanel1.Controls.Add(lblSummaryUsername, 1, 2);
             tableLayoutPanel1.Location = new System.Drawing.Point(17, 20);
             tableLayoutPanel1.Name = "tableLayoutPanel1";
             tableLayoutPanel1.RowCount = 4;
@@ -1135,15 +1132,15 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             tableLayoutPanel1.Size = new System.Drawing.Size(458, 81);
             tableLayoutPanel1.TabIndex = 28;
             // 
-            // mrngTextBox2
+            // lblSummaryServer
             // 
-            mrngTextBox2.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            mrngTextBox2.Dock = System.Windows.Forms.DockStyle.Fill;
-            mrngTextBox2.Font = new System.Drawing.Font("Segoe UI", 8.25F);
-            mrngTextBox2.Location = new System.Drawing.Point(163, 3);
-            mrngTextBox2.Name = "mrngTextBox2";
-            mrngTextBox2.Size = new System.Drawing.Size(292, 22);
-            mrngTextBox2.TabIndex = 24;
+            lblSummaryServer.Dock = System.Windows.Forms.DockStyle.Fill;
+            lblSummaryServer.Font = new System.Drawing.Font("Segoe UI", 8.25F);
+            lblSummaryServer.Location = new System.Drawing.Point(163, 3);
+            lblSummaryServer.Name = "lblSummaryServer";
+            lblSummaryServer.Size = new System.Drawing.Size(292, 26);
+            lblSummaryServer.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            lblSummaryServer.TabIndex = 24;
             // 
             // mrngLabel4
             // 
@@ -1165,15 +1162,15 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             mrngLabel5.Text = "Database name:";
             mrngLabel5.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
-            // mrngTextBox1
+            // lblSummaryDatabase
             // 
-            mrngTextBox1.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            mrngTextBox1.Dock = System.Windows.Forms.DockStyle.Fill;
-            mrngTextBox1.Font = new System.Drawing.Font("Segoe UI", 8.25F);
-            mrngTextBox1.Location = new System.Drawing.Point(163, 29);
-            mrngTextBox1.Name = "mrngTextBox1";
-            mrngTextBox1.Size = new System.Drawing.Size(292, 22);
-            mrngTextBox1.TabIndex = 6;
+            lblSummaryDatabase.Dock = System.Windows.Forms.DockStyle.Fill;
+            lblSummaryDatabase.Font = new System.Drawing.Font("Segoe UI", 8.25F);
+            lblSummaryDatabase.Location = new System.Drawing.Point(163, 29);
+            lblSummaryDatabase.Name = "lblSummaryDatabase";
+            lblSummaryDatabase.Size = new System.Drawing.Size(292, 26);
+            lblSummaryDatabase.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            lblSummaryDatabase.TabIndex = 6;
             // 
             // mrngLabel6
             // 
@@ -1185,29 +1182,15 @@ namespace mRemoteNG.UI.Forms.OptionsPages
             mrngLabel6.Text = "Username:";
             mrngLabel6.TextAlign = System.Drawing.ContentAlignment.MiddleRight;
             // 
-            // mrngTextBox4
+            // lblSummaryUsername
             // 
-            mrngTextBox4.BorderStyle = System.Windows.Forms.BorderStyle.FixedSingle;
-            mrngTextBox4.Dock = System.Windows.Forms.DockStyle.Fill;
-            mrngTextBox4.Font = new System.Drawing.Font("Segoe UI", 8.25F);
-            mrngTextBox4.Location = new System.Drawing.Point(163, 55);
-            mrngTextBox4.Name = "mrngTextBox4";
-            mrngTextBox4.Size = new System.Drawing.Size(292, 22);
-            mrngTextBox4.TabIndex = 8;
-            // 
-            // label1
-            // 
-            label1.Anchor = System.Windows.Forms.AnchorStyles.None;
-            // BackColor/ForeColor follow theme
-            label1.Font = new System.Drawing.Font("Segoe UI", 15.75F, System.Drawing.FontStyle.Bold, System.Drawing.GraphicsUnit.Point, 204);
-            label1.Location = new System.Drawing.Point(163, 69);
-            label1.Margin = new System.Windows.Forms.Padding(10, 10, 3, 0);
-            label1.Name = "label1";
-            label1.Padding = new System.Windows.Forms.Padding(0, 2, 0, 0);
-            label1.Size = new System.Drawing.Size(275, 46);
-            label1.TabIndex = 27;
-            label1.Text = "Our Prod DB";
-            label1.Visible = false;
+            lblSummaryUsername.Dock = System.Windows.Forms.DockStyle.Fill;
+            lblSummaryUsername.Font = new System.Drawing.Font("Segoe UI", 8.25F);
+            lblSummaryUsername.Location = new System.Drawing.Point(163, 55);
+            lblSummaryUsername.Name = "lblSummaryUsername";
+            lblSummaryUsername.Size = new System.Drawing.Size(292, 26);
+            lblSummaryUsername.TextAlign = System.Drawing.ContentAlignment.MiddleLeft;
+            lblSummaryUsername.TabIndex = 8;
             // 
             // chkUseSQLServer
             // 
@@ -1258,13 +1241,12 @@ namespace mRemoteNG.UI.Forms.OptionsPages
         }
         internal MrngLabel lblRegistrySettingsUsedInfo;
         private System.Windows.Forms.Panel pnlServerBlock;
-        internal MrngLabel label1;
         private System.Windows.Forms.TableLayoutPanel tableLayoutPanel1;
         internal MrngLabel mrngLabel5;
-        internal MrngTextBox mrngTextBox1;
+        internal MrngLabel lblSummaryDatabase;
         internal MrngLabel mrngLabel6;
-        internal MrngTextBox mrngTextBox4;
-        internal MrngTextBox mrngTextBox2;
+        internal MrngLabel lblSummaryUsername;
+        internal MrngLabel lblSummaryServer;
         internal MrngLabel mrngLabel4;
         private MrngButton btnTestConnection;
         private MrngButton btnExpandOptions;

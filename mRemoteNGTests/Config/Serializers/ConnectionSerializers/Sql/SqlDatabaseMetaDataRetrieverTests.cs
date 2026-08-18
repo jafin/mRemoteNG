@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Data.Common;
 using mRemoteNG.Config.DatabaseConnectors;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Sql;
@@ -38,7 +38,10 @@ public class SqlDatabaseMetaDataRetrieverTests
     [Test]
     public void WriteDatabaseMetaData_WithExplicitTransaction_UsesProvidedTransaction()
     {
-        var rootNode = new RootNodeInfo(RootNodeType.Connection);
+        // A master password, because writing with no explicit version writes at the
+        // authenticated one, where an unprotected store is refused rather than recorded.
+        // What is under test here is the transaction, not the key.
+        var rootNode = new RootNodeInfo(RootNodeType.Connection) { PasswordString = "the master password" };
         var explicitTransaction = Substitute.For<DbTransaction>();
 
         _retriever.WriteDatabaseMetaData(rootNode, _mockConnector, explicitTransaction);
@@ -57,7 +60,7 @@ public class SqlDatabaseMetaDataRetrieverTests
     [Test]
     public void WriteDatabaseMetaData_WithoutExplicitTransaction_CreatesAndCommitsTransaction()
     {
-        var rootNode = new RootNodeInfo(RootNodeType.Connection);
+        var rootNode = new RootNodeInfo(RootNodeType.Connection) { PasswordString = "the master password" };
 
         _retriever.WriteDatabaseMetaData(rootNode, _mockConnector, null);
 
@@ -74,7 +77,7 @@ public class SqlDatabaseMetaDataRetrieverTests
     [Test]
     public void WriteDatabaseMetaData_OnFailure_RollsBackCreatedTransaction()
     {
-        var rootNode = new RootNodeInfo(RootNodeType.Connection);
+        var rootNode = new RootNodeInfo(RootNodeType.Connection) { PasswordString = "the master password" };
         _mockCommand.When(x => x.ExecuteNonQuery()).Do(x => throw new InvalidOperationException("DB Error"));
 
         Assert.Throws<InvalidOperationException>(() => _retriever.WriteDatabaseMetaData(rootNode, _mockConnector, null));

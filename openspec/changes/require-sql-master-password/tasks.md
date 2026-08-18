@@ -19,30 +19,74 @@ written to protect; the validator added here is the mechanism a follow-up would 
 
 ## 2. Require a password at the new version
 
-- [ ] 2.1 Remove the default-key fallback from `GetDecryptionKey` for databases at the authenticated-encryption version, keeping it for earlier versions.
-- [ ] 2.2 Handle the empty-sentinel branch (`SqlConnectionsLoader.cs:87`), which today returns the default key with no check at all. At the new version it means an uninitialised database, not an unprotected one.
-- [ ] 2.3 In `WriteDatabaseMetaData`, stop encrypting the unprotected sentinel under `Runtime.EncryptionKey` at the new version; there is no unprotected state to record.
-- [ ] 2.4 Tests: an upgraded database with no password loads nothing; with the right password it loads; a legacy database is unaffected in both cases.
+- [x] 2.1 Remove the default-key fallback from `GetDecryptionKey` for databases at the authenticated-encryption version, keeping it for earlier versions. — The password is asked for *before* anything is tried, rather than letting the default key fail first. Attempting it would spend one of the three attempts on a key the database is guaranteed not to use, and would leave the code able to succeed with it if the version gate were ever weakened.
+- [x] 2.2 Handle the empty-sentinel branch (`SqlConnectionsLoader.cs:87`), which today returns the default key with no check at all. At the new version it means an uninitialised database, not an unprotected one. — Refused with its own message, and without prompting: there is nothing to check an answer against, so asking would be theatre.
+- [x] 2.3 In `WriteDatabaseMetaData`, stop encrypting the unprotected sentinel under `Runtime.EncryptionKey` at the new version; there is no unprotected state to record. — Refused outright rather than written at the older version: silently downgrading the format to accommodate a missing password is how a store ends up weaker than its version marker claims. `SqlConnectionsSaver` says the same thing first, in words that name the property to set, so a save path is not where a user meets an exception.
+
+**Found while implementing, and it made 2.1 fatal rather than merely wrong.** `WriteDatabaseMetaData` read a null version two different ways: as legacy when choosing the provider, and as the authenticated version when stamping the row. A database created through that path — every brand-new one, via the loader's first-run — recorded 3.6 with a sentinel encrypted by the *legacy* provider. Nothing could open it, because the loader picks its provider from the recorded version and AES-256-GCM does not decrypt AES-CBC output. It was already broken on `dev`; requiring a master password turned it from "fails to load" into "prompts for a password that cannot exist". The version is now resolved once and used for both.
+
+The loader's first run no longer writes that row at all. It had no master password to write it under, so at the authenticated version there was no key available except the published constant. Nothing is lost: the schema is created by the metadata read itself, and the row is written by the first save, which has the user's own tree.
+- [x] 2.4 Tests: an upgraded database with no password loads nothing; with the right password it loads; a legacy database is unaffected in both cases. — `SqlMasterPasswordRequirementTests`, eight cases. The sharpest is `TheDefaultKeyIsNotTriedAtTheAuthenticatedVersion`: the fixture's sentinel *is* written under the published key, so the old code opened it without asking anybody anything, and what is asserted is that the user is asked even though a key that works is sitting in the source.
 
 ## 3. Upgrade path
 
-- [ ] 3.1 Require the master password in the upgrade added by `encrypt-sql-backend-with-aead`, rather than accepting the default key and re-encrypting under it — which would satisfy that change's requirements and leave this one's defect intact.
-- [ ] 3.2 Extend the upgrade warning: colleagues must be given the password before the upgrade, and a forgotten password cannot be recovered. This sits alongside the upstream-compatibility warning `encrypt-sql-backend-with-aead` adds — one dialog, both consequences, since they land on the same people.
-- [ ] 3.3 Investigate the open question in design.md — whether `tblUpdate` can support telling the administrator how many clients have recently used the database. Drop it if the count cannot be trusted; a confident wrong number is worse than none.
-- [ ] 3.4 Tests: the upgrade refuses to proceed on the default key; the warning names both consequences.
+- [x] 3.1 Require the master password in the upgrade added by `encrypt-sql-backend-with-aead`, rather than accepting the default key and re-encrypting under it — which would satisfy that change's requirements and leave this one's defect intact. — `Apply` now takes the key it reads with and the key it writes with separately. For a database that already has a master password they are the same string; for one that does not, the administrator chooses a new password and the store is rekeyed onto it. Typing the built-in key as that password is refused by name, because further down it stops looking like a password decision — the root node's own setter reads that value as "no password set".
+- [x] 3.2 Extend the upgrade warning: colleagues must be given the password before the upgrade, and a forgotten password cannot be recovered. This sits alongside the upstream-compatibility warning `encrypt-sql-backend-with-aead` adds — one dialog, both consequences, since they land on the same people. — Added only when a password is actually being set; a database that already has one is not warned about distributing a password its users already hold. Said at the confirmation rather than at the password box, because by the time a box is on screen the decision has been taken.
+- [x] 3.3 Investigate the open question in design.md — whether `tblUpdate` can support telling the administrator how many clients have recently used the database. Drop it if the count cannot be trusted; a confident wrong number is worse than none. — **Dropped, and it cannot be built on this schema.** `tblUpdate` holds exactly one row: `UpdateUpdatesTable` deletes every row and inserts a single `LastUpdate` stamp on each save. There is no client identity and no history, so the most it could ever say is when the database was last written and by nobody in particular. Counting clients would mean a new table and a new write on every save, which is a schema change this change has no business making — and the warning it would improve is already explicit that the decision reaches people who are not in the room.
+- [x] 3.4 Tests: the upgrade refuses to proceed on the default key; the warning names both consequences. — `TheUpgradeRefusesWithoutAMasterPassword` and `TheUpgradeRefusesTheBuiltInKeyAsAMasterPassword` against a real database, both asserting the stored ciphertext and the version marker are untouched; `SettingAMasterPasswordSaysWhatThatCostsBeforeItIsSet` on the words.
 
 ## 4. Say so in the interface
 
-- [ ] 4.1 On the SQL Server options page, state when the configured database is using the built-in default key.
-- [ ] 4.2 Word it as what it means — stored passwords are not protected — rather than as a version number. An administrator who does not already know what `mR3m` is will not act on "legacy encryption".
-- [ ] 4.3 Tests: shown for a default-key database, absent for a password-protected one.
+- [x] 4.1 On the SQL Server options page, state when the configured database is using the built-in default key. — `ReadStatus` now separates the two legacy states rather than reporting them as one.
+- [x] 4.2 Word it as what it means — stored passwords are not protected — rather than as a version number. An administrator who does not already know what `mR3m` is will not act on "legacy encryption". — "The passwords in this database are not protected", then why. "Old, weak encryption" understates a store keyed on a published constant to the point of being misleading: there is nothing to break.
+- [x] 4.3 Tests: shown for a default-key database, absent for a password-protected one. — `ADatabaseOnTheBuiltInKeyIsDescribedAsUnprotectedRatherThanAsOld`, plus the options page's own `OpeningThePageIsEnoughToBeToldTheDatabaseIsWeak`. Both states still offer the upgrade button, which is the assertion that keeps the wording change from quietly becoming a behaviour change.
 
 ## 5. Verification
 
-- [ ] 5.1 Full build; zero new analyzer warnings.
-- [ ] 5.2 Full test suite; zero failures, no `[Ignore]`.
-- [ ] 5.3 `openspec validate require-sql-master-password --strict`.
-- [ ] 5.4 Manual against a real SQL Server: a legacy database with no password still opens; the warning appears.
-- [ ] 5.5 Manual: upgrade with a master password, confirm it opens with the password and refuses without it.
-- [ ] 5.6 Manual: attempt the upgrade without setting a password and confirm it is refused with an explanation.
-- [ ] 5.7 Manual: a second client opening the upgraded database is prompted, and succeeds with the password.
+- [x] 5.1 Full build; zero new analyzer warnings.
+- [x] 5.2 Full test suite; zero failures, no `[Ignore]`. — 4350 passed, including the SQL integration group against a container. Six existing tests had to change: three transaction tests and three saver tests were seeding databases at the authenticated version with no master password, which is now the one state that cannot be recorded. One pair asserted the first-run write this change removes, and was reversed to assert that nothing is written; the ODBC half of that pair kept the only thing in it worth keeping — that the loader reads through the connector it was given.
+- [x] 5.3 `openspec validate require-sql-master-password --strict`.
+- [x] 5.4 Manual against a real SQL Server: a legacy database with no password still opens; the warning appears. — Passed against a restored copy of the §6.4 database: both connections loaded with no prompt and their passwords decrypted. **The status line was wrong, twice.** It was cut off mid-sentence at 150% scaling — first diagnosed as a width problem, which made it worse, because `MrngLabel` paints its own text under an extended theme and word-wraps only while `AutoSize` is false. The real fault was height: it wrapped, and the row was one line tall. The test written for the first attempt passed against the broken page, since no extended theme is loaded under test and the base paint runs instead. (The once-per-session save warning was not separately observed here; `ALegacyDatabaseIsWarnedAboutOnceAndNotOnEverySave` covers it against a real database.)
+- [x] 5.5 Manual: upgrade with a master password, confirm it opens with the password and refuses without it. — Passed. **Refusing turned out not to refuse.** Three wrong passwords still opened the application with the connection tree visible, because `ConnectionsService` answered every failed database load with the cached local copy — right for a database nobody can reach, wrong when the database answered and the person could not prove they may read it. The copy carries every name, hostname, username and port, which is most of what the master password withholds; the stored passwords stayed hidden only because the reveal gate compared the typed password against the cache's own random key. Unreachable before this change, since the built-in key always worked. A refused password now has its own exception type, excluded from the fallback.
+- [x] 5.6 Manual: attempt the upgrade without setting a password and confirm it is refused with an explanation. — Passed: cancelling the new-password box abandons the upgrade with its own message rather than the generic decline, and the database is left legacy.
+- [x] 5.7 Manual: a second client opening the upgraded database is prompted, and succeeds with the password. — Passed, from a client with its own settings directory and therefore no cached copy and no remembered password. This is the one that proves the upgrade did not quietly bind the database to the machine or account that performed it, which is the failure `design.md` rules out on paper: a per-user protector cannot be unwrapped by a second client, and that is why the answer here is a password a human distributes rather than DPAPI.
+
+Note on 5.4 to 5.7: the automated tests drive substitutes for the thing that matters — a metadata row
+with a version field, a prompt that returns a canned answer — so until these ran, nothing had shown a
+real password box in front of a real database. They found three defects between them, none of which a
+test reached, and one of which was a test agreeing with a broken page. Section 6 of
+`encrypt-sql-backend-with-aead` set the same precedent.
+
+Two more came out of questions asked while running them, rather than from the steps themselves: that
+a master password could be cleared in the properties panel with the refusal arriving later from the
+save, and that Simple view's disabled text boxes read as broken input. Neither was on the list. The
+list is not what makes a manual pass worth doing.
+
+## 6. Review
+
+- [x] 6.1 Automated review of the pull request (CodeRabbit, PR #57). Four findings, all upheld:
+  - **A refused reload escaped the background sync as an unhandled exception.** The same
+    fallback removal that 5.5 found also removed the thing that had been swallowing everything the
+    reload threw: `ConnectionsService` used to answer every database load failure from the local
+    copy, so nothing could get past `RemoteConnectionsSyncronizer.Load` — which wraps its reload in
+    nothing at all. Reachable when another administrator changes the master password under a running
+    client, which is exactly the situation this change creates. It now reports, stops polling rather
+    than putting the same password box up every interval, and leaves the tree the user already
+    authenticated for.
+  - **Typing the built-in key as the new master password reported "the upgrade failed".** `Apply`
+    refuses it — the point was never in doubt — but by `ArgumentException`, which `Ask` catches with
+    everything else. Somebody who deliberately typed the one string that defeats the whole change
+    read a program fault. Refused now where it is typed, with the reason. The recall prompt is
+    covered too: there the built-in key is simply the wrong password, and says so.
+  - **5.2 recorded a test count from before the last two commits.** 4341, then 4344 in
+    `test-config.json`, now 4350.
+  - **This document contradicted the code it describes.** "encrypt-sql-backend-with-aead already
+    refuses to *write* legacy databases" was true of a draft and false of what shipped: that change
+    considered refusing the write and deliberately did not, on the grounds that declining to save
+    does not improve a state a team is already in. Corrected in `design.md`, where it would otherwise
+    have been read as settled precedent by whoever picks this up next.
+
+Note: the two code findings are both the same shape as 5.5 — a failure path that could not be
+reached until refusing a password became possible, so nothing existing covered it and nothing new
+thought to. The review reached them by asking who calls this, which is cheaper than the manual pass
+and does not replace it: it found no defect that needed a screen.

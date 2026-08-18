@@ -1,8 +1,10 @@
 ﻿using System;
+using System.Globalization;
 using System.Runtime.Versioning;
 using mRemoteNG.App;
 using mRemoteNG.Messages;
 using mRemoteNG.Properties;
+using mRemoteNG.Resources.Language;
 using mRemoteNG.UI.Forms;
 
 // ReSharper disable ArrangeAccessorOwnerBody
@@ -17,9 +19,31 @@ public class RemoteConnectionsSyncronizer : IConnectionsUpdateChecker
     private readonly System.Threading.Lock _timerLock = new();
     private bool _disposed;
 
+    /// <summary>
+    /// How a reload is performed. A seam, so that a reload which throws can be exercised without a
+    /// SQL server and a master password somebody has changed underneath us.
+    /// </summary>
+    internal static Action<bool, string> Reload { get; set; } =
+        (useDatabase, fileName) => Runtime.ConnectionsService.LoadConnections(useDatabase, false, fileName);
+
     public double TimerIntervalInMilliseconds
     {
         get { return _updateTimer.Interval; }
+    }
+
+    /// <summary>
+    /// Whether the poll timer is running. Read by tests, which otherwise could not tell a refused
+    /// reload that stopped asking from one that will put the same password box up every interval.
+    /// </summary>
+    internal bool IsPolling
+    {
+        get
+        {
+            lock (_timerLock)
+            {
+                return !_disposed && _updateTimer.Enabled;
+            }
+        }
     }
 
     /// <summary>
@@ -61,15 +85,37 @@ public class RemoteConnectionsSyncronizer : IConnectionsUpdateChecker
             return;
         }
 
-        if (args.DatabaseConnector != null)
+        try
         {
-            Runtime.ConnectionsService.LoadConnections(true, false, "");
+            if (args.DatabaseConnector != null)
+            {
+                Reload(true, "");
+            }
+            else
+            {
+                if (Runtime.ConnectionsService.ConnectionFileName != null)
+                    Reload(false, Runtime.ConnectionsService.ConnectionFileName);
+            }
         }
-        else
+        catch (SqlAuthenticationRefusedException ex)
         {
-            if (Runtime.ConnectionsService.ConnectionFileName != null)
-                Runtime.ConnectionsService.LoadConnections(false, false, Runtime.ConnectionsService.ConnectionFileName);
+            // A reload nobody asked for must not become a crash dialog. This arrives when the
+            // database's master password has been changed by another administrator and the person
+            // here declined the prompt or got it wrong: the load is refused rather than answered
+            // from the local copy, and without this the refusal would escape a timer callback and
+            // surface as an unhandled exception over whatever they were doing.
+            //
+            // Polling stops with it, and that is the point rather than a side effect. The update is
+            // still pending, so the next tick would find it again and put the same password box in
+            // front of them every interval. What they keep is the tree they already authenticated
+            // for; reloading connections deliberately — the options page, or a restart — starts the
+            // synchronizer again with a fresh chance to type the new password.
+            Disable();
+            Runtime.MessageCollector.AddMessage(MessageClass.WarningMsg, string.Format(
+                CultureInfo.CurrentCulture, Language.WarningSqlSyncAuthenticationRefused, ex.Message));
+            return;
         }
+
         args.Handled = true;
 
         LastExternalSync = DateTime.UtcNow;

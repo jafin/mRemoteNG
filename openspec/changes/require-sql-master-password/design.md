@@ -69,8 +69,12 @@ path safe in the interim, which is the period that matters.
 
 ### Legacy databases keep reading under the default key
 
-Refusing them would delete a team's connections to fix how they are stored. They keep working, and
-`encrypt-sql-backend-with-aead` already refuses to *write* them, which is the pressure to upgrade.
+Refusing them would delete a team's connections to fix how they are stored. They keep reading and
+they keep writing: `encrypt-sql-backend-with-aead` considered refusing the write and deliberately
+did not, because a legacy database is a state these teams are already in and declining to save does
+not improve it — it only stops people working until an administrator acts. What it does instead is
+say so once per session on the message channel, and the options page's status line says it to the
+person who can actually decide. That is the pressure to upgrade.
 
 ## Risks
 
@@ -83,11 +87,17 @@ Refusing them would delete a team's connections to fix how they are stored. They
 
 ## Open Questions
 
-- Should the pre-upgrade check try to establish how many distinct clients have recently written to
-  the database, so the warning can say "this database has been used by N clients" rather than a
-  generic caution? `tblUpdate` carries update stamps and might support it. More honest if it works,
-  and misleading if it undercounts — worth investigating before task 3, not committing to now.
-- Is there a case for allowing a SQL database to stay on the legacy version indefinitely, for teams
-  who cannot coordinate a password? Today that is the effect of doing nothing. Making it an explicit,
-  acknowledged state would at least be honest, but it also legitimises leaving passwords under
-  `mR3m`. Leaning towards not offering it.
+Both are now answered. Kept rather than deleted, because what was rejected is part of the record.
+
+- ~~Should the pre-upgrade check establish how many distinct clients have recently written to the
+  database, so the warning can say "this database has been used by N clients"?~~ **No — the schema
+  cannot support it.** `tblUpdate` holds exactly one row: every save deletes all rows and inserts a
+  single `LastUpdate` stamp. There is no client identity and no history, so the most it could say is
+  when the database was last written, by nobody in particular. A trustworthy count needs a new table
+  and a write on every save, which is a schema change this proposal has no business making — and it
+  would improve a warning that is already explicit that the decision reaches people who are not in
+  the room.
+- ~~Is there a case for an explicit, acknowledged "stay on the legacy version" state?~~ **No.** Doing
+  nothing already has that effect, and naming it would legitimise leaving passwords under `mR3m`
+  while adding a setting whose only function is to record a decision not to act. The options page
+  now says what that state costs, which is the honest version of the same information.

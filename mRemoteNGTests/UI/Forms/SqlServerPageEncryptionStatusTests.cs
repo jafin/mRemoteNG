@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Runtime.Versioning;
 using System.Threading;
 using System.Windows.Forms;
@@ -95,7 +95,9 @@ public class SqlServerPageEncryptionStatusTests
 
             Assert.Multiple(() =>
             {
-                Assert.That(status.Text, Is.EqualTo(Language.SqlUpgradeStatusLegacy));
+                // The fixture's database has no master password, so this is the stronger of the
+                // two sentences: not "old encryption" but "these passwords are not protected".
+                Assert.That(status.Text, Is.EqualTo(Language.SqlUpgradeStatusDefaultKey));
                 Assert.That(upgrade.Visible, "and the upgrade is offered");
             });
         });
@@ -182,6 +184,57 @@ public class SqlServerPageEncryptionStatusTests
     /// <summary>A control's rectangle in screen coordinates, so controls at different depths compare.</summary>
     private static System.Drawing.Rectangle OnScreen(Control control) =>
         control.RectangleToScreen(control.ClientRectangle);
+
+    [Test]
+    public void TheStatusLineIsTallEnoughForItsOwnWrappedText()
+    {
+        // **Found by hand, twice, at 150% scaling.** The status ended "…so they are", which reads
+        // like a finished sentence and is not one. The label wrapped; the row was one line tall, so
+        // the rest was painted outside it.
+        //
+        // The first attempt at this test asserted the wrong thing and passed against the broken
+        // page. It set AutoSize on the label — which in the application *removes* wrapping, because
+        // MrngLabel paints its own text under an extended theme and only asks for WordBreak when
+        // AutoSize is false. No extended theme is loaded here, so the base Label paint ran and the
+        // test saw a wrap the user never got. Hence the first assertion below: it pins the property
+        // the themed painter reads, which is the thing no geometry check in this harness can see.
+        _retriever.GetDatabaseMetaData(Arg.Any<IDatabaseConnector>())
+            .Returns(MetaDataAt(SqlDatabaseVersionVerifier.SchemaVersion));
+
+        RunWithMessagePump(page =>
+        {
+            page.LoadSettings();
+
+            Label status = Find<Label>(page, "lblEncryptionStatus");
+            Control row = Find<Control>(page, "pnlEncryptionStatus");
+
+            PumpUntil(() => !string.IsNullOrEmpty(status.Text), "the status line should populate");
+
+            int wrapped = TextRenderer.MeasureText(status.Text, status.Font,
+                new System.Drawing.Size(status.Width, int.MaxValue),
+                TextFormatFlags.WordBreak | TextFormatFlags.TextBoxControl).Height;
+
+            Assert.Multiple(() =>
+            {
+                Assert.That(status.AutoSize, Is.False,
+                    "MrngLabel word-wraps its themed paint only while this is false");
+                Assert.That(status.Text, Is.EqualTo(Language.SqlUpgradeStatusDefaultKey),
+                    "the whole sentence, not as much of it as fits");
+
+                // The precondition, asserted rather than assumed: this sentence does not fit on one
+                // line at the width it is given, so a one-line-tall label would be hiding the end of
+                // it. If a change to the harness or the wording ever makes it fit, this fails here
+                // rather than passing vacuously.
+                Assert.That(wrapped, Is.GreaterThan(status.Font.Height * 3 / 2),
+                    "this asserts nothing unless the text takes more than one line");
+
+                Assert.That(status.Height, Is.GreaterThanOrEqualTo(wrapped),
+                    "the label is as tall as its wrapped text");
+                Assert.That(status.Bottom, Is.LessThanOrEqualTo(row.ClientSize.Height),
+                    "and the row grew to hold it rather than clipping it");
+            });
+        });
+    }
 
     private static T Find<T>(Control parent, string name) where T : Control
     {
