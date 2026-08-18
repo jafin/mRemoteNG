@@ -346,10 +346,12 @@ public sealed partial class SqlServerPage
             chkSQLReadOnly.Checked = Properties.OptionsDBsPage.Default.SQLReadOnly;
             chkShowDatabasePickerOnStartup.Checked = Properties.OptionsDBsPage.Default.ShowDatabasePickerOnStartup;
 
-            // Populate simple mode read-only fields
-            mrngTextBox2.Text = Properties.OptionsDBsPage.Default.SQLHost;
-            mrngTextBox1.Text = Properties.OptionsDBsPage.Default.SQLDatabaseName;
-            mrngTextBox4.Text = Properties.OptionsDBsPage.Default.SQLUser;
+            // What Simple view shows: where the connections are coming from, as text. Editing them
+            // is what Advanced is for, and these were text boxes with the panel disabled — which
+            // reads as input that is broken rather than as a summary that is deliberate.
+            lblSummaryServer.Text = Properties.OptionsDBsPage.Default.SQLHost;
+            lblSummaryDatabase.Text = Properties.OptionsDBsPage.Default.SQLDatabaseName;
+            lblSummaryUsername.Text = Properties.OptionsDBsPage.Default.SQLUser;
 
             string savedAuthType = Properties.OptionsDBsPage.Default.SQLAuthType;
             int authIndex = txtSQLAuthType.FindStringExact(savedAuthType);
