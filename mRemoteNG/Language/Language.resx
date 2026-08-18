@@ -3272,7 +3272,7 @@ You are deciding this for everybody who connects to this database, including col
     <value>This database holds no mRemoteNG connections yet.</value>
   </data>
   <data name="SqlUpgradeStatusDefaultKey" xml:space="preserve">
-    <value>The passwords in this database are not protected. It has no master password, so they are encrypted with a key that is built into mRemoteNG and published in its source code - anyone who can read the database can read them.</value>
+    <value>The passwords in this database are not protected. It has no master password, so they are encrypted with a key built into mRemoteNG that anyone can read.</value>
   </data>
   <data name="SqlUpgradeSetPasswordName" xml:space="preserve">
     <value>New database master password</value>

@@ -113,7 +113,12 @@ public sealed partial class SqlServerPage
     {
         lblEncryptionStatus = new MrngLabel
         {
-            Dock = DockStyle.Fill,
+            // Sized by its text rather than by its cell, so a sentence too long for the width
+            // becomes two lines and the row grows. Docked and fixed-height, it was silently cut off
+            // mid-word — and the half that goes missing is the end, which is where the consequence
+            // is. ConstrainStatusWidth supplies the width to wrap at.
+            AutoSize = true,
+            Anchor = AnchorStyles.Left,
             TextAlign = ContentAlignment.MiddleLeft,
             Name = "lblEncryptionStatus",
             Text = ""
@@ -152,6 +157,7 @@ public sealed partial class SqlServerPage
         TableLayoutPanel encryptionRow = Row("pnlEncryptionStatus", SizeType.Percent, SizeType.AutoSize);
         encryptionRow.Controls.Add(lblEncryptionStatus, 0, 0);
         encryptionRow.Controls.Add(btnUpgradeEncryption, 1, 0);
+        encryptionRow.Layout += (_, _) => ConstrainStatusWidth(encryptionRow);
 
         TableLayoutPanel bottom = new()
         {
@@ -171,6 +177,37 @@ public sealed partial class SqlServerPage
 
         pnlServerBlock.Controls.Add(bottom);
         bottom.BringToFront();
+    }
+
+    /// <summary>
+    /// Gives the status label the width it is allowed to occupy, so it wraps there.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// An auto-sizing label reports the width its text wants and is clipped by its cell; capping
+    /// <see cref="Control.MaximumSize"/> makes it wrap at that width and report the extra height
+    /// instead, which the auto-size row then takes.
+    /// </para>
+    /// <para>
+    /// Measured from the row rather than assumed, because the button beside it appears and
+    /// disappears and the whole strip is scaled by the display's DPI — the two things that made the
+    /// earlier fixed layout wrong at 150%.
+    /// </para>
+    /// <para>
+    /// The equality check is not an optimisation. Setting the property raises another layout, so
+    /// without it this recurses until the stack runs out.
+    /// </para>
+    /// </remarks>
+    private void ConstrainStatusWidth(TableLayoutPanel row)
+    {
+        int available = row.ClientSize.Width
+                        - lblEncryptionStatus.Margin.Horizontal
+                        - (btnUpgradeEncryption.Visible
+                            ? btnUpgradeEncryption.Width + btnUpgradeEncryption.Margin.Horizontal
+                            : 0);
+
+        if (available > 0 && lblEncryptionStatus.MaximumSize.Width != available)
+            lblEncryptionStatus.MaximumSize = new Size(available, 0);
     }
 
     /// <summary>One auto-height row. A <see cref="SizeType.Percent"/> column takes up the slack.</summary>
