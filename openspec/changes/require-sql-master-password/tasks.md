@@ -44,7 +44,7 @@ The loader's first run no longer writes that row at all. It had no master passwo
 ## 5. Verification
 
 - [x] 5.1 Full build; zero new analyzer warnings.
-- [x] 5.2 Full test suite; zero failures, no `[Ignore]`. — 4341 passed, including the SQL integration group against a container. Six existing tests had to change: three transaction tests and three saver tests were seeding databases at the authenticated version with no master password, which is now the one state that cannot be recorded. One pair asserted the first-run write this change removes, and was reversed to assert that nothing is written; the ODBC half of that pair kept the only thing in it worth keeping — that the loader reads through the connector it was given.
+- [x] 5.2 Full test suite; zero failures, no `[Ignore]`. — 4350 passed, including the SQL integration group against a container. Six existing tests had to change: three transaction tests and three saver tests were seeding databases at the authenticated version with no master password, which is now the one state that cannot be recorded. One pair asserted the first-run write this change removes, and was reversed to assert that nothing is written; the ODBC half of that pair kept the only thing in it worth keeping — that the loader reads through the connector it was given.
 - [x] 5.3 `openspec validate require-sql-master-password --strict`.
 - [x] 5.4 Manual against a real SQL Server: a legacy database with no password still opens; the warning appears. — Passed against a restored copy of the §6.4 database: both connections loaded with no prompt and their passwords decrypted. **The status line was wrong, twice.** It was cut off mid-sentence at 150% scaling — first diagnosed as a width problem, which made it worse, because `MrngLabel` paints its own text under an extended theme and word-wraps only while `AutoSize` is false. The real fault was height: it wrapped, and the row was one line tall. The test written for the first attempt passed against the broken page, since no extended theme is loaded under test and the base paint runs instead. (The once-per-session save warning was not separately observed here; `ALegacyDatabaseIsWarnedAboutOnceAndNotOnEverySave` covers it against a real database.)
 - [x] 5.5 Manual: upgrade with a master password, confirm it opens with the password and refuses without it. — Passed. **Refusing turned out not to refuse.** Three wrong passwords still opened the application with the connection tree visible, because `ConnectionsService` answered every failed database load with the cached local copy — right for a database nobody can reach, wrong when the database answered and the person could not prove they may read it. The copy carries every name, hostname, username and port, which is most of what the master password withholds; the stored passwords stayed hidden only because the reveal gate compared the typed password against the cache's own random key. Unreachable before this change, since the built-in key always worked. A refused password now has its own exception type, excluded from the fallback.
@@ -61,3 +61,32 @@ Two more came out of questions asked while running them, rather than from the st
 a master password could be cleared in the properties panel with the refusal arriving later from the
 save, and that Simple view's disabled text boxes read as broken input. Neither was on the list. The
 list is not what makes a manual pass worth doing.
+
+## 6. Review
+
+- [x] 6.1 Automated review of the pull request (CodeRabbit, PR #57). Four findings, all upheld:
+  - **A refused reload escaped the background sync as an unhandled exception.** The same
+    fallback removal that 5.5 found also removed the thing that had been swallowing everything the
+    reload threw: `ConnectionsService` used to answer every database load failure from the local
+    copy, so nothing could get past `RemoteConnectionsSyncronizer.Load` — which wraps its reload in
+    nothing at all. Reachable when another administrator changes the master password under a running
+    client, which is exactly the situation this change creates. It now reports, stops polling rather
+    than putting the same password box up every interval, and leaves the tree the user already
+    authenticated for.
+  - **Typing the built-in key as the new master password reported "the upgrade failed".** `Apply`
+    refuses it — the point was never in doubt — but by `ArgumentException`, which `Ask` catches with
+    everything else. Somebody who deliberately typed the one string that defeats the whole change
+    read a program fault. Refused now where it is typed, with the reason. The recall prompt is
+    covered too: there the built-in key is simply the wrong password, and says so.
+  - **5.2 recorded a test count from before the last two commits.** 4341, then 4344 in
+    `test-config.json`, now 4350.
+  - **This document contradicted the code it describes.** "encrypt-sql-backend-with-aead already
+    refuses to *write* legacy databases" was true of a draft and false of what shipped: that change
+    considered refusing the write and deliberately did not, on the grounds that declining to save
+    does not improve a state a team is already in. Corrected in `design.md`, where it would otherwise
+    have been read as settled precedent by whoever picks this up next.
+
+Note: the two code findings are both the same shape as 5.5 — a failure path that could not be
+reached until refusing a password became possible, so nothing existing covered it and nothing new
+thought to. The review reached them by asking who calls this, which is cheaper than the manual pass
+and does not replace it: it found no defect that needed a screen.

@@ -69,8 +69,12 @@ path safe in the interim, which is the period that matters.
 
 ### Legacy databases keep reading under the default key
 
-Refusing them would delete a team's connections to fix how they are stored. They keep working, and
-`encrypt-sql-backend-with-aead` already refuses to *write* them, which is the pressure to upgrade.
+Refusing them would delete a team's connections to fix how they are stored. They keep reading and
+they keep writing: `encrypt-sql-backend-with-aead` considered refusing the write and deliberately
+did not, because a legacy database is a state these teams are already in and declining to save does
+not improve it — it only stops people working until an administrator acts. What it does instead is
+say so once per session on the message channel, and the options page's status line says it to the
+person who can actually decide. That is the pressure to upgrade.
 
 ## Risks
 
