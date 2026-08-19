@@ -1,20 +1,26 @@
 using System;
+using System.Collections.Generic;
+using System.Collections.Specialized;
 using System.IO;
 using System.Linq;
-using System.Reflection;
 using System.Security;
 using System.Threading;
 using System.Threading.Tasks;
+using mRemoteNG.App;
 using mRemoteNG.App.Info;
 using mRemoteNG.Config.Connections;
 using mRemoteNG.Config.Import;
 using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 using mRemoteNG.Connection;
+using mRemoteNG.Credential;
+using mRemoteNG.Messages;
 using mRemoteNG.Security;
 using mRemoteNG.Security.FileProtection;
 using mRemoteNG.Tools;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
+using mRemoteNGTests.TestHelpers;
+using NSubstitute;
 using NUnit.Framework;
 
 namespace mRemoteNGTests.Connection;
@@ -73,7 +79,7 @@ public class ConnectionSecretDecryptionTimingTests
 
         ConnectionTreeModel opened = Reopen();
 
-        Assert.That(Connections(opened).Select(StoredSecureString), Is.All.Null,
+        Assert.That(ConnectionSecretInspector.Connections(opened).Select(ConnectionSecretInspector.StoredSecureString), Is.All.Null,
             "no password was in memory before anything asked for one");
     }
 
@@ -81,16 +87,16 @@ public class ConnectionSecretDecryptionTimingTests
     public void ASecretIsDecryptedOnFirstReadAndHeldAsASecureString()
     {
         SaveStoreWithPasswords();
-        ConnectionInfo connection = Connections(Reopen()).First();
+        ConnectionInfo connection = ConnectionSecretInspector.Connections(Reopen()).First();
 
         Assert.That(connection.Password, Is.EqualTo("first-secret"));
 
-        SecureString? stored = StoredSecureString(connection);
+        SecureString? stored = ConnectionSecretInspector.StoredSecureString(connection);
         Assert.Multiple(() =>
         {
             Assert.That(stored, Is.Not.Null, "the read left the value on the record");
             Assert.That(stored!.Length, Is.EqualTo("first-secret".Length));
-            Assert.That(PendingSecret(connection, "_pendingPassword"), Is.Null,
+            Assert.That(ConnectionSecretInspector.IsStillPending(connection, nameof(ConnectionInfo.Password)), Is.False,
                 "and nothing is left waiting to be decrypted a second time");
         });
     }
@@ -101,14 +107,14 @@ public class ConnectionSecretDecryptionTimingTests
         // The point of the whole change, stated as a user meets it: a file of two hundred
         // connections should cost the two passwords the user actually asks for, not two hundred.
         SaveStoreWithPasswords();
-        ConnectionInfo[] connections = Connections(Reopen());
+        ConnectionInfo[] connections = ConnectionSecretInspector.Connections(Reopen());
 
         _ = connections[0].Password;
 
         Assert.Multiple(() =>
         {
-            Assert.That(StoredSecureString(connections[1]), Is.Null);
-            Assert.That(StoredSecureString(connections[2]), Is.Null);
+            Assert.That(ConnectionSecretInspector.StoredSecureString(connections[1]), Is.Null);
+            Assert.That(ConnectionSecretInspector.StoredSecureString(connections[2]), Is.Null);
         });
     }
 
@@ -117,7 +123,7 @@ public class ConnectionSecretDecryptionTimingTests
     {
         SaveStoreWithPasswords();
 
-        Assert.That(Connections(Reopen()).Select(c => c.Password), Is.EqualTo(EverySecretInTheStore));
+        Assert.That(ConnectionSecretInspector.Connections(Reopen()).Select(c => c.Password), Is.EqualTo(EverySecretInTheStore));
     }
 
     [Test]
@@ -126,7 +132,7 @@ public class ConnectionSecretDecryptionTimingTests
         // Two ways to read a password and only one of them lazy would answer differently depending
         // on which a caller happened to use.
         SaveStoreWithPasswords();
-        ConnectionInfo[] connections = Connections(Reopen());
+        ConnectionInfo[] connections = ConnectionSecretInspector.Connections(Reopen());
 
         using SecureString throughTheSecureStringAccessor = connections[1].SecurePassword;
 
@@ -143,7 +149,7 @@ public class ConnectionSecretDecryptionTimingTests
         int decryptions = 0;
         ConnectionInfo connection = new() { Name = "counted" };
         connection.SetPendingSecret(nameof(ConnectionInfo.Password),
-            new PendingConnectionSecret("ciphertext", AnyKey(), _ => { decryptions++; return "plain"; }));
+            new PendingConnectionSecret("ciphertext", ConnectionSecretInspector.AnyKey(), _ => { decryptions++; return "plain"; }));
 
         _ = connection.Password;
         using (SecureString _ = connection.SecurePassword) { }
@@ -162,7 +168,7 @@ public class ConnectionSecretDecryptionTimingTests
         using ManualResetEventSlim start = new();
         ConnectionInfo connection = new() { Name = "raced" };
         connection.SetPendingSecret(nameof(ConnectionInfo.Password),
-            new PendingConnectionSecret("ciphertext", AnyKey(), _ =>
+            new PendingConnectionSecret("ciphertext", ConnectionSecretInspector.AnyKey(), _ =>
             {
                 Interlocked.Increment(ref decryptions);
                 Thread.Sleep(20);
@@ -193,7 +199,7 @@ public class ConnectionSecretDecryptionTimingTests
         // of what the user typed the next time anything asked.
         ConnectionInfo connection = new() { Name = "edited" };
         connection.SetPendingSecret(nameof(ConnectionInfo.Password),
-            new PendingConnectionSecret("ciphertext", AnyKey(), _ => "from-the-file"));
+            new PendingConnectionSecret("ciphertext", ConnectionSecretInspector.AnyKey(), _ => "from-the-file"));
 
         connection.Password = "typed-by-the-user";
 
@@ -208,7 +214,7 @@ public class ConnectionSecretDecryptionTimingTests
         // would send the wrong credentials to a host rather than reporting anything.
         SaveStoreWithPasswords();
         CorruptTheStoredPasswordOf("two");
-        ConnectionInfo[] connections = Connections(Reopen());
+        ConnectionInfo[] connections = ConnectionSecretInspector.Connections(Reopen());
 
         ConnectionSecretDecryptionException? failure =
             Assert.Throws<ConnectionSecretDecryptionException>(() => _ = connections[1].Password);
@@ -225,7 +231,7 @@ public class ConnectionSecretDecryptionTimingTests
     {
         SaveStoreWithPasswords();
         CorruptTheStoredPasswordOf("two");
-        ConnectionInfo[] connections = Connections(Reopen());
+        ConnectionInfo[] connections = ConnectionSecretInspector.Connections(Reopen());
 
         Assert.Multiple(() =>
         {
@@ -241,12 +247,15 @@ public class ConnectionSecretDecryptionTimingTests
         // The property grid re-reads a displayed connection constantly. A message per repaint over
         // one broken field would bury everything else in the notification panel.
         int reports = 0;
-        ConnectionInfo connection = new() { Name = "broken" };
+        ConnectionInfo connection = new() { Name = "broken-and-counted" };
         connection.SetPendingSecret(nameof(ConnectionInfo.Password),
-            new PendingConnectionSecret("ciphertext", AnyKey(),
+            new PendingConnectionSecret("ciphertext", ConnectionSecretInspector.AnyKey(),
                                         _ => throw new InvalidOperationException("no")));
 
-        using (CountingMessages(() => reports++))
+        // Only this connection's messages are counted. The collector is a static singleton that
+        // anything in the process may write to, so counting every message would make this test fail
+        // for reasons that have nothing to do with it.
+        using (CountingMessagesAbout(connection.Name, () => reports++))
         {
             for (int i = 0; i < 5; i++)
                 Assert.Throws<ConnectionSecretDecryptionException>(() => _ = connection.Password);
@@ -265,7 +274,7 @@ public class ConnectionSecretDecryptionTimingTests
         SaveStoreWithPasswords();
         CorruptTheSentinel();
 
-        Exception? thrown = Assert.Catch(() => new XmlConnectionsDeserializer(_storePath, Cancelled)
+        Exception? thrown = Assert.Catch(() => new XmlConnectionsDeserializer(_storePath, ConnectionSecretInspector.Cancelled)
                                                    .Deserialize(File.ReadAllText(_storePath)));
 
         Assert.Multiple(() =>
@@ -273,6 +282,90 @@ public class ConnectionSecretDecryptionTimingTests
             Assert.That(thrown, Is.Not.Null, "the store must not open on a key that decrypts nothing");
             Assert.That(thrown, Is.Not.InstanceOf<ConnectionSecretDecryptionException>(),
                         "reported while opening the file, not once per connection in it");
+        });
+    }
+
+    [Test]
+    public void ASecretThatFailedIsNotDecryptedAgainOnEveryRead()
+    {
+        // The record keeps a secret that failed, so that a later read cannot answer with an empty
+        // one - which means every later read arrives back at the decryption. A wrong key is not
+        // going to become the right key, and each retry costs a full derivation on whichever thread
+        // asked.
+        int attempts = 0;
+        ConnectionInfo connection = new() { Name = "broken-once" };
+        connection.SetPendingSecret(nameof(ConnectionInfo.Password),
+            new PendingConnectionSecret("ciphertext", ConnectionSecretInspector.AnyKey(),
+                                        _ =>
+                                        {
+                                            attempts++;
+                                            throw new InvalidOperationException("no");
+                                        }));
+
+        for (int i = 0; i < 5; i++)
+            Assert.Throws<ConnectionSecretDecryptionException>(() => _ = connection.Password);
+
+        Assert.That(attempts, Is.EqualTo(1));
+    }
+
+    [Test]
+    public void AnAssignedSecretIsNoLongerOfferedToTheSaverAsStoredCipherText()
+    {
+        // The pass-through and the edit race each other on a record the user is typing into while a
+        // save runs. Offering the ciphertext after the assignment would put the superseded password
+        // back in the file in place of the one just typed.
+        ConnectionSecretKeyIdentity key = ConnectionSecretInspector.AnyKey();
+        ConnectionInfo connection = new() { Name = "edited-mid-save" };
+        connection.SetPendingSecret(nameof(ConnectionInfo.Password),
+            new PendingConnectionSecret("stored-ciphertext", key, _ => "plain"));
+
+        Assert.That(connection.TryGetStoredCipherText(nameof(ConnectionInfo.Password), key, out _), Is.True,
+                    "untouched, so its own bytes are what a save should write");
+
+        connection.Password = "typed-by-the-user";
+
+        Assert.That(connection.TryGetStoredCipherText(nameof(ConnectionInfo.Password), key, out _), Is.False);
+    }
+
+    [Test]
+    public void OneUnreadableSecretDoesNotStopTheRestOfAnImportBeingScanned()
+    {
+        // CredentialImportHelper walks every node in the file being imported. A secret that will not
+        // decrypt must not abort that walk, or one damaged password would make the whole import
+        // report that there is nothing to extract.
+        SaveStoreWithPasswords();
+        CorruptTheStoredPasswordOf("two");
+        ConnectionInfo[] connections = ConnectionSecretInspector.Connections(Reopen());
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(CredentialImportHelper.HasCredentials(connections[1]), Is.True,
+                        "a secret that cannot be read is still a secret");
+            Assert.That(CredentialImportHelper.HasCredentials(connections[2]), Is.True);
+        });
+    }
+
+    [Test]
+    public void ExtractingCredentialsLeavesAConnectionWhoseSecretCannotBeReadAlone()
+    {
+        // The extraction ends by clearing the connection's own password. Doing that after failing to
+        // read it would lose the secret outright, so the connection is left exactly as it is.
+        SaveStoreWithPasswords();
+        CorruptTheStoredPasswordOf("two");
+        ConnectionInfo broken = ConnectionSecretInspector.Connections(Reopen())[1];
+
+        ICredentialRepository repository = Substitute.For<ICredentialRepository>();
+        List<ICredentialRecord> records = [];
+        repository.CredentialRecords.Returns(records);
+
+        CredentialImportHelper.ExtractCredentials(broken, repository);
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(records, Is.Empty, "nothing was extracted from a secret that could not be read");
+            Assert.That(broken.CredentialId, Is.Empty, "and the connection was not bound to a credential");
+            Assert.That(ConnectionSecretInspector.IsStillPending(broken, nameof(ConnectionInfo.Password)), Is.True,
+                        "its stored secret is still there, undamaged");
         });
     }
 
@@ -286,23 +379,24 @@ public class ConnectionSecretDecryptionTimingTests
         Assert.That(CredentialImportHelper.HasCredentials(connection), Is.False);
     }
 
-    private static ConnectionSecretKeyIdentity AnyKey() =>
-        ConnectionSecretKeyIdentity.For(new mRemoteNG.Security.SymmetricEncryption.LegacyRijndaelCryptographyProvider(),
-                                        fileKey: null, password: "any");
-
     /// <summary>
-    /// Counts messages reaching the collector for as long as it is held.
+    /// Counts messages naming <paramref name="subject"/>, for as long as the result is held.
     /// </summary>
-    private static Unsubscriber CountingMessages(Action onMessage)
+    private static Unsubscriber CountingMessagesAbout(string subject, Action onMessage)
     {
-        void Handler(object? sender, System.Collections.Specialized.NotifyCollectionChangedEventArgs args)
+        void Handler(object? sender, NotifyCollectionChangedEventArgs args)
         {
-            if (args.Action == System.Collections.Specialized.NotifyCollectionChangedAction.Add)
-                onMessage();
+            if (args.Action != NotifyCollectionChangedAction.Add || args.NewItems is null)
+                return;
+
+            foreach (object? added in args.NewItems)
+                if (added is IMessage message &&
+                    message.Text.Contains(subject, StringComparison.Ordinal))
+                    onMessage();
         }
 
-        mRemoteNG.App.Runtime.MessageCollector.CollectionChanged += Handler;
-        return new Unsubscriber(() => mRemoteNG.App.Runtime.MessageCollector.CollectionChanged -= Handler);
+        Runtime.MessageCollector.CollectionChanged += Handler;
+        return new Unsubscriber(() => Runtime.MessageCollector.CollectionChanged -= Handler);
     }
 
     private sealed class Unsubscriber(Action dispose) : IDisposable
@@ -330,62 +424,11 @@ public class ConnectionSecretDecryptionTimingTests
         new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(model);
     }
 
-    /// <summary>
-    /// Replaces one connection's stored password with something that is not a ciphertext, leaving
-    /// the rest of the file exactly as it was.
-    /// </summary>
-    private void CorruptTheStoredPasswordOf(string connectionName)
-    {
-        string xml = File.ReadAllText(_storePath);
-        System.Text.RegularExpressions.Regex attribute = new(
-            $"(?<head>Name=\"{connectionName}\"[^>]*?Password=\")[^\"]*(?<tail>\")",
-            System.Text.RegularExpressions.RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(5));
+    private void CorruptTheStoredPasswordOf(string connectionName) =>
+        ConnectionSecretInspector.CorruptTheStoredPasswordOf(_storePath, connectionName);
 
-        Assert.That(attribute.IsMatch(xml), Is.True,
-            "the store was expected to hold this password as a readable attribute");
-
-        File.WriteAllText(_storePath, attribute.Replace(xml, "${head}bm90LWEtY2lwaGVydGV4dA==${tail}", 1));
-    }
-
-    /// <summary>
-    /// Breaks the one ciphertext whose plaintext the loader knows in advance, so that no key can be
-    /// accepted for this store.
-    /// </summary>
-    private void CorruptTheSentinel()
-    {
-        string xml = File.ReadAllText(_storePath);
-        System.Text.RegularExpressions.Regex attribute = new(
-            "(?<head>Protected=\")[^\"]*(?<tail>\")",
-            System.Text.RegularExpressions.RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(5));
-
-        Assert.That(attribute.IsMatch(xml), Is.True, "the store was expected to declare a sentinel");
-
-        File.WriteAllText(_storePath, attribute.Replace(xml, "${head}bm90LWEtc2VudGluZWw=${tail}", 1));
-    }
+    private void CorruptTheSentinel() => ConnectionSecretInspector.CorruptTheSentinel(_storePath);
 
     private ConnectionTreeModel Reopen() =>
-        new XmlConnectionsDeserializer(_storePath, NeverAsked)
-            .Deserialize(File.ReadAllText(_storePath));
-
-    private static SecureString? StoredSecureString(ConnectionInfo connection) =>
-        (SecureString?)typeof(AbstractConnectionRecord)
-            .GetField("_password", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(connection);
-
-    private static object? PendingSecret(ConnectionInfo connection, string fieldName) =>
-        typeof(AbstractConnectionRecord)
-            .GetField(fieldName, BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(connection);
-
-    private static ConnectionInfo[] Connections(ConnectionTreeModel model) =>
-        [.. model.RootNodes.OfType<RootNodeInfo>().First().Children];
-
-    private static Optional<SecureString> NeverAsked()
-    {
-        Assert.Fail("the machine protector should have opened the store");
-        return Optional<SecureString>.Empty;
-    }
-
-    /// <summary>The user pressing cancel at the recovery-password prompt.</summary>
-    private static Optional<SecureString> Cancelled() => Optional<SecureString>.Empty;
+        ConnectionSecretInspector.Reopen(_storePath, ConnectionSecretInspector.NeverAsked);
 }

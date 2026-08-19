@@ -1,12 +1,7 @@
-using System;
 using System.IO;
 using System.Linq;
-using System.Reflection;
-using System.Security;
-using System.Text.RegularExpressions;
 using mRemoteNG.App.Info;
 using mRemoteNG.Config.Connections;
-using mRemoteNG.Config.Serializers.ConnectionSerializers.Xml;
 using mRemoteNG.Connection;
 using mRemoteNG.Security;
 using mRemoteNG.Security.FileProtection;
@@ -14,6 +9,7 @@ using mRemoteNG.Tools;
 using mRemoteNG.Tree;
 using mRemoteNG.Tree.Root;
 using NUnit.Framework;
+using mRemoteNGTests.TestHelpers;
 
 namespace mRemoteNGTests.Config.Connections;
 
@@ -73,7 +69,7 @@ public class ConnectionSecretPassThroughTests
         {
             Assert.That(StoredPasswords(), Is.EqualTo(before),
                 "nothing read them, so there was nothing to re-encrypt");
-            Assert.That(Connections(reopened).Select(StoredSecureString), Is.All.Null,
+            Assert.That(ConnectionSecretInspector.Connections(reopened).Select(ConnectionSecretInspector.StoredSecureString), Is.All.Null,
                 "and the save did not decrypt them in order to write them");
         });
     }
@@ -85,7 +81,7 @@ public class ConnectionSecretPassThroughTests
         string[] before = StoredPasswords();
 
         ConnectionTreeModel reopened = Reopen();
-        Connections(reopened)[1].Password = "replaced";
+        ConnectionSecretInspector.Connections(reopened)[1].Password = "replaced";
         Save(reopened);
 
         string[] after = StoredPasswords();
@@ -95,7 +91,7 @@ public class ConnectionSecretPassThroughTests
             Assert.That(after[0], Is.EqualTo(before[0]));
             Assert.That(after[2], Is.EqualTo(before[2]));
             Assert.That(after[1], Is.Not.EqualTo(before[1]));
-            Assert.That(Connections(Reopen())[1].Password, Is.EqualTo("replaced"));
+            Assert.That(ConnectionSecretInspector.Connections(Reopen())[1].Password, Is.EqualTo("replaced"));
         });
     }
 
@@ -108,10 +104,10 @@ public class ConnectionSecretPassThroughTests
         SaveHardenedStore();
         ConnectionTreeModel reopened = Reopen();
 
-        ConnectionFileRekey.Apply(Root(reopened), "second-recovery".ConvertToSecureString(),
+        ConnectionFileRekey.Apply(ConnectionSecretInspector.Root(reopened), "second-recovery".ConvertToSecureString(),
                                   includeMachineProtector: true, FastIterations);
 
-        Assert.That(Connections(reopened).Select(StoredSecureString), Is.All.Not.Null);
+        Assert.That(ConnectionSecretInspector.Connections(reopened).Select(ConnectionSecretInspector.StoredSecureString), Is.All.Not.Null);
     }
 
     [Test]
@@ -120,11 +116,11 @@ public class ConnectionSecretPassThroughTests
         SaveHardenedStore();
         ConnectionTreeModel reopened = Reopen();
 
-        ConnectionFileRekey.Apply(Root(reopened), "second-recovery".ConvertToSecureString(),
+        ConnectionFileRekey.Apply(ConnectionSecretInspector.Root(reopened), "second-recovery".ConvertToSecureString(),
                                   includeMachineProtector: true, FastIterations);
         Save(reopened);
 
-        Assert.That(Connections(Reopen()).Select(c => c.Password),
+        Assert.That(ConnectionSecretInspector.Connections(Reopen()).Select(c => c.Password),
                     Is.EqualTo(EverySecretInTheStore));
     }
 
@@ -134,7 +130,7 @@ public class ConnectionSecretPassThroughTests
         SaveHardenedStore();
         CorruptTheStoredPasswordOf("two");
         ConnectionTreeModel reopened = Reopen();
-        RootNodeInfo root = Root(reopened);
+        RootNodeInfo root = ConnectionSecretInspector.Root(reopened);
 
         ConnectionFileKey? keyBefore = root.FileKey;
         ConnectionFileKeyProtection? protectionBefore = root.KeyProtection;
@@ -166,7 +162,7 @@ public class ConnectionSecretPassThroughTests
         Save(model);
 
         ConnectionTreeModel reopened = Reopen();
-        RootNodeInfo root = Root(reopened);
+        RootNodeInfo root = ConnectionSecretInspector.Root(reopened);
 
         using ConnectionFileKey fileKey = ConnectionFileKey.Generate();
         root.StorageFormat = StorageFormatLevel.Hardened;
@@ -176,7 +172,7 @@ public class ConnectionSecretPassThroughTests
 
         Save(reopened);
 
-        Assert.That(Connections(Reopen()).Select(c => c.Password),
+        Assert.That(ConnectionSecretInspector.Connections(Reopen()).Select(c => c.Password),
                     Is.EqualTo(EverySecretInTheClassicStore));
     }
 
@@ -189,7 +185,7 @@ public class ConnectionSecretPassThroughTests
         CorruptTheStoredPasswordOf("two");
 
         ConnectionTreeModel reopened = Reopen();
-        RootNodeInfo root = Root(reopened);
+        RootNodeInfo root = ConnectionSecretInspector.Root(reopened);
 
         // A different key of the same kind: the identity no longer matches, so every secret must be
         // decrypted and encrypted afresh.
@@ -206,14 +202,10 @@ public class ConnectionSecretPassThroughTests
         // - gets the safe answer without having to know the rule exists.
         ConnectionInfo connection = new() { Name = "exported" };
         connection.SetPendingSecret(nameof(ConnectionInfo.Password),
-            new PendingConnectionSecret("stored-ciphertext", AnyKey(), _ => "plain"));
+            new PendingConnectionSecret("stored-ciphertext", ConnectionSecretInspector.AnyKey(), _ => "plain"));
 
         Assert.That(connection.TryGetStoredCipherText(nameof(ConnectionInfo.Password), null, out _), Is.False);
     }
-
-    private static ConnectionSecretKeyIdentity AnyKey() =>
-        ConnectionSecretKeyIdentity.For(new mRemoteNG.Security.SymmetricEncryption.LegacyRijndaelCryptographyProvider(),
-                                        fileKey: null, password: "any");
 
     private void SaveHardenedStore()
     {
@@ -239,42 +231,10 @@ public class ConnectionSecretPassThroughTests
         new XmlConnectionsSaver(_storePath, new SaveFilter()).Save(model);
 
     private ConnectionTreeModel Reopen() =>
-        new XmlConnectionsDeserializer(_storePath, NeverAsked)
-            .Deserialize(File.ReadAllText(_storePath));
+        ConnectionSecretInspector.Reopen(_storePath, ConnectionSecretInspector.NeverAsked);
 
-    /// <summary>
-    /// The stored <c>Password</c> attribute of every connection, in document order.
-    /// </summary>
-    private string[] StoredPasswords() =>
-        [.. Regex.Matches(File.ReadAllText(_storePath), "<Node[^>]*?\\sPassword=\"(?<value>[^\"]*)\"",
-                          RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(5))
-                 .Select(m => m.Groups["value"].Value)];
+    private string[] StoredPasswords() => ConnectionSecretInspector.StoredPasswords(_storePath);
 
-    private void CorruptTheStoredPasswordOf(string connectionName)
-    {
-        string xml = File.ReadAllText(_storePath);
-        Regex attribute = new($"(?<head>Name=\"{connectionName}\"[^>]*?Password=\")[^\"]*(?<tail>\")",
-                              RegexOptions.ExplicitCapture, TimeSpan.FromSeconds(5));
-
-        Assert.That(attribute.IsMatch(xml), Is.True,
-            "the store was expected to hold this password as a readable attribute");
-
-        File.WriteAllText(_storePath, attribute.Replace(xml, "${head}bm90LWEtY2lwaGVydGV4dA==${tail}", 1));
-    }
-
-    private static RootNodeInfo Root(ConnectionTreeModel model) =>
-        model.RootNodes.OfType<RootNodeInfo>().First();
-
-    private static ConnectionInfo[] Connections(ConnectionTreeModel model) => [.. Root(model).Children];
-
-    private static SecureString? StoredSecureString(ConnectionInfo connection) =>
-        (SecureString?)typeof(AbstractConnectionRecord)
-            .GetField("_password", BindingFlags.NonPublic | BindingFlags.Instance)!
-            .GetValue(connection);
-
-    private static Optional<SecureString> NeverAsked()
-    {
-        Assert.Fail("the store should have opened without a prompt");
-        return Optional<SecureString>.Empty;
-    }
+    private void CorruptTheStoredPasswordOf(string connectionName) =>
+        ConnectionSecretInspector.CorruptTheStoredPasswordOf(_storePath, connectionName);
 }

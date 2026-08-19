@@ -76,6 +76,17 @@ public sealed class ConnectionSecretKeyIdentity : IEquatable<ConnectionSecretKey
             fileKey is not null ? string.Empty : Fingerprint(password));
     }
 
+    /// <summary>
+    /// A random key, made once per run, that the password fingerprints are taken under.
+    /// </summary>
+    /// <remarks>
+    /// Identities are only ever compared with other identities built in the same process, so a
+    /// per-process key costs nothing and removes what a plain digest would be worth to somebody
+    /// reading this process's memory: an unsalted SHA-256 of a master password can be ground
+    /// against a wordlist, and a keyed one cannot.
+    /// </remarks>
+    private static readonly byte[] FingerprintKey = RandomNumberGenerator.GetBytes(32);
+
     private static string Fingerprint(string? password)
     {
         if (string.IsNullOrEmpty(password))
@@ -84,7 +95,7 @@ public sealed class ConnectionSecretKeyIdentity : IEquatable<ConnectionSecretKey
         byte[] bytes = Encoding.UTF8.GetBytes(password);
         try
         {
-            return Convert.ToBase64String(SHA256.HashData(bytes));
+            return Convert.ToBase64String(HMACSHA256.HashData(FingerprintKey, bytes));
         }
         finally
         {

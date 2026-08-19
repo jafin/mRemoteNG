@@ -46,7 +46,7 @@ public class ContainerInfo : ConnectionInfo, INotifyCollectionChanged, IConnecti
      Browsable(true)]
     public string ContainerPassword
     {
-        get => OwnContainerPassword()?.ConvertToUnsecureString() ?? string.Empty;
+        get => OwnContainerPassword();
         set
         {
             string password = value ?? string.Empty;
@@ -72,19 +72,34 @@ public class ContainerInfo : ConnectionInfo, INotifyCollectionChanged, IConnecti
     /// folder password is resolved from nowhere else - it is not inherited, linked or borrowed from
     /// a credential record - so there is no other source to consult first.
     /// </summary>
-    private SecureString? OwnContainerPassword()
+    /// <remarks>
+    /// Converted to its plain text while the lock is held rather than handing the stored
+    /// <see cref="SecureString"/> back for the caller to read afterwards: a setter arriving in
+    /// between disposes that instance, and the getter would throw
+    /// <see cref="ObjectDisposedException"/> at a caller with no reason to expect it.
+    /// </remarks>
+    private string OwnContainerPassword()
     {
         lock (SecretLock)
         {
-            if (_pendingContainerPassword is null)
-                return _containerPassword;
-
-            string plainText = _pendingContainerPassword.Resolve(Name, nameof(ContainerPassword));
-            _containerPassword?.Dispose();
-            _containerPassword = plainText.ConvertToSecureString();
-            _pendingContainerPassword = null;
-            return _containerPassword;
+            ResolveContainerPassword();
+            return _containerPassword?.ConvertToUnsecureString() ?? string.Empty;
         }
+    }
+
+    /// <summary>
+    /// Turns the folder's pending ciphertext into its stored <see cref="SecureString"/>.
+    /// <b>The caller holds <see cref="SecretLock"/>.</b>
+    /// </summary>
+    private void ResolveContainerPassword()
+    {
+        if (_pendingContainerPassword is null)
+            return;
+
+        string plainText = _pendingContainerPassword.Resolve(Name, nameof(ContainerPassword));
+        _containerPassword?.Dispose();
+        _containerPassword = plainText.ConvertToSecureString();
+        _pendingContainerPassword = null;
     }
 
     public override void SetPendingSecret(string secretName, PendingConnectionSecret secret)
@@ -127,7 +142,9 @@ public class ContainerInfo : ConnectionInfo, INotifyCollectionChanged, IConnecti
     public override void DecryptEveryStoredSecret()
     {
         base.DecryptEveryStoredSecret();
-        _ = OwnContainerPassword();
+
+        lock (SecretLock)
+            ResolveContainerPassword();
     }
 
     [Browsable(false)]

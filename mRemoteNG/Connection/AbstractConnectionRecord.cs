@@ -1641,7 +1641,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
         if (!ReferenceEquals(resolved, Unresolved))
             return resolved.ConvertToSecureString();
 
-        return OwnSecret(propertyName, ref own, ref pending)?.Copy() ?? new SecureString();
+        return OwnSecretCopy(propertyName, ref own, ref pending);
     }
 
     /// <summary>
@@ -1660,19 +1660,55 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
         if (!ReferenceEquals(resolved, Unresolved))
             return resolved;
 
-        return OwnSecret(propertyName, ref own, ref pending)?.ConvertToUnsecureString() ?? string.Empty;
+        return OwnSecretText(propertyName, ref own, ref pending);
     }
 
     /// <summary>
-    /// This record's own secret, decrypting the ciphertext it was loaded with the first time
-    /// somebody asks.
+    /// A copy of this record's own secret, decrypting the ciphertext it was loaded with if that has
+    /// not happened yet.
+    /// </summary>
+    /// <remarks>
+    /// <b>The copy is made while the lock is held</b>, and that is the whole reason this returns a
+    /// value rather than the stored instance. A setter arriving between the resolution and the copy
+    /// disposes what was resolved, and the caller would meet an
+    /// <see cref="ObjectDisposedException"/> from a getter nobody expects to throw.
+    /// </remarks>
+    private SecureString OwnSecretCopy(string secretName, ref SecureString? own,
+                                       ref PendingConnectionSecret? pending)
+    {
+        lock (SecretLock)
+        {
+            ResolveOwnSecret(secretName, ref own, ref pending);
+            return own?.Copy() ?? new SecureString();
+        }
+    }
+
+    /// <summary>
+    /// This record's own secret as plain text, decrypting first if it has not been decrypted yet.
+    /// </summary>
+    /// <remarks>
+    /// Converted under the lock for the same reason <see cref="OwnSecretCopy"/> copies under it.
+    /// </remarks>
+    private string OwnSecretText(string secretName, ref SecureString? own,
+                                 ref PendingConnectionSecret? pending)
+    {
+        lock (SecretLock)
+        {
+            ResolveOwnSecret(secretName, ref own, ref pending);
+            return own?.ConvertToUnsecureString() ?? string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Turns this record's pending ciphertext into its stored <see cref="SecureString"/>, the first
+    /// time somebody asks for it.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Decrypted once. The tree is read from the user interface thread and from the host-status
-    /// monitor, so two threads can arrive here together; without the lock they would each derive a
-    /// key and build a <see cref="SecureString"/>, and one of the two would be dropped on the floor
-    /// undisposed.
+    /// <b>The caller holds <see cref="SecretLock"/>.</b> Decrypting once is the point: the tree is
+    /// read from the user interface thread and from the host-status monitor, so two threads can
+    /// arrive together, and without the lock they would each derive a key and build a
+    /// <see cref="SecureString"/> of which one would be dropped on the floor undisposed.
     /// </para>
     /// <para>
     /// <b>A failure leaves the pending value where it is</b> and lets the exception out. Clearing it
@@ -1681,20 +1717,16 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     /// attempted with the wrong credentials rather than reported as broken.
     /// </para>
     /// </remarks>
-    private SecureString? OwnSecret(string secretName, ref SecureString? own,
-                                    ref PendingConnectionSecret? pending)
+    private void ResolveOwnSecret(string secretName, ref SecureString? own,
+                                  ref PendingConnectionSecret? pending)
     {
-        lock (SecretLock)
-        {
-            if (pending is null)
-                return own;
+        if (pending is null)
+            return;
 
-            string plainText = pending.Resolve(Name, secretName);
-            own?.Dispose();
-            own = plainText.ConvertToSecureString();
-            pending = null;
-            return own;
-        }
+        string plainText = pending.Resolve(Name, secretName);
+        own?.Dispose();
+        own = plainText.ConvertToSecureString();
+        pending = null;
     }
 
     /// <summary>
@@ -1761,19 +1793,13 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
 
         PendingConnectionSecret? pending;
         lock (SecretLock)
-        {
-            pending = secretName switch
-            {
-                nameof(Password) => _pendingPassword,
-                nameof(RDGatewayPassword) => _pendingRdGatewayPassword,
-                nameof(VNCProxyPassword) => _pendingVncProxyPassword,
-                _ => null
-            };
-        }
+            pending = PendingSecret(secretName);
 
         if (pending is null || !pending.WasWrittenUnder(key))
             return false;
 
+        // Both of these resolve through the tree and the credential catalogue, so neither may run
+        // under the lock a getter also takes.
         if (TryGetSecretWithoutPlainText(secretName, out SecureString? elsewhere))
         {
             elsewhere?.Dispose();
@@ -1783,9 +1809,31 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
         if (!ReferenceEquals(GetPropertyValue(secretName, Unresolved), Unresolved))
             return false;
 
-        cipherText = pending.CipherText;
-        return true;
+        lock (SecretLock)
+        {
+            // Asked again, because the checks above ran without the lock. A secret assigned in that
+            // window has already discarded this ciphertext, and writing it anyway would put the
+            // superseded password back in the file in place of the one the user just typed.
+            if (!ReferenceEquals(PendingSecret(secretName), pending))
+                return false;
+
+            cipherText = pending.CipherText;
+            return true;
+        }
     }
+
+    /// <summary>
+    /// The ciphertext slot for one secret, or <see langword="null"/> for a name this record does not
+    /// hold. <b>The caller holds <see cref="SecretLock"/>.</b>
+    /// </summary>
+    private PendingConnectionSecret? PendingSecret(string secretName) =>
+        secretName switch
+        {
+            nameof(Password) => _pendingPassword,
+            nameof(RDGatewayPassword) => _pendingRdGatewayPassword,
+            nameof(VNCProxyPassword) => _pendingVncProxyPassword,
+            _ => null
+        };
 
     /// <summary>
     /// Decrypts every secret this record still holds as ciphertext.
@@ -1799,9 +1847,12 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     /// <exception cref="ConnectionSecretDecryptionException">A stored secret did not decrypt.</exception>
     public virtual void DecryptEveryStoredSecret()
     {
-        _ = OwnSecret(nameof(Password), ref _password, ref _pendingPassword);
-        _ = OwnSecret(nameof(RDGatewayPassword), ref _rdGatewayPassword, ref _pendingRdGatewayPassword);
-        _ = OwnSecret(nameof(VNCProxyPassword), ref _vncProxyPassword, ref _pendingVncProxyPassword);
+        lock (SecretLock)
+        {
+            ResolveOwnSecret(nameof(Password), ref _password, ref _pendingPassword);
+            ResolveOwnSecret(nameof(RDGatewayPassword), ref _rdGatewayPassword, ref _pendingRdGatewayPassword);
+            ResolveOwnSecret(nameof(VNCProxyPassword), ref _vncProxyPassword, ref _pendingVncProxyPassword);
+        }
     }
 
     /// <summary>
@@ -1826,7 +1877,11 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     {
         get
         {
-            if (_pendingPassword is null && _password is null && !SecretsCanResolveElsewhere)
+            bool nothingStored;
+            lock (SecretLock)
+                nothingStored = _pendingPassword is null && _password is null;
+
+            if (nothingStored && !SecretsCanResolveElsewhere)
                 return false;
 
             using SecureString resolved = SecurePassword;
