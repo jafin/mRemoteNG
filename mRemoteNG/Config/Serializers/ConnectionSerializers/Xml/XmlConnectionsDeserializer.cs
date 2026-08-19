@@ -42,7 +42,9 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
     private BlockCipherEngines _cipherEngine;
     private BlockCipherModes _cipherMode;
     private int _kdfIterations;
-    private readonly List<(Action<string> Setter, string CipherText)> _pendingDecrypts = [];
+    private ConnectionSecretKeyIdentity? _secretKeyIdentity;
+    private Func<string, string>? _deferredDecrypt;
+    private int _deferredSecrets;
 
     public Func<Optional<SecureString>>? AuthenticationRequestor { get; set; } = authenticationRequestor;
 
@@ -129,13 +131,16 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
             long fullDecryptMs = phaseSw.ElapsedMilliseconds;
 
             phaseSw.Restart();
-            _pendingDecrypts.Clear();
+
+            // Captured once, before any node is read, and shared by every secret this load defers.
+            // The key is taken here rather than at each read: a secret may be resolved long after
+            // the store's master password has been changed, and it is ciphertext under the old one.
+            _secretKeyIdentity = _decryptor.CurrentKeyIdentity;
+            _deferredDecrypt = _decryptor.CreateDeferredDecrypt();
+            _deferredSecrets = 0;
+
             AddNodesFromXmlRecursive(rootXmlElement, _rootNodeInfo);
             long nodesMs = phaseSw.ElapsedMilliseconds;
-
-            phaseSw.Restart();
-            ProcessPendingDecrypts();
-            long batchDecryptMs = phaseSw.ElapsedMilliseconds;
 
             // Safety net: refuse to hand back an empty tree when the source input
             // was non-trivially large. A downstream AutoSave would otherwise persist
@@ -159,7 +164,7 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
             stopwatch.Stop();
             Runtime.MessageCollector.AddMessage(MessageClass.InformationMsg,
                 $"[Deser] XML parse: {parseMs}ms, Auth: {authMs}ms, FullDecrypt: {fullDecryptMs}ms, "
-                + $"Nodes: {nodesMs}ms ({nodeCount} root-level), BatchDecrypt({_pendingDecrypts.Count} fields): {batchDecryptMs}ms, "
+                + $"Nodes: {nodesMs}ms ({nodeCount} root-level), Secrets deferred: {_deferredSecrets}, "
                 + $"InnerText: {innerTextLength}B, Decrypted: {decryptedLength}B, FullEnc: {fullFileEncryptionValue}, "
                 + $"Total: {stopwatch.ElapsedMilliseconds}ms");
 
@@ -175,20 +180,6 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
 
             throw;
         }
-    }
-
-    private void ProcessPendingDecrypts()
-    {
-        if (_pendingDecrypts.Count == 0) return;
-
-        string[] cipherTexts = new string[_pendingDecrypts.Count];
-        for (int i = 0; i < _pendingDecrypts.Count; i++)
-            cipherTexts[i] = _pendingDecrypts[i].CipherText;
-
-        string[] plainTexts = _decryptor.DecryptBatch(cipherTexts);
-
-        for (int i = 0; i < _pendingDecrypts.Count; i++)
-            _pendingDecrypts[i].Setter(plainTexts[i]);
     }
 
     private void LoadXmlConnectionData(string connections)
@@ -501,7 +492,7 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
                         if (_confVersion >= 2.8)
                         {
                             containerInfo.AutoSort = xmlNode.GetAttributeAsBool("AutoSort");
-                            DeferDecrypt(v => containerInfo.ContainerPassword = v, xmlNode, "ContainerPassword");
+                            DeferDecrypt(containerInfo, nameof(ContainerInfo.ContainerPassword), xmlNode);
                             containerInfo.DynamicSource = xmlNode.GetAttributeAsEnum("DynamicSource", DynamicSourceType.None);
                             containerInfo.DynamicSourceValue = xmlNode.GetAttributeAsString("DynamicSourceValue");
                             containerInfo.DynamicRefreshInterval = xmlNode.GetAttributeAsInt("DynamicRefreshInterval");
@@ -563,7 +554,7 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
                 if (!Runtime.UseCredentialManager || _confVersion <= 2.6) // 0.2 - 2.6
                 {
                     connectionInfo.Username = a.GetAttr("Username");
-                    DeferDecrypt(v => connectionInfo.Password = v, a, "Password");
+                    DeferDecrypt(connectionInfo, nameof(ConnectionInfo.Password), a);
                     connectionInfo.Domain = a.GetAttr("Domain");
                 }
             }
@@ -737,7 +728,7 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
                 connectionInfo.VNCProxyIP = a.GetAttr("VNCProxyIP");
                 connectionInfo.VNCProxyPort = a.GetAttrInt("VNCProxyPort");
                 connectionInfo.VNCProxyUsername = a.GetAttr("VNCProxyUsername");
-                DeferDecrypt(v => connectionInfo.VNCProxyPassword = v, a, "VNCProxyPassword");
+                DeferDecrypt(connectionInfo, nameof(ConnectionInfo.VNCProxyPassword), a);
                 connectionInfo.VNCColors = xmlnode.GetAttributeAsEnum<ProtocolVNC.Colors>("VNCColors");
                 connectionInfo.VNCSmartSizeMode = xmlnode.GetAttributeAsEnum<ProtocolVNC.SmartSizeMode>("VNCSmartSizeMode");
                 connectionInfo.VNCViewOnly = a.GetAttrBool("VNCViewOnly");
@@ -789,7 +780,7 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
                 connectionInfo.RDGatewayHostname = a.GetAttr("RDGatewayHostname");
                 connectionInfo.RDGatewayUseConnectionCredentials = xmlnode.GetAttributeAsEnum<RDGatewayUseConnectionCredentials>("RDGatewayUseConnectionCredentials");
                 connectionInfo.RDGatewayUsername = a.GetAttr("RDGatewayUsername");
-                DeferDecrypt(v => connectionInfo.RDGatewayPassword = v, a, "RDGatewayPassword");
+                DeferDecrypt(connectionInfo, nameof(ConnectionInfo.RDGatewayPassword), a);
                 connectionInfo.RDGatewayDomain = a.GetAttr("RDGatewayDomain");
 
                 // Get inheritance settings
@@ -984,21 +975,38 @@ public class XmlConnectionsDeserializer(string connectionFileName = "", Func<Opt
         return connectionInfo;
     }
 
-    private void DeferDecrypt(Action<string> setter, Dictionary<string, string> attrs, string attributeName)
+    /// <summary>
+    /// Hands a record its stored secret as ciphertext, to be decrypted if and when something asks
+    /// for it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// What used to happen here was that every encrypted attribute in the file was collected and the
+    /// whole list decrypted before the load returned - so opening a file of two hundred connections
+    /// put two hundred passwords into the process, for the lifetime of the session, to serve the two
+    /// the user was going to open. It also materialised them as a <c>string[]</c> first: immutable,
+    /// unzeroable, and alive until the garbage collector happened to take it.
+    /// </para>
+    /// <para>
+    /// An absent or empty attribute is not deferred at all. There is nothing to decrypt and the
+    /// record's own empty value is already the right answer.
+    /// </para>
+    /// </remarks>
+    private void DeferDecrypt(AbstractConnectionRecord record, string secretName, string cipherText)
     {
-        string cipherText = attrs.GetAttr(attributeName);
         if (string.IsNullOrEmpty(cipherText))
             return;
-        _pendingDecrypts.Add((setter, cipherText));
+
+        record.SetPendingSecret(secretName,
+            new PendingConnectionSecret(cipherText, _secretKeyIdentity!, _deferredDecrypt!));
+        _deferredSecrets++;
     }
 
-    private void DeferDecrypt(Action<string> setter, XmlNode xmlNode, string attributeName)
-    {
-        string cipherText = xmlNode.GetAttributeAsString(attributeName);
-        if (string.IsNullOrEmpty(cipherText))
-            return;
-        _pendingDecrypts.Add((setter, cipherText));
-    }
+    private void DeferDecrypt(AbstractConnectionRecord record, string secretName, Dictionary<string, string> attrs) =>
+        DeferDecrypt(record, secretName, attrs.GetAttr(secretName));
+
+    private void DeferDecrypt(AbstractConnectionRecord record, string secretName, XmlNode xmlNode) =>
+        DeferDecrypt(record, secretName, xmlNode.GetAttributeAsString(secretName));
 
     private static RDGatewayUsageMethod GetRdGatewayUsageMethod(XmlNode xmlNode)
     {

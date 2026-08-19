@@ -1,6 +1,8 @@
-using System;
+﻿using System;
 using System.Runtime.Versioning;
 using System.Security;
+using mRemoteNG.Connection;
+using mRemoteNG.Container;
 using mRemoteNG.Tree.Root;
 
 namespace mRemoteNG.Security.FileProtection;
@@ -60,6 +62,14 @@ public static class ConnectionFileRekey
             throw new ArgumentException(
                 "A rekey needs a new recovery password.", nameof(newRecoveryPassword));
 
+        // Before the key is replaced, and this is the step that stops a rekey destroying half the
+        // store. A record whose secret nothing ever read still holds it as ciphertext under the key
+        // this is about to discard, and the save that follows writes those bytes through untouched -
+        // so the file would end up encrypted under two keys, with the half under the old one
+        // unreadable for ever. Decrypting first is also why a secret that cannot be read refuses the
+        // rekey here, while the store is still exactly as it was.
+        DecryptEverySecretInTheStore(rootNode);
+
         // Built before anything on the root is touched. A root left holding a key its protectors do
         // not wrap is the one state a store can be neither saved from nor reopened in, and a rekey
         // that fails halfway is exactly how it would get there.
@@ -90,5 +100,23 @@ public static class ConnectionFileRekey
         // exactly the sort of stale state that is hard to reason about later.
         MachineSlotSession.Forget();
         RecoveryPasswordSession.Clear();
+    }
+
+    /// <summary>
+    /// Resolves every secret in the store that is still held as ciphertext.
+    /// </summary>
+    /// <exception cref="ConnectionSecretDecryptionException">
+    /// One of them could not be decrypted, so the rekey is refused and the store left untouched. A
+    /// secret skipped here would be a secret lost: nothing else in the run still has the old key.
+    /// </exception>
+    private static void DecryptEverySecretInTheStore(ConnectionInfo node)
+    {
+        node.DecryptEveryStoredSecret();
+
+        if (node is not ContainerInfo container)
+            return;
+
+        foreach (ConnectionInfo child in container.Children)
+            DecryptEverySecretInTheStore(child);
     }
 }

@@ -1,5 +1,4 @@
 using System.Linq;
-using System.Security;
 using mRemoteNG.Connection;
 using mRemoteNG.Container;
 using mRemoteNG.Credential;
@@ -13,8 +12,8 @@ public static class CredentialImportHelper
     {
         // Check if this specific node has credentials to extract
         if (!string.IsNullOrEmpty(connection.Username) ||
-            HasPassword(connection) ||
-            !string.IsNullOrEmpty(connection.Domain))
+            !string.IsNullOrEmpty(connection.Domain) ||
+            connection.HasPassword)
         {
             CredentialRecord record = new()
             {
@@ -48,9 +47,12 @@ public static class CredentialImportHelper
 
     public static bool HasCredentials(ConnectionInfo connection)
     {
+        // The password is asked about last on purpose. The other two are string comparisons, and
+        // this one may have to decrypt a stored secret to answer - which, over every node in a file
+        // being imported, is the cost this whole change exists to avoid paying up front.
         if (!string.IsNullOrEmpty(connection.Username) ||
-            HasPassword(connection) ||
-            !string.IsNullOrEmpty(connection.Domain))
+            !string.IsNullOrEmpty(connection.Domain) ||
+            connection.HasPassword)
         {
             return true;
         }
@@ -61,19 +63,5 @@ public static class CredentialImportHelper
         }
 
         return false;
-    }
-
-    /// <summary>
-    /// Whether the connection carries a password, without producing a plain-text copy to find out.
-    /// </summary>
-    /// <remarks>
-    /// Asking <c>string.IsNullOrEmpty(connection.Password)</c> materialises the secret purely to
-    /// learn whether there is one — and this runs over every node in a file being imported, so it
-    /// did that for every password in it.
-    /// </remarks>
-    private static bool HasPassword(ConnectionInfo connection)
-    {
-        using SecureString password = connection.SecurePassword;
-        return password.Length > 0;
     }
 }

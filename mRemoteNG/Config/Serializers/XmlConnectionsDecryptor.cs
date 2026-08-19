@@ -96,6 +96,42 @@ public class XmlConnectionsDecryptor
         _cachedDecryptionKey = null;
     }
 
+    /// <summary>
+    /// Which key, and which parameters, this decryptor is reading with right now.
+    /// </summary>
+    /// <remarks>
+    /// Read by the deserializer and carried on every secret it defers, so that a later save can tell
+    /// whether writing those same bytes back is still correct.
+    /// </remarks>
+    public ConnectionSecretKeyIdentity CurrentKeyIdentity =>
+        ConnectionSecretKeyIdentity.For(_cryptographyProvider, _rootNodeInfo.FileKey, _rootNodeInfo.PasswordString);
+
+    /// <summary>
+    /// A decrypt callable for secrets that will be resolved later, holding the key as it is now.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The key is captured, not looked up again on use.</b> A secret deferred here may be read
+    /// long after the store's master password has been changed, and it is ciphertext under the old
+    /// one - resolving through <see cref="GetDecryptionKey"/> at that point would try the new
+    /// password against it and report a good file as corrupt.
+    /// </para>
+    /// <para>
+    /// A provider per call, exactly as <see cref="DecryptBatch"/> takes one per thread and for the
+    /// same reason: these are resolved from whichever thread asked, and a provider that caches
+    /// derived keys in fields would produce intermittent wrong answers rather than a clean failure.
+    /// Building one costs nothing next to the key derivation it is about to do.
+    /// </para>
+    /// </remarks>
+    public Func<string, string> CreateDeferredDecrypt()
+    {
+        SecureString key = GetDecryptionKey();
+
+        return cipherText => string.IsNullOrEmpty(cipherText)
+            ? ""
+            : CreateThreadLocalProvider().Decrypt(cipherText, key);
+    }
+
     public string Decrypt(string plainText)
     {
         return plainText == ""

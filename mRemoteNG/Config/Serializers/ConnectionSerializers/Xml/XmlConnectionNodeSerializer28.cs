@@ -16,10 +16,23 @@ public class XmlConnectionNodeSerializer28 : ISerializer<ConnectionInfo, XElemen
     private readonly ICryptographyProvider _cryptographyProvider;
     private readonly SecureString _encryptionKey;
     private readonly SaveFilter _saveFilter;
+    private readonly ConnectionSecretKeyIdentity? _keyIdentity;
 
+    /// <param name="keyIdentity">
+    /// Which key this write encrypts under, when the caller knows. Supplying it lets a secret no
+    /// record ever decrypted be written back as the bytes it was read as, instead of being decrypted
+    /// solely in order to be encrypted again into the same message.
+    /// <para>
+    /// <b>Omitting it is always safe and is the default.</b> Every secret is then decrypted and
+    /// re-encrypted, which is what this serializer has always done. A caller that supplies the wrong
+    /// identity is the dangerous case, and that is why the identity describes the key by value:
+    /// see <see cref="ConnectionSecretKeyIdentity"/>.
+    /// </para>
+    /// </param>
     public XmlConnectionNodeSerializer28(ICryptographyProvider cryptographyProvider,
         SecureString encryptionKey,
-        SaveFilter saveFilter)
+        SaveFilter saveFilter,
+        ConnectionSecretKeyIdentity? keyIdentity = null)
     {
         ArgumentNullException.ThrowIfNull(cryptographyProvider);
         ArgumentNullException.ThrowIfNull(encryptionKey);
@@ -27,6 +40,24 @@ public class XmlConnectionNodeSerializer28 : ISerializer<ConnectionInfo, XElemen
         _cryptographyProvider = cryptographyProvider;
         _encryptionKey = encryptionKey;
         _saveFilter = saveFilter;
+        _keyIdentity = keyIdentity;
+    }
+
+    /// <summary>
+    /// The attribute holding one secret: the bytes the record was read with, where writing those
+    /// same bytes back is still correct, and a fresh encryption of the value otherwise.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="plainText"/> is a callable rather than a value because evaluating it is the
+    /// thing being avoided: reading the property is what decrypts the secret, so a save of a store
+    /// nobody edited would otherwise decrypt every password in it in order to write the same
+    /// messages back.
+    /// </remarks>
+    private XAttribute SecretAttribute(AbstractConnectionRecord record, string secretName, Func<string> plainText)
+    {
+        return record.TryGetStoredCipherText(secretName, _keyIdentity, out string stored)
+            ? new XAttribute(secretName, stored)
+            : new XAttribute(secretName, _cryptographyProvider.Encrypt(plainText(), _encryptionKey));
     }
 
     public Version Version { get; } = new Version(2, 8);
@@ -56,8 +87,16 @@ public class XmlConnectionNodeSerializer28 : ISerializer<ConnectionInfo, XElemen
             element.Add(new XAttribute("Expanded", nodeAsContainer.IsExpanded.ToString().ToLowerInvariant()));
             element.Add(new XAttribute("AutoSort", nodeAsContainer.AutoSort.ToString().ToLowerInvariant()));
 
-            if (_saveFilter.SavePassword && !string.IsNullOrEmpty(nodeAsContainer.ContainerPassword))
-                element.Add(new XAttribute("ContainerPassword", _cryptographyProvider.Encrypt(nodeAsContainer.ContainerPassword, _encryptionKey)));
+            if (_saveFilter.SavePassword)
+            {
+                // The stored bytes decide it where there are any: asking whether the folder password
+                // is empty is itself a read, and a read is what decrypts it.
+                if (nodeAsContainer.TryGetStoredCipherText(nameof(ContainerInfo.ContainerPassword), _keyIdentity,
+                                                           out string storedFolderPassword))
+                    element.Add(new XAttribute("ContainerPassword", storedFolderPassword));
+                else if (!string.IsNullOrEmpty(nodeAsContainer.ContainerPassword))
+                    element.Add(new XAttribute("ContainerPassword", _cryptographyProvider.Encrypt(nodeAsContainer.ContainerPassword, _encryptionKey)));
+            }
 
             if (nodeAsContainer.DynamicSource != DynamicSourceType.None)
             {
@@ -87,8 +126,8 @@ public class XmlConnectionNodeSerializer28 : ISerializer<ConnectionInfo, XElemen
                 : new XAttribute("Domain", ""));
 
             if (_saveFilter.SavePassword && !connectionInfo.Inheritance.Password)
-                //element.Add(new XAttribute("Password", _cryptographyProvider.Encrypt(connectionInfo.Password?.ConvertToUnsecureString(), _encryptionKey)));
-                element.Add(new XAttribute("Password", _cryptographyProvider.Encrypt(connectionInfo.Password ?? string.Empty, _encryptionKey)));
+                element.Add(SecretAttribute(connectionInfo, nameof(ConnectionInfo.Password),
+                                            () => connectionInfo.Password ?? string.Empty));
             else
                 element.Add(new XAttribute("Password", ""));
         }
@@ -181,7 +220,8 @@ public class XmlConnectionNodeSerializer28 : ISerializer<ConnectionInfo, XElemen
             : new XAttribute("VNCProxyUsername", ""));
 
         element.Add(_saveFilter.SavePassword
-            ? new XAttribute("VNCProxyPassword", _cryptographyProvider.Encrypt(connectionInfo.VNCProxyPassword ?? string.Empty, _encryptionKey))
+            ? SecretAttribute(connectionInfo, nameof(ConnectionInfo.VNCProxyPassword),
+                              () => connectionInfo.VNCProxyPassword ?? string.Empty)
             : new XAttribute("VNCProxyPassword", ""));
 
         element.Add(new XAttribute("VNCColors", connectionInfo.VNCColors));
@@ -200,7 +240,8 @@ public class XmlConnectionNodeSerializer28 : ISerializer<ConnectionInfo, XElemen
             : new XAttribute("RDGatewayUsername", ""));
 
         element.Add(_saveFilter.SavePassword
-            ? new XAttribute("RDGatewayPassword", _cryptographyProvider.Encrypt(connectionInfo.RDGatewayPassword ?? string.Empty, _encryptionKey))
+            ? SecretAttribute(connectionInfo, nameof(ConnectionInfo.RDGatewayPassword),
+                              () => connectionInfo.RDGatewayPassword ?? string.Empty)
             : new XAttribute("RDGatewayPassword", ""));
 
         element.Add(_saveFilter.SaveDomain

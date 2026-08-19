@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Linq;
 using System.Runtime.Versioning;
 using System.Security;
+using System.Threading;
 using mRemoteNG.Connection;
 using mRemoteNG.PluginSystem;
 using mRemoteNG.Resources.Language;
@@ -30,6 +31,7 @@ public class ContainerInfo : ConnectionInfo, INotifyCollectionChanged, IConnecti
     private bool _autoSort;
     private bool _excludeFromSearch;
     private SecureString? _containerPassword;
+    private PendingConnectionSecret? _pendingContainerPassword;
 
     #region IConnectionNode Implementation
     IEnumerable<IConnectionNode> IConnectionNode.Children => Children;
@@ -44,16 +46,88 @@ public class ContainerInfo : ConnectionInfo, INotifyCollectionChanged, IConnecti
      Browsable(true)]
     public string ContainerPassword
     {
-        get => _containerPassword?.ConvertToUnsecureString() ?? string.Empty;
+        get => OwnContainerPassword()?.ConvertToUnsecureString() ?? string.Empty;
         set
         {
             string password = value ?? string.Empty;
-            if (string.Equals(_containerPassword?.ConvertToUnsecureString() ?? string.Empty, password, StringComparison.Ordinal))
-                return;
 
-            _containerPassword?.Dispose();
-            _containerPassword = password.ConvertToSecureString();
+            lock (SecretLock)
+            {
+                // Discarded before the comparison, for the same reason a connection's password is:
+                // a folder whose password is set before it is ever read still holds the ciphertext
+                // it was loaded with, and the next read would decrypt over the top of it.
+                _pendingContainerPassword = null;
+
+                if (string.Equals(_containerPassword?.ConvertToUnsecureString() ?? string.Empty, password, StringComparison.Ordinal))
+                    return;
+
+                _containerPassword?.Dispose();
+                _containerPassword = password.ConvertToSecureString();
+            }
         }
+    }
+
+    /// <summary>
+    /// The folder's own password, decrypting the ciphertext it was loaded with on first ask. A
+    /// folder password is resolved from nowhere else - it is not inherited, linked or borrowed from
+    /// a credential record - so there is no other source to consult first.
+    /// </summary>
+    private SecureString? OwnContainerPassword()
+    {
+        lock (SecretLock)
+        {
+            if (_pendingContainerPassword is null)
+                return _containerPassword;
+
+            string plainText = _pendingContainerPassword.Resolve(Name, nameof(ContainerPassword));
+            _containerPassword?.Dispose();
+            _containerPassword = plainText.ConvertToSecureString();
+            _pendingContainerPassword = null;
+            return _containerPassword;
+        }
+    }
+
+    public override void SetPendingSecret(string secretName, PendingConnectionSecret secret)
+    {
+        ArgumentNullException.ThrowIfNull(secret);
+
+        if (!string.Equals(secretName, nameof(ContainerPassword), StringComparison.Ordinal))
+        {
+            base.SetPendingSecret(secretName, secret);
+            return;
+        }
+
+        lock (SecretLock)
+        {
+            _containerPassword?.Dispose();
+            _containerPassword = null;
+            _pendingContainerPassword = secret;
+        }
+    }
+
+    public override bool TryGetStoredCipherText(string secretName, ConnectionSecretKeyIdentity? key,
+                                                out string cipherText)
+    {
+        if (!string.Equals(secretName, nameof(ContainerPassword), StringComparison.Ordinal))
+            return base.TryGetStoredCipherText(secretName, key, out cipherText);
+
+        cipherText = string.Empty;
+
+        PendingConnectionSecret? pending;
+        lock (SecretLock)
+            pending = _pendingContainerPassword;
+
+        if (pending is null || !pending.WasWrittenUnder(key))
+            return false;
+
+        cipherText = pending.CipherText;
+        return true;
+    }
+
+    public override void DecryptEveryStoredSecret()
+    {
+        base.DecryptEveryStoredSecret();
+        _ = OwnContainerPassword();
     }
 
     [Browsable(false)]
