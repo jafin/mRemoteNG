@@ -62,7 +62,7 @@ internal static class ConnectionSecretInspector
     internal static void CorruptTheStoredPasswordOf(string storePath, string connectionName)
     {
         string xml = File.ReadAllText(storePath);
-        Regex attribute = new($"(?<head>Name=\"{connectionName}\"[^>]*?Password=\")[^\"]*(?<tail>\")",
+        Regex attribute = new($"(?<head>Name=\"{Regex.Escape(connectionName)}\"[^>]*?Password=\")[^\"]*(?<tail>\")",
                               RegexOptions.ExplicitCapture, MatchTimeout);
 
         Assert.That(attribute.IsMatch(xml), Is.True,
