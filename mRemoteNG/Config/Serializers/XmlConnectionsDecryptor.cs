@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Runtime.Versioning;
 using System.Security;
-using System.Threading.Tasks;
+using System.Threading;
 using mRemoteNG.Security;
 using mRemoteNG.Security.Authentication;
 using mRemoteNG.Security.Factories;
@@ -62,11 +62,12 @@ public class XmlConnectionsDecryptor
     /// provider.
     /// </para>
     /// <para>
-    /// <b>The provider must be safe to share.</b> <see cref="DecryptBatch"/> runs it across threads
-    /// and cannot build a copy per thread here, because the key it holds is recorded nowhere this
-    /// class can reach. Passing something with mutable per-call state — the AEAD provider caches
-    /// derived keys and salts in fields — would produce intermittent wrong answers rather than a
-    /// clean failure, so it is refused at construction instead of documented and hoped for.
+    /// <b>The provider must be safe to share.</b> A deferred secret is resolved from whichever
+    /// thread asked for it, and this class cannot build a copy for each, because the key it holds is
+    /// recorded nowhere this class can reach. Something with mutable per-call state — the AEAD
+    /// provider caches derived keys and salts in fields — would produce intermittent wrong answers
+    /// rather than a clean failure, so it is refused at construction instead of documented and hoped
+    /// for.
     /// </para>
     /// </remarks>
     public XmlConnectionsDecryptor(IThreadSafeCryptographyProvider cryptographyProvider, RootNodeInfo rootNodeInfo)
@@ -96,6 +97,57 @@ public class XmlConnectionsDecryptor
         _cachedDecryptionKey = null;
     }
 
+    /// <summary>
+    /// Which key, and which parameters, this decryptor is reading with right now.
+    /// </summary>
+    /// <remarks>
+    /// Read by the deserializer and carried on every secret it defers, so that a later save can tell
+    /// whether writing those same bytes back is still correct.
+    /// </remarks>
+    public ConnectionSecretKeyIdentity CurrentKeyIdentity =>
+        ConnectionSecretKeyIdentity.For(_cryptographyProvider, _rootNodeInfo.FileKey, _rootNodeInfo.PasswordString);
+
+    /// <summary>
+    /// A decrypt callable for secrets that will be resolved later, holding the key as it is now.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The key is captured, not looked up again on use.</b> A secret deferred here may be read
+    /// long after the store's master password has been changed, and it is ciphertext under the old
+    /// one - resolving through <see cref="GetDecryptionKey"/> at that point would try the new
+    /// password against it and report a good file as corrupt.
+    /// </para>
+    /// <para>
+    /// <b>One provider, kept, and taken under a lock.</b> A provider per call would be simpler and
+    /// is what the batch this replaced did per thread, but it throws away the thing that made the
+    /// batch fast: the AEAD provider caches the key it derived against the salt it derived it from,
+    /// and every field of a file this application writes shares one salt. Building a provider per
+    /// read means a full PBKDF2 per read — a fifth of a second each at 600,000 iterations, on
+    /// whichever thread asked — where keeping one means one derivation for the whole file. The lock
+    /// is what makes keeping it safe, since that same cache is mutable state two readers would
+    /// otherwise corrupt rather than merely race on.
+    /// </para>
+    /// <para>
+    /// Holding a derived key for the session discloses nothing further: the password it was derived
+    /// from is already held for the session, in the clear, on the root node.
+    /// </para>
+    /// </remarks>
+    public Func<string, string> CreateDeferredDecrypt()
+    {
+        SecureString key = GetDecryptionKey();
+        ICryptographyProvider provider = CreateResolutionProvider();
+        Lock gate = new();
+
+        return cipherText =>
+        {
+            if (string.IsNullOrEmpty(cipherText))
+                return "";
+
+            lock (gate)
+                return provider.Decrypt(cipherText, key);
+        };
+    }
+
     public string Decrypt(string plainText)
     {
         return plainText == ""
@@ -104,38 +156,19 @@ public class XmlConnectionsDecryptor
     }
 
     /// <summary>
-    /// Decrypts multiple ciphertexts in parallel using thread-local crypto providers.
-    /// PBKDF2 key derivation dominates decrypt time (~100ms per call at 600K iterations),
-    /// so parallelizing across CPU cores provides near-linear speedup.
+    /// The provider deferred secrets are resolved through.
     /// </summary>
-    public string[] DecryptBatch(string[] cipherTexts)
-    {
-        string[] results = new string[cipherTexts.Length];
-        if (cipherTexts.Length == 0) return results;
-
-        SecureString key = GetDecryptionKey();
-
-        Parallel.For(0, cipherTexts.Length,
-            new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount },
-            CreateThreadLocalProvider,
-            (i, _, localProvider) =>
-            {
-                results[i] = string.IsNullOrEmpty(cipherTexts[i])
-                    ? ""
-                    : localProvider.Decrypt(cipherTexts[i], key);
-                return localProvider;
-            },
-            _ => { });
-
-        return results;
-    }
-
-    private ICryptographyProvider CreateThreadLocalProvider()
+    /// <remarks>
+    /// Built once per load rather than shared with <see cref="Decrypt"/>, whose provider is used
+    /// from the load path while the file is being read. Keeping them apart is what lets the
+    /// resolution provider be owned by one lock.
+    /// </remarks>
+    private ICryptographyProvider CreateResolutionProvider()
     {
         // A supplied provider derives no key, so it holds no per-call state to race on and there is
-        // nothing for a copy to be given: it is shared across the batch rather than duplicated. It
-        // also could not be rebuilt here even if that were wanted, because the key it holds is not
-        // recorded anywhere this class can reach.
+        // nothing for a copy to be given: it is used as it is. It also could not be rebuilt here
+        // even if that were wanted, because the key it holds is not recorded anywhere this class
+        // can reach.
         if (_providerIsShareable)
             return _cryptographyProvider;
 
@@ -145,8 +178,8 @@ public class XmlConnectionsDecryptor
         ICryptographyProvider provider = new CryptoProviderFactory(_cipherEngine.Value, _cipherMode!.Value).Build();
         provider.KeyDerivationIterations = KeyDerivationIterations;
 
-        // The per-thread copies derive their own keys, so they need every parameter the file
-        // recorded. Omitting this would make batch decryption silently fall back to SHA-1.
+        // A copy derives its own key, so it needs every parameter the file recorded. Omitting this
+        // would make deferred decryption silently fall back to SHA-1.
         provider.KeyDerivationPrf = KeyDerivationPrf;
         return provider;
     }

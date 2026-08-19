@@ -190,6 +190,43 @@ consequences worth knowing:
   use when it was written. If a restore reports that a backup could not be unwrapped, that is the
   first thing to check — the file is not damaged.
 
+## When one connection's password cannot be read
+
+:::info Version
+
+Changed in 1.82.0.
+
+:::
+
+Saved passwords are now unscrambled the moment you first need one, rather than all together when the
+file is opened. Almost always you will never notice. The one place you can is a connection whose
+stored password has been damaged — by a partial file copy, a sync conflict, or an editor that
+rewrote the file.
+
+Such a connection now reports the problem **when you open that connection**, naming it, instead of
+at the moment you opened the file. Every other connection in the file keeps working normally.
+
+To repair it, select the connection, type the password into the **Password** field again, and save.
+
+:::warning
+
+mRemoteNG will not connect using a blank password in place of one it could not read. If it did, a
+connection set to fall back to a default password would silently send the wrong credentials to the
+server. Being told the password is unreadable is the safe outcome.
+
+:::
+
+A file that does not open **at all** still says so once, while you are opening it — that has not
+changed. One damaged password is a different thing from a wrong recovery password, and they are
+still reported differently.
+
+### Rekeying and hardening need every password
+
+[Rekeying](#removing-someones-access) and
+[hardening](#hardening-a-connection-file) both re-encrypt the whole file, so both need to read every
+password in it first. If one cannot be read, the operation is refused and the file is left exactly
+as it was — nothing is half-written. Repair the connection it names, then try again.
+
 ## Sharing a file with someone using upstream mRemoteNG
 
 Use [Export to file](./user-interface/import-export.md#export-to-file). When the store is hardened,

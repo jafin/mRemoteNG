@@ -314,6 +314,14 @@ public class ConnectionInfo : AbstractConnectionRecord, IHasParent, IInheritable
     }
 
     /// <summary>
+    /// A connection can borrow a secret from a credential record, from the connection it is linked
+    /// to, or from its folder, so it can only be certain there is nowhere else when it has none of
+    /// the three.
+    /// </summary>
+    private protected override bool SecretsCanResolveElsewhere =>
+        Parent is not null || IsLinkedConnection || base.SecretsCanResolveElsewhere;
+
+    /// <summary>
     /// Answers a secret straight from the bound credential record, which already holds it as a
     /// <see cref="SecureString"/>.
     /// </summary>

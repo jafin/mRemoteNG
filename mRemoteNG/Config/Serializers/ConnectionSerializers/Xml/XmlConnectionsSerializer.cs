@@ -57,6 +57,14 @@ public class XmlConnectionsSerializer(ICryptographyProvider cryptographyProvider
             XDocument xmlDocument = documentCompiler.CompileDocument(serializationTarget, UseFullEncryption);
             xml = WriteXmlToString(xmlDocument);
         }
+        catch (ConnectionSecretDecryptionException)
+        {
+            // Let out rather than swallowed into an empty document. Everything else here is reported
+            // and leaves the caller to refuse the write on an empty string, which says nothing about
+            // why; this one is the store failing to re-encrypt a secret it could not read, and the
+            // user needs to be told which connection it was so the write can be refused honestly.
+            throw;
+        }
         catch (Exception ex)
         {
             Runtime.MessageCollector.AddExceptionStackTrace("SaveToXml failed", ex);

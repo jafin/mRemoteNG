@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Drawing.Design;
 using System.Runtime.Versioning;
 using System.Security;
+using System.Threading;
 using mRemoteNG.Connection.Protocol;
 using mRemoteNG.Connection.Protocol.Http;
 using mRemoteNG.Connection.Protocol.RDP;
@@ -40,6 +41,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     private string _userViaAPI = "";
     private string _username = string.Empty;
     private SecureString? _password;
+    private PendingConnectionSecret? _pendingPassword;
     private string _vaultRole = string.Empty;
     private string _vaultMount = string.Empty;
     private VaultOpenbaoSecretEngine _vaultSecretEngine;
@@ -76,6 +78,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     private RDGatewayUseConnectionCredentials _rdGatewayUseConnectionCredentials;
     private string _rdGatewayUsername = string.Empty;
     private SecureString? _rdGatewayPassword;
+    private PendingConnectionSecret? _pendingRdGatewayPassword;
     private string _rdGatewayDomain = string.Empty;
     private string _rdGatewayAccessToken = string.Empty;
     private ExternalCredentialProvider _rdGatewayExternalCredentialProvider;
@@ -151,6 +154,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     private int _vncProxyPort;
     private string _vncProxyUsername = string.Empty;
     private SecureString? _vncProxyPassword;
+    private PendingConnectionSecret? _pendingVncProxyPassword;
     private ProtocolVNC.Colors _vncColors;
     private ProtocolVNC.SmartSizeMode _vncSmartSizeMode;
     private bool _vncViewOnly;
@@ -369,8 +373,8 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     //public virtual SecureString Password
     public virtual string Password
     {
-        get => GetPropertyValue(nameof(Password), _password?.ConvertToUnsecureString() ?? string.Empty);
-        set => SetSecureStringField(ref _password, value, nameof(Password));
+        get => ResolveSecretText(nameof(Password), ref _password, ref _pendingPassword);
+        set => SetSecureStringField(ref _password, ref _pendingPassword, value, nameof(Password));
     }
 
     /// <summary>
@@ -383,7 +387,7 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     /// expects to. Hidden from the property grid, which binds to the string property.
     /// </remarks>
     [Browsable(false)]
-    public SecureString SecurePassword => ResolveSecret(nameof(Password), _password);
+    public SecureString SecurePassword => ResolveSecret(nameof(Password), ref _password, ref _pendingPassword);
 
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Connection), 2),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.VaultOpenbaoMount)),
@@ -818,8 +822,8 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
      AttributeUsedInProtocol(ProtocolType.RDP)]
     public string RDGatewayPassword
     {
-        get => GetPropertyValue(nameof(RDGatewayPassword), _rdGatewayPassword?.ConvertToUnsecureString() ?? string.Empty);
-        set => SetSecureStringField(ref _rdGatewayPassword, value, nameof(RDGatewayPassword));
+        get => ResolveSecretText(nameof(RDGatewayPassword), ref _rdGatewayPassword, ref _pendingRdGatewayPassword);
+        set => SetSecureStringField(ref _rdGatewayPassword, ref _pendingRdGatewayPassword, value, nameof(RDGatewayPassword));
     }
 
     /// <summary>
@@ -827,7 +831,8 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     /// caller owns and must dispose. See <see cref="SecurePassword"/>.
     /// </summary>
     [Browsable(false)]
-    public SecureString SecureRDGatewayPassword => ResolveSecret(nameof(RDGatewayPassword), _rdGatewayPassword);
+    public SecureString SecureRDGatewayPassword =>
+        ResolveSecret(nameof(RDGatewayPassword), ref _rdGatewayPassword, ref _pendingRdGatewayPassword);
 
     [LocalizedAttributes.LocalizedCategory(nameof(Language.RDPGateway), 4),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.RdpGatewayAccessToken)),
@@ -1514,8 +1519,8 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
      Browsable(false)]
     public string VNCProxyPassword
     {
-        get => GetPropertyValue(nameof(VNCProxyPassword), _vncProxyPassword?.ConvertToUnsecureString() ?? string.Empty);
-        set => SetSecureStringField(ref _vncProxyPassword, value, nameof(VNCProxyPassword));
+        get => ResolveSecretText(nameof(VNCProxyPassword), ref _vncProxyPassword, ref _pendingVncProxyPassword);
+        set => SetSecureStringField(ref _vncProxyPassword, ref _pendingVncProxyPassword, value, nameof(VNCProxyPassword));
     }
 
     /// <summary>
@@ -1523,7 +1528,8 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     /// owns and must dispose. See <see cref="SecurePassword"/>.
     /// </summary>
     [Browsable(false)]
-    public SecureString SecureVNCProxyPassword => ResolveSecret(nameof(VNCProxyPassword), _vncProxyPassword);
+    public SecureString SecureVNCProxyPassword =>
+        ResolveSecret(nameof(VNCProxyPassword), ref _vncProxyPassword, ref _pendingVncProxyPassword);
 
     [LocalizedAttributes.LocalizedCategory(nameof(Language.Appearance), 5),
      LocalizedAttributes.LocalizedDisplayName(nameof(Language.Colors)),
@@ -1625,7 +1631,8 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
     /// those cases exists whether this asks for it or not.
     /// </para>
     /// </remarks>
-    private protected SecureString ResolveSecret(string propertyName, SecureString? own)
+    private protected SecureString ResolveSecret(string propertyName, ref SecureString? own,
+                                                 ref PendingConnectionSecret? pending)
     {
         if (TryGetSecretWithoutPlainText(propertyName, out SecureString? direct))
             return direct!;
@@ -1634,8 +1641,262 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
         if (!ReferenceEquals(resolved, Unresolved))
             return resolved.ConvertToSecureString();
 
-        return own?.Copy() ?? new SecureString();
+        return OwnSecretCopy(propertyName, ref own, ref pending);
     }
+
+    /// <summary>
+    /// Resolves a secret as its plain-text property does, decrypting this record's own stored value
+    /// only if the answer turns out to come from here.
+    /// </summary>
+    /// <remarks>
+    /// The order is what makes deferring worth anything. A connection bound to a credential record,
+    /// linked to another connection, or inheriting from its folder answers from somewhere else, and
+    /// deciding that first means its own stored secret is never decrypted at all.
+    /// </remarks>
+    private string ResolveSecretText(string propertyName, ref SecureString? own,
+                                     ref PendingConnectionSecret? pending)
+    {
+        string resolved = GetPropertyValue(propertyName, Unresolved);
+        if (!ReferenceEquals(resolved, Unresolved))
+            return resolved;
+
+        return OwnSecretText(propertyName, ref own, ref pending);
+    }
+
+    /// <summary>
+    /// A copy of this record's own secret, decrypting the ciphertext it was loaded with if that has
+    /// not happened yet.
+    /// </summary>
+    /// <remarks>
+    /// <b>The copy is made while the lock is held</b>, and that is the whole reason this returns a
+    /// value rather than the stored instance. A setter arriving between the resolution and the copy
+    /// disposes what was resolved, and the caller would meet an
+    /// <see cref="ObjectDisposedException"/> from a getter nobody expects to throw.
+    /// </remarks>
+    private SecureString OwnSecretCopy(string secretName, ref SecureString? own,
+                                       ref PendingConnectionSecret? pending)
+    {
+        lock (SecretLock)
+        {
+            ResolveOwnSecret(secretName, ref own, ref pending);
+            return own?.Copy() ?? new SecureString();
+        }
+    }
+
+    /// <summary>
+    /// This record's own secret as plain text, decrypting first if it has not been decrypted yet.
+    /// </summary>
+    /// <remarks>
+    /// Converted under the lock for the same reason <see cref="OwnSecretCopy"/> copies under it.
+    /// </remarks>
+    private string OwnSecretText(string secretName, ref SecureString? own,
+                                 ref PendingConnectionSecret? pending)
+    {
+        lock (SecretLock)
+        {
+            ResolveOwnSecret(secretName, ref own, ref pending);
+            return own?.ConvertToUnsecureString() ?? string.Empty;
+        }
+    }
+
+    /// <summary>
+    /// Turns this record's pending ciphertext into its stored <see cref="SecureString"/>, the first
+    /// time somebody asks for it.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <b>The caller holds <see cref="SecretLock"/>.</b> Decrypting once is the point: the tree is
+    /// read from the user interface thread and from the host-status monitor, so two threads can
+    /// arrive together, and without the lock they would each derive a key and build a
+    /// <see cref="SecureString"/> of which one would be dropped on the floor undisposed.
+    /// </para>
+    /// <para>
+    /// <b>A failure leaves the pending value where it is</b> and lets the exception out. Clearing it
+    /// would make the next read answer with an empty secret, and several callers read empty as "no
+    /// password configured" and fall through to the configured default - so the connection would be
+    /// attempted with the wrong credentials rather than reported as broken.
+    /// </para>
+    /// </remarks>
+    private void ResolveOwnSecret(string secretName, ref SecureString? own,
+                                  ref PendingConnectionSecret? pending)
+    {
+        if (pending is null)
+            return;
+
+        string plainText = pending.Resolve(Name, secretName);
+        own?.Dispose();
+        own = plainText.ConvertToSecureString();
+        pending = null;
+    }
+
+    /// <summary>
+    /// Hands the record a secret it has not decrypted yet.
+    /// </summary>
+    /// <remarks>
+    /// Called by the deserializer in place of assigning a decrypted value, which is what used to put
+    /// every password in a connection file into the process to serve the handful a user opens.
+    /// </remarks>
+    public virtual void SetPendingSecret(string secretName, PendingConnectionSecret secret)
+    {
+        ArgumentNullException.ThrowIfNull(secret);
+
+        lock (SecretLock)
+        {
+            switch (secretName)
+            {
+                case nameof(Password):
+                    _password?.Dispose();
+                    _password = null;
+                    _pendingPassword = secret;
+                    break;
+                case nameof(RDGatewayPassword):
+                    _rdGatewayPassword?.Dispose();
+                    _rdGatewayPassword = null;
+                    _pendingRdGatewayPassword = secret;
+                    break;
+                case nameof(VNCProxyPassword):
+                    _vncProxyPassword?.Dispose();
+                    _vncProxyPassword = null;
+                    _pendingVncProxyPassword = secret;
+                    break;
+                default:
+                    throw new ArgumentOutOfRangeException(nameof(secretName), secretName,
+                        "This record holds no secret by that name.");
+            }
+        }
+    }
+
+    /// <summary>
+    /// The stored bytes of a secret nothing has read or replaced, when writing those same bytes back
+    /// is still correct.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Two conditions, and both are load-bearing. The key has to be the one the bytes were read
+    /// under - see <see cref="ConnectionSecretKeyIdentity"/> for what writing them back under a
+    /// different one costs. And what the property would answer has to be what gets written: a
+    /// connection resolving its password from a credential record, from a linked connection or from
+    /// its folder must not have this record's own untouched bytes written in place of it.
+    /// </para>
+    /// <para>
+    /// <b>Passing ciphertext through does not regenerate the nonce, and that is correct.</b> Under an
+    /// authenticated cipher this writes the same message, under the same key, with the same nonce -
+    /// which is what it already was on disk. Nonce reuse is dangerous when two <i>different</i>
+    /// plaintexts share one; here the plaintext did not change either, because nothing decrypted it,
+    /// let alone edited it. A record whose secret was assigned has no pending value left and is
+    /// re-encrypted normally, nonce and all.
+    /// </para>
+    /// </remarks>
+    public virtual bool TryGetStoredCipherText(string secretName, ConnectionSecretKeyIdentity? key, out string cipherText)
+    {
+        cipherText = string.Empty;
+
+        PendingConnectionSecret? pending;
+        lock (SecretLock)
+            pending = PendingSecret(secretName);
+
+        if (pending is null || !pending.WasWrittenUnder(key))
+            return false;
+
+        // Both of these resolve through the tree and the credential catalogue, so neither may run
+        // under the lock a getter also takes.
+        if (TryGetSecretWithoutPlainText(secretName, out SecureString? elsewhere))
+        {
+            elsewhere?.Dispose();
+            return false;
+        }
+
+        if (!ReferenceEquals(GetPropertyValue(secretName, Unresolved), Unresolved))
+            return false;
+
+        lock (SecretLock)
+        {
+            // Asked again, because the checks above ran without the lock. A secret assigned in that
+            // window has already discarded this ciphertext, and writing it anyway would put the
+            // superseded password back in the file in place of the one the user just typed.
+            if (!ReferenceEquals(PendingSecret(secretName), pending))
+                return false;
+
+            cipherText = pending.CipherText;
+            return true;
+        }
+    }
+
+    /// <summary>
+    /// The ciphertext slot for one secret, or <see langword="null"/> for a name this record does not
+    /// hold. <b>The caller holds <see cref="SecretLock"/>.</b>
+    /// </summary>
+    private PendingConnectionSecret? PendingSecret(string secretName) =>
+        secretName switch
+        {
+            nameof(Password) => _pendingPassword,
+            nameof(RDGatewayPassword) => _pendingRdGatewayPassword,
+            nameof(VNCProxyPassword) => _pendingVncProxyPassword,
+            _ => null
+        };
+
+    /// <summary>
+    /// Decrypts every secret this record still holds as ciphertext.
+    /// </summary>
+    /// <remarks>
+    /// For the one case where deferring is not an option: re-encrypting a store under a new key. A
+    /// record still holding ciphertext from the old key, written through untouched, produces a file
+    /// encrypted under two keys - and the half under the old key can never be read again. Any
+    /// failure comes out as an exception, which is what refuses the save.
+    /// </remarks>
+    /// <exception cref="ConnectionSecretDecryptionException">A stored secret did not decrypt.</exception>
+    public virtual void DecryptEveryStoredSecret()
+    {
+        lock (SecretLock)
+        {
+            ResolveOwnSecret(nameof(Password), ref _password, ref _pendingPassword);
+            ResolveOwnSecret(nameof(RDGatewayPassword), ref _rdGatewayPassword, ref _pendingRdGatewayPassword);
+            ResolveOwnSecret(nameof(VNCProxyPassword), ref _vncProxyPassword, ref _pendingVncProxyPassword);
+        }
+    }
+
+    /// <summary>
+    /// Whether this record has a password, answered without decrypting one wherever that is possible.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Asked of every node in a file being imported, purely to learn whether there is a credential
+    /// worth extracting. A record with nothing stored and nowhere to inherit from answers
+    /// immediately, which is the case this exists for.
+    /// </para>
+    /// <para>
+    /// <b>The presence of ciphertext is not on its own an answer.</b> An empty password is written as
+    /// the encryption of an empty string rather than as an empty attribute - deliberately, so that
+    /// the file does not disclose which connections have no password - so a record holding ciphertext
+    /// may still hold nothing. That one has to be decrypted to be sure, and so does a record whose
+    /// password resolves from a credential record, a linked connection or its folder.
+    /// </para>
+    /// </remarks>
+    [Browsable(false)]
+    public bool HasPassword
+    {
+        get
+        {
+            bool nothingStored;
+            lock (SecretLock)
+                nothingStored = _pendingPassword is null && _password is null;
+
+            if (nothingStored && !SecretsCanResolveElsewhere)
+                return false;
+
+            using SecureString resolved = SecurePassword;
+            return resolved.Length > 0;
+        }
+    }
+
+    /// <summary>
+    /// Whether a secret could be answered by something other than this record's own stored value.
+    /// </summary>
+    /// <remarks>
+    /// Only ever used to skip work: false has to mean "there is definitely nowhere else", so a
+    /// record that gains a new way of borrowing a secret has to be added here.
+    /// </remarks>
+    private protected virtual bool SecretsCanResolveElsewhere => !string.IsNullOrEmpty(CredentialId);
 
     /// <summary>
     /// A source that already holds this secret as a <see cref="SecureString"/>, if one applies.
@@ -1650,16 +1911,39 @@ public abstract class AbstractConnectionRecord(string uniqueId) : INotifyPropert
         return false;
     }
 
-    private void SetSecureStringField(ref SecureString? field, string value, string? propertyName = null)
+    /// <summary>
+    /// Serialises resolution of this record's secrets against each other.
+    /// </summary>
+    /// <remarks>
+    /// One lock for all three rather than one each: the only contention that exists is two threads
+    /// reading the same record at once, and past the first read it is uncontended anyway.
+    /// </remarks>
+    private protected readonly Lock SecretLock = new();
+
+    private void SetSecureStringField(ref SecureString? field, ref PendingConnectionSecret? pending,
+                                      string value, string? propertyName = null)
     {
         value ??= string.Empty;
+        bool changed;
 
-        if (string.Equals(ConvertToUnsecureStringOrEmpty(field), value, StringComparison.Ordinal))
-            return;
+        lock (SecretLock)
+        {
+            // Discarded whether or not the value below turns out to be different. A record edited
+            // before its first read still holds the ciphertext it was loaded with, and leaving that
+            // in place would let the next read decrypt over the top of what the user just typed.
+            pending = null;
 
-        field?.Dispose();
-        field = value.ConvertToSecureString();
+            changed = !string.Equals(ConvertToUnsecureStringOrEmpty(field), value, StringComparison.Ordinal);
+            if (changed)
+            {
+                field?.Dispose();
+                field = value.ConvertToSecureString();
+            }
+        }
 
-        RaisePropertyChangedEvent(this, new PropertyChangedEventArgs(propertyName));
+        // Outside the lock: a change notification runs whatever the tree, the property grid and the
+        // auto-saver have subscribed, and none of that belongs inside a lock a getter also takes.
+        if (changed)
+            RaisePropertyChangedEvent(this, new PropertyChangedEventArgs(propertyName));
     }
 }

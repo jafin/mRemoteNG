@@ -9,7 +9,8 @@ namespace mRemoteNG.Security;
 /// Most providers here are not. <see cref="SymmetricEncryption.AeadCryptographyProvider"/> caches
 /// derived keys and salts in fields and holds one BouncyCastle cipher instance, so two threads in it
 /// at once corrupt each other's results rather than merely racing — which is why
-/// <c>XmlConnectionsDecryptor.DecryptBatch</c> builds a copy per thread.
+/// <c>XmlConnectionsDecryptor</c> owns the provider it resolves deferred secrets through and takes
+/// it under a lock.
 /// </para>
 /// <para>
 /// A provider can only claim this if it derives nothing and keeps no per-call state. Implementing it
