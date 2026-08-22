@@ -46,9 +46,50 @@ Do not start before it ships.
   The first measurement of this was worse and was wrong, which is worth recording because the cause is the same one the proposal got wrong about the batch. Resolving each secret through a provider built for that one call made every read a full derivation, **234–242 ms**, and the number looked like an unavoidable consequence of deferring. It was not: the AEAD provider caches the key it derived against the salt it derived it from, every field of a file this application writes shares one salt, and building a provider per read threw that away. That is also what the batch was really buying — one provider across many fields, not the parallel fan-out. Keeping one provider behind a lock restores it.
 
   As measured now: opening the file **305 ms**, the first password read **238–242 ms** — one derivation, once — and the remaining 199 **8 ms between them**. So opening a file is three times faster, the first connection of a session costs a fifth of a second more, every connection after it is free, and 197 passwords stay out of the process until asked for. On a hardened per-file-key store there is no derivation at all and even the first read is free.
+
+All three run against a **copy** of a connection file, opened with `File → Open Connection File...`,
+never the live `confCons.xml` — a refused rekey or a deliberately damaged attribute should cost
+nothing.
+
 - [ ] 5.5 Manual, and required — the same matrix as `narrow-connection-password-exposure` §4.4, because every protocol reads its secret through this path: RDP with a saved password, an inherited password, a gateway with its own credentials, an external credential provider, Remote Credential Guard, restricted admin; SSH, SFTP and a file transfer.
+
+  What is under test is a **first read in a session**, not a connection: after any secret is read the
+  derived key is cached and the interesting moment has passed. So close mRemoteNG and relaunch
+  between cases, open the file, touch nothing, and connect. At minimum relaunch before the first
+  case of each group. Each case passes if it authenticates as it did before, with no dialog saying a
+  password could not be read, and no second credential prompt.
+
+  - [ ] 5.5.1 RDP, password stored on the connection itself.
+  - [ ] 5.5.2 RDP, the connection's own `Password` empty and inherited from its parent folder. The child must never decrypt its own stored value.
+  - [ ] 5.5.3 RDP, gateway usage *Always* with its own credentials — two secrets resolve, `Password` and `RDGatewayPassword`, and the gateway hop authenticates.
+  - [ ] 5.5.4 RDP bound to a credential record from the catalogue. Connects with the credential record's password; the connection's own stored secret is not read at all.
+  - [ ] 5.5.5 RDP with Remote Credential Guard. Connects reading no stored secret — this and 5.5.6 are the two this change most affects.
+  - [ ] 5.5.6 RDP in restricted admin mode. Same.
+  - [ ] 5.5.7 SSH with a saved password.
+  - [ ] 5.5.8 SFTP against the same host — connects and lists the remote directory.
+  - [ ] 5.5.9 A file transfer, one small file each way.
+
+  Stop and record the case if any of these appear: a failure dialog naming the connection, an empty
+  password sent to the host, or a fall-through to the configured default password.
+
 - [ ] 5.6 Manual: rekey a store with connections that were never opened in that session, then reopen the file and connect to one of them. This is risk 1, and it is the check that a green suite cannot make convincing.
+
+  - [ ] 5.6.1 Launch, open the file, and touch nothing — no selection, no property grid, no connection. Every secret is unresolved ciphertext, which is what makes the test mean anything.
+  - [ ] 5.6.2 `File → Rekey Connection File...` with a new recovery password; it reports success and leaves a backup of the file as it was.
+  - [ ] 5.6.3 Close mRemoteNG completely, relaunch, reopen the file, enter the new recovery password.
+  - [ ] 5.6.4 Connect to a connection never touched in 5.6.1 — one deep in a folder, and one on an inherited password.
+  - [ ] 5.6.5 Open two or three other `Password` fields in the property grid; the values are there rather than blank. A blank field on a record that had a password is the failure this task exists to catch.
+  - [ ] 5.6.6 The negative half: on a fresh copy, corrupt one `Password` attribute and attempt the rekey. It is refused, names the connection, and leaves the file and its old recovery password working — nothing half-written.
+
 - [ ] 5.7 Manual: open a file, connect to one connection, save, and confirm the other connections' stored secrets are byte-identical to what they were.
+
+  Requires **Tools → Options → Security → Encrypt complete connection file** to be *off*. With it on
+  the document is a single blob re-encrypted on every save, and the comparison says nothing.
+
+  - [ ] 5.7.1 Copy the file aside as the "before".
+  - [ ] 5.7.2 Launch, open it, connect to exactly one connection, disconnect, save, close.
+  - [ ] 5.7.3 Compare the `Password`, `RDGatewayPassword` and `VNCProxyPassword` attributes of every node against the copy. Nothing differs — **including the connection just used**, since reading a secret resolves it without assigning it, so its ciphertext still passes through. The rest of the XML differs (window state, expansion, ordering), which is why the comparison is narrowed to the three attributes.
+  - [ ] 5.7.4 Then prove the write path still works: reopen, change one password, save, compare again. Exactly one line differs. Every row changing means the pass-through never engaged; no row changing means the edit was not saved.
 
 The user-visible half is documented: `docs-website/docs/connection-file-protection.md` gains **When
 one connection's password cannot be read**, which is where a user meets the one behaviour that
