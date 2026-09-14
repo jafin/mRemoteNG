@@ -46,6 +46,11 @@ Do not start before it ships.
   The first measurement of this was worse and was wrong, which is worth recording because the cause is the same one the proposal got wrong about the batch. Resolving each secret through a provider built for that one call made every read a full derivation, **234–242 ms**, and the number looked like an unavoidable consequence of deferring. It was not: the AEAD provider caches the key it derived against the salt it derived it from, every field of a file this application writes shares one salt, and building a provider per read threw that away. That is also what the batch was really buying — one provider across many fields, not the parallel fan-out. Keeping one provider behind a lock restores it.
 
   As measured now: opening the file **305 ms**, the first password read **238–242 ms** — one derivation, once — and the remaining 199 **8 ms between them**. So opening a file is three times faster, the first connection of a session costs a fifth of a second more, every connection after it is free, and 197 passwords stay out of the process until asked for. On a hardened per-file-key store there is no derivation at all and even the first read is free.
+
+All three run against a **copy** of a connection file, opened with `File → Open Connection File...`,
+never the live `confCons.xml` — a refused rekey or a deliberately damaged attribute should cost
+nothing.
+
 - [ ] 5.5 Manual, and required — the same matrix as `narrow-connection-password-exposure` §4.4, because every protocol reads its secret through this path: RDP with a saved password, an inherited password, a gateway with its own credentials, an external credential provider, Remote Credential Guard, restricted admin; SSH, SFTP and a file transfer.
 
   What is under test is a **first read in a session**, not a connection: after any secret is read the
@@ -77,6 +82,14 @@ Do not start before it ships.
   - [ ] 5.6.6 The negative half: on a fresh copy, corrupt one `Password` attribute and attempt the rekey. It is refused, names the connection, and leaves the file and its old recovery password working — nothing half-written.
 
 - [ ] 5.7 Manual: open a file, connect to one connection, save, and confirm the other connections' stored secrets are byte-identical to what they were.
+
+  Requires **Tools → Options → Security → Encrypt complete connection file** to be *off*. With it on
+  the document is a single blob re-encrypted on every save, and the comparison says nothing.
+
+  - [ ] 5.7.1 Copy the file aside as the "before".
+  - [ ] 5.7.2 Launch, open it, connect to exactly one connection, disconnect, save, close.
+  - [ ] 5.7.3 Compare the `Password`, `RDGatewayPassword` and `VNCProxyPassword` attributes of every node against the copy. Nothing differs — **including the connection just used**, since reading a secret resolves it without assigning it, so its ciphertext still passes through. The rest of the XML differs (window state, expansion, ordering), which is why the comparison is narrowed to the three attributes.
+  - [ ] 5.7.4 Then prove the write path still works: reopen, change one password, save, compare again. Exactly one line differs. Every row changing means the pass-through never engaged; no row changing means the edit was not saved.
 
 The user-visible half is documented: `docs-website/docs/connection-file-protection.md` gains **When
 one connection's password cannot be read**, which is where a user meets the one behaviour that
