@@ -2256,8 +2256,13 @@ public partial class ConnectionWindow : BaseWindow
             if (!(protocolBase?.InterfaceControl?.Parent is ConnectionTab tabPage))
                 return;
             if (tabPage.IsDisposed) return; // Already fully disposed — nothing to do
-            // Note: do NOT return early on Disposing — the tab is mid-close and
-            // needs protocolClose=true set by the code below to complete (#55).
+
+            // The tab is part-way through its own Dispose, which is already removing the
+            // session: this close was queued before that began, and tearing down an RDP
+            // ActiveX control pumps messages. Disposing the session here, or closing the tab
+            // again, pulls the control out from under that Dispose - it throws, and the tab
+            // stays on screen, empty.
+            if (tabPage.Disposing) return;
 
             ConnectionInfo? closedConnectionInfo =
                 tabPage.TrackedConnectionInfo ??
@@ -2268,9 +2273,7 @@ public partial class ConnectionWindow : BaseWindow
             if (closedConnectionInfo != null)
                 tabPage.TrackConnection(closedConnectionInfo);
 
-            // A tab that is already closing must not be revived with the closed state
-            // panel - the user asked for the tab itself to go away, not to disconnect.
-            if (keepTabOpen && !tabPage.Disposing)
+            if (keepTabOpen)
             {
                 if (protocolBase.InterfaceControl != null)
                 {

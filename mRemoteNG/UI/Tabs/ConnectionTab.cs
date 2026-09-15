@@ -214,6 +214,11 @@ public partial class ConnectionTab : DockContent
 
     protected override void OnFormClosing(FormClosingEventArgs e)
     {
+        // A disconnect request covers this close only. Left set, it would turn the next close
+        // of a tab that has since been reconnected into another disconnect.
+        bool keepTabOpenAfterDisconnect = KeepTabOpenAfterDisconnect;
+        disconnectOnly = false;
+
         if (!protocolClose)
         {
             // If the tab is showing the closed/disconnected state (no active protocol),
@@ -251,14 +256,14 @@ public partial class ConnectionTab : DockContent
                     else
                     {
                         CloseProtocolSafe();
-                        if (KeepTabOpenAfterDisconnect)
+                        if (keepTabOpenAfterDisconnect)
                             e.Cancel = true;
                     }
                 }
                 else
                 {
                     CloseProtocolSafe();
-                    if (KeepTabOpenAfterDisconnect)
+                    if (keepTabOpenAfterDisconnect)
                         e.Cancel = true;
                 }
             }

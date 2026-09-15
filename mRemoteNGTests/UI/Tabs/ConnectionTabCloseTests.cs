@@ -85,6 +85,29 @@ public class ConnectionTabCloseTests
     }
 
     [Test]
+    public void ClosingTheTabAfterADisconnectAndReconnectClosesIt()
+    {
+        _connectionTab.disconnectOnly = true;
+        InvokeFormClosing();
+
+        // Reconnecting reuses the tab that was kept open, with a new session inside it.
+        StubProtocol reconnectedProtocol = new();
+        InterfaceControl reconnected = new(_connectionTab, reconnectedProtocol, _interfaceControl.Info);
+        reconnectedProtocol.InterfaceControl = reconnected;
+        _connectionTab.Tag = reconnected;
+
+        FormClosingEventArgs closingArgs = InvokeFormClosing();
+
+        Assert.Multiple(() =>
+        {
+            Assert.That(closingArgs.Cancel, Is.False,
+                "The earlier disconnect must not turn a later tab close into another disconnect.");
+            Assert.That(reconnectedProtocol.CloseCallCount, Is.EqualTo(1),
+                "The reconnected session should be disconnected.");
+        });
+    }
+
+    [Test]
     public void DisconnectingFromTheTabMenuClosesTheTabWhenTabsAreNotKeptOpenAfterDisconnect()
     {
         OptionsTabsPanelsPage.Default.KeepTabsOpenAfterDisconnect = false;

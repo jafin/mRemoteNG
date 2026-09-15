@@ -263,6 +263,14 @@ public abstract class ProtocolBase : IDisposable
         {
             tmrReconnect.Enabled = false;
 
+            // Tearing down an RDP ActiveX control pumps messages, so a close queued before the
+            // owning tab was disposed can run in the middle of that Dispose. The tab is already
+            // disposing the session; disposing it here as well releases the COM object the tab
+            // is still using, the tab's Dispose throws, and the tab is never removed from its
+            // pane - it stays on screen, empty.
+            if (mRemoteNG.UI.Tabs.ConnectionTab.OwnerOf(_interfaceControl)?.Disposing == true)
+                return;
+
             if (Control != null)
             {
                 try
